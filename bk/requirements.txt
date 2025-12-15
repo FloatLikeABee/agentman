@@ -1,0 +1,56 @@
+# Core RAG and AI dependencies
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-ollama
+langchain-openai
+
+# Vector database and embeddings
+chromadb==0.5.23
+sentence-transformers==5.0.0
+faiss-cpu==1.8.0
+
+# Web framework and API
+fastapi==0.115.11
+uvicorn==0.32.1
+python-multipart==0.0.20
+pydantic==2.10.4
+
+# Data processing
+pandas==2.2.3
+numpy==1.26.4
+openpyxl==3.1.5
+python-docx==1.1.2
+PyPDF2==3.0.1
+beautifulsoup4==4.13.3
+
+# MCP (Model Context Protocol)
+mcp==1.12.2
+
+# Email tools
+emails==0.6.0
+
+# Web search and tools
+duckduckgo-search==7.5.0
+requests==2.32.3
+aiohttp==3.11.13
+
+# Financial data
+yfinance==0.2.45
+alpha-vantage==2.3.1
+
+# Utilities
+python-dotenv==1.0.1
+pydantic-settings
+loguru==0.7.2
+websockets==13.1
+
+# Development and testing
+pytest==8.2.2
+pytest-asyncio==0.24.0
+black==25.1.0
+isort==5.13.2
+
+# CORS for frontend
+fastapi-cors==0.0.6
