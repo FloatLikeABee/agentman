@@ -73,13 +73,16 @@ class RAGAPI:
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
         
-        # Setup CORS
+        # Setup CORS - Allow all origins (configurable)
+        # By default this uses settings.cors_origins which is ["*"],
+        # meaning any frontend origin (localhost, 127.0.0.1, any port) is allowed.
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origins,
-            allow_credentials=True,
+            allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["*"],
         )
         
         # Setup logging

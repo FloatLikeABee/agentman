@@ -5,6 +5,7 @@ langchain-core
 langchain-text-splitters
 langchain-ollama
 langchain-openai
+google-generativeai
 
 # Vector database and embeddings
 chromadb==0.5.23
@@ -32,12 +33,13 @@ mcp==1.12.2
 emails==0.6.0
 
 # Web search and tools
+wikipedia
 duckduckgo-search==7.5.0
 requests==2.32.3
 aiohttp==3.11.13
 
 # Financial data
-yfinance==0.2.45
+yfinance>=0.2.66
 alpha-vantage==2.3.1
 
 # Utilities
@@ -45,6 +47,7 @@ python-dotenv==1.0.1
 pydantic-settings
 loguru==0.7.2
 websockets==13.1
+tinydb==4.8.2
 
 # Development and testing
 pytest==8.2.2

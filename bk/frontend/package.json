@@ -23,6 +23,10 @@
     "react-router-dom": "^6.22.1",
     "react-scripts": "5.0.1"
   },
+  "overrides": {
+    "rimraf": "^4.0.0",
+    "svgo": "^2.8.0"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",

@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     debug_mode: bool = True
     api_timeout: int = 120  # Timeout in seconds for LLM API calls
 
-    # CORS settings
-    cors_origins: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # CORS settings - allow all by default
+    # You can override this via environment variable if needed.
+    cors_origins: List[str] = ["*"]
 
     # Email settings
     smtp_server: Optional[str] = None
