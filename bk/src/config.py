@@ -31,8 +31,12 @@ class Settings(BaseSettings):
     api_timeout: int = 120  # Timeout in seconds for LLM API calls
 
     # CORS settings - allow all by default
-    # You can override this via environment variable if needed.
+    # You can override these via environment variables if needed.
+    # `cors_origins` is kept for compatibility but we primarily rely on `cors_origin_regex`
+    # so that the server echoes back the actual Origin instead of "*".
     cors_origins: List[str] = ["*"]
+    cors_allow_credentials: bool = True
+    cors_origin_regex: str = ".*"
 
     # Email settings
     smtp_server: Optional[str] = None
