@@ -93,6 +93,30 @@ class CustomizationManager:
         self.logger.info(f"Created customization profile: {profile_id}")
         return profile_id
 
+    def update_profile(self, profile_id: str, req: CustomizationCreateRequest) -> bool:
+        """Update an existing customization profile."""
+        if profile_id not in self.customizations:
+            return False
+        try:
+            # Update the profile with new data
+            profile = CustomizationProfile(
+                id=profile_id,  # Keep the same ID
+                name=req.name,
+                description=req.description,
+                system_prompt=req.system_prompt,
+                rag_collection=req.rag_collection,
+                llm_provider=req.llm_provider,
+                model_name=req.model_name,
+                metadata=req.metadata or {},
+            )
+            self.customizations[profile_id] = profile
+            self._save_customizations()
+            self.logger.info(f"Updated customization profile: {profile_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error updating customization {profile_id}: {e}")
+            return False
+
     def delete_profile(self, profile_id: str) -> bool:
         if profile_id not in self.customizations:
             return False

@@ -92,6 +92,11 @@ export const getModels = async () => {
   return response.data;
 };
 
+export const getProviders = async () => {
+  const response = await api.get('/providers');
+  return response.data;
+};
+
 // MCP
 export const startMCPServer = async () => {
   const response = await api.post('/mcp/start');
@@ -106,6 +111,11 @@ export const getCustomizations = async () => {
 
 export const createCustomization = async (payload) => {
   const response = await api.post('/customizations', payload);
+  return response.data;
+};
+
+export const updateCustomization = async (profileId, payload) => {
+  const response = await api.put(`/customizations/${profileId}`, payload);
   return response.data;
 };
 
@@ -135,9 +145,11 @@ export default {
   getTools,
   updateToolConfig,
   getModels,
+  getProviders,
   startMCPServer,
   getCustomizations,
   createCustomization,
+  updateCustomization,
   deleteCustomization,
   queryCustomization,
 }; 

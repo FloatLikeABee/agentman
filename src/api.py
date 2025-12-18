@@ -68,7 +68,7 @@ class RAGAPI:
         
         # Initialize components
         self.rag_system = RAGSystem()
-        self.tool_manager = ToolManager()
+        self.tool_manager = ToolManager(rag_system=self.rag_system)
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
@@ -540,6 +540,20 @@ Question: {{input}}
                 raise
             except Exception as e:
                 self.logger.error(f"Error getting customization {profile_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put("/customizations/{profile_id}", tags=["Customizations"])
+        async def update_customization(profile_id: str, req: CustomizationCreateRequest):
+            """Update an existing customization profile."""
+            try:
+                success = self.customization_manager.update_profile(profile_id, req)
+                if success:
+                    return {"message": "Customization updated successfully"}
+                raise HTTPException(status_code=404, detail="Customization not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating customization {profile_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.delete("/customizations/{profile_id}", tags=["Customizations"])

@@ -24,6 +24,8 @@ class ToolType(str, Enum):
     CALCULATOR = "calculator"
     FINANCIAL = "financial"
     WIKIPEDIA = "wikipedia"
+    CRAWLER = "crawler"
+    EQUALIZER = "equalizer"
     CUSTOM = "custom"
 
 
