@@ -8,6 +8,7 @@ import AgentManager from './pages/AgentManager';
 import ToolManager from './pages/ToolManager';
 import SystemStatus from './pages/SystemStatus';
 import Customizations from './pages/Customizations';
+import Crawler from './pages/Crawler';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
             <Route path="/agents" element={<AgentManager />} />
             <Route path="/tools" element={<ToolManager />} />
             <Route path="/customizations" element={<Customizations />} />
+            <Route path="/crawler" element={<Crawler />} />
             <Route path="/status" element={<SystemStatus />} />
           </Routes>
         </Container>

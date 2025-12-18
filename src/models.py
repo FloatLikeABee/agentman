@@ -190,3 +190,23 @@ class CustomizationQueryResponse(BaseModel):
         None, description="RAG collection used (if any)"
     )
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
+
+
+class CrawlerRequest(BaseModel):
+    url: str = Field(..., description="URL to crawl")
+    use_js: bool = Field(default=False, description="Use JavaScript rendering (Playwright/Selenium)")
+    llm_provider: Optional[str] = Field(None, description="LLM provider to use for extraction (gemini/qwen)")
+    model: Optional[str] = Field(None, description="Model name to use")
+    collection_name: Optional[str] = Field(None, description="Override AI-generated collection name")
+    collection_description: Optional[str] = Field(None, description="Override AI-generated collection description")
+
+
+class CrawlerResponse(BaseModel):
+    success: bool
+    url: str
+    collection_name: Optional[str] = None
+    collection_description: Optional[str] = None
+    raw_file: Optional[str] = None
+    extracted_file: Optional[str] = None
+    extracted_data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None

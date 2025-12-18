@@ -20,6 +20,7 @@ import {
   Info as StatusIcon,
   Tune as CustomIcon,
   Menu as MenuIcon,
+  Web as CrawlerIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -42,6 +43,7 @@ const Header = () => {
     { path: '/agents', label: 'Agent Manager', icon: <AgentIcon /> },
     { path: '/tools', label: 'Tool Manager', icon: <ToolIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
+    { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },
     { path: '/status', label: 'System Status', icon: <StatusIcon /> },
   ];
 

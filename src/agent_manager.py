@@ -128,21 +128,59 @@ class AgentManager:
         return models
 
     def _create_llm_caller_with_fallback(self, preferred_provider: LLMProviderType, model: str, temperature: float, max_tokens: int):
-        """Create LLM caller with fallback: try preferred, then others"""
-        providers_to_try = [preferred_provider, LLMProviderType.GEMINI, LLMProviderType.QWEN]
-        providers_to_try = list(dict.fromkeys(providers_to_try))  # Remove duplicates
+        """Create LLM caller with fallback: try preferred first, only fallback on critical errors"""
+        # First, try the preferred provider
+        try:
+            if preferred_provider == LLMProviderType.GEMINI:
+                api_key = settings.gemini_api_key
+                # Use appropriate model for Gemini
+                model_to_use = model if model.startswith('gemini') else settings.gemini_default_model
+            elif preferred_provider == LLMProviderType.QWEN:
+                api_key = settings.qwen_api_key
+                # Use appropriate model for Qwen
+                model_to_use = model if model.startswith('qwen') else settings.qwen_default_model
+            else:
+                raise ValueError(f"Unknown provider: {preferred_provider}")
 
-        for provider in providers_to_try:
+            # Check if API key is available
+            if not api_key or api_key.strip() == "":
+                raise ValueError(f"API key for {preferred_provider.value} is not configured")
+
+            llm_caller = LLMFactory.create_caller(
+                provider=LLMProvider(preferred_provider.value),
+                api_key=api_key,
+                model=model_to_use,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            self.logger.info(f"Successfully created {preferred_provider.value} caller with model {model_to_use}")
+            return llm_caller
+        except ValueError as e:
+            # Critical error: missing API key or invalid provider - allow fallback
+            self.logger.warning(f"Critical error with preferred provider {preferred_provider.value}: {e}. Attempting fallback...")
+        except Exception as e:
+            # For other errors, log but still try fallback (might be temporary network issues, etc.)
+            self.logger.warning(f"Error creating {preferred_provider.value} caller: {e}. Attempting fallback...")
+
+        # Fallback: try other providers only if preferred failed
+        fallback_providers = [LLMProviderType.GEMINI, LLMProviderType.QWEN]
+        # Remove the preferred provider from fallback list
+        fallback_providers = [p for p in fallback_providers if p != preferred_provider]
+
+        for provider in fallback_providers:
             try:
                 if provider == LLMProviderType.GEMINI:
                     api_key = settings.gemini_api_key
-                    # Use appropriate model for Gemini
                     model_to_use = model if model.startswith('gemini') else settings.gemini_default_model
                 elif provider == LLMProviderType.QWEN:
                     api_key = settings.qwen_api_key
-                    # Use appropriate model for Qwen
                     model_to_use = model if model.startswith('qwen') else settings.qwen_default_model
                 else:
+                    continue
+
+                # Check if API key is available
+                if not api_key or api_key.strip() == "":
+                    self.logger.warning(f"Fallback provider {provider.value} has no API key configured, skipping...")
                     continue
 
                 llm_caller = LLMFactory.create_caller(
@@ -152,14 +190,13 @@ class AgentManager:
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                if provider != preferred_provider:
-                    self.logger.warning(f"Using fallback provider {provider.value} with model {model_to_use} instead of {preferred_provider.value}")
+                self.logger.warning(f"Using fallback provider {provider.value} with model {model_to_use} instead of {preferred_provider.value}")
                 return llm_caller
             except Exception as e:
-                self.logger.warning(f"Failed to create {provider.value} caller: {e}")
+                self.logger.warning(f"Failed to create fallback {provider.value} caller: {e}")
                 continue
 
-        raise RuntimeError("Failed to create any LLM caller")
+        raise RuntimeError(f"Failed to create LLM caller for preferred provider {preferred_provider.value} and all fallback providers")
 
     def create_agent(self, config: AgentConfig) -> str:
         """Create a new agent with the specified configuration"""
@@ -180,6 +217,32 @@ class AgentManager:
 
             # Wrap in LangChain-compatible wrapper
             llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+            # Get provider information for logging
+            provider_info = llm_caller.get_model_info()
+            provider_name = provider_info.get('provider', 'Unknown')
+            model_name = provider_info.get('model', 'Unknown')
+            
+            # Normalize provider names for comparison
+            configured_provider_lower = config.llm_provider.value.lower()
+            actual_provider_lower = provider_name.lower()
+            
+            # Check if we're using the correct provider
+            # Provider names: "GeminiCaller" contains "gemini", "QwenCaller" contains "qwen"
+            provider_match = (
+                (configured_provider_lower == 'gemini' and 'gemini' in actual_provider_lower) or
+                (configured_provider_lower == 'qwen' and 'qwen' in actual_provider_lower)
+            )
+            
+            if not provider_match:
+                self.logger.error(
+                    f"❌ CRITICAL: Provider mismatch! Agent '{config.name}' configured for '{config.llm_provider.value}' "
+                    f"but actually using '{provider_name}'. This indicates a fallback occurred. "
+                    f"Please check your API keys and configuration."
+                )
+                # Still continue, but log the error clearly
+            else:
+                self.logger.info(f"✅ Agent '{config.name}' successfully using configured provider: {provider_name} with model {model_name}")
 
             # Build tools list
             tools = []
@@ -204,15 +267,27 @@ class AgentManager:
             from langchain.agents import AgentExecutor, create_react_agent
             from langchain.prompts import PromptTemplate
             
-            # Create a simple ReAct prompt template
-            react_template = """Answer the following questions as best you can. You have access to the following tools:
+            # Create an enhanced ReAct prompt template that encourages tool usage
+            system_instruction = config.system_prompt or "You are a helpful AI assistant."
+            if config.tools:
+                system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed. Do NOT say you cannot do something if you have a tool that can do it. For example, if asked to browse a website or get information from a URL, use the Web Crawler tool."
+            
+            react_template = system_instruction + """
+
+You have access to the following tools:
 
 {tools}
+
+IMPORTANT INSTRUCTIONS:
+- ALWAYS use the available tools when they can help answer the question
+- Do NOT say you cannot do something if you have a tool that can do it
+- If asked to browse a website, fetch web content, or get information from a URL, use the Web Crawler tool
+- Read tool descriptions carefully to understand what each tool can do
 
 Use the following format:
 
 Question: the input question you must answer
-Thought: you should always think about what to do
+Thought: you should always think about what to do and which tool to use
 Action: the action to take, should be one of [{tool_names}]
 Action Input: the input to the action
 Observation: the result of the action
@@ -244,12 +319,15 @@ Question: {input}
                 handle_parsing_errors=False,
             )
 
-            # Store agent
+            # Store agent with provider information
             agent_id = config.name.lower().replace(' ', '_')
             self.agents[agent_id] = {
                 'config': config,
                 'agent': agent,
-                'llm': llm
+                'llm': llm,
+                'llm_caller': llm_caller,  # Store caller for provider info
+                'provider': provider_name,
+                'model': model_name
             }
 
             self.logger.info(f"Created agent: {agent_id}")
@@ -329,6 +407,35 @@ Question: {input}
             if not agent_data:
                 raise ValueError(f"Agent {agent_id} not found")
 
+            # Get provider information for logging
+            agent_config = agent_data['config']
+            configured_provider = agent_config.llm_provider.value
+            configured_model = agent_config.model_name
+            
+            # Get actual provider being used
+            actual_provider = agent_data.get('provider', 'Unknown')
+            actual_model = agent_data.get('model', 'Unknown')
+            
+            # If we have llm_caller, get fresh info
+            if 'llm_caller' in agent_data:
+                caller_info = agent_data['llm_caller'].get_model_info()
+                actual_provider = caller_info.get('provider', actual_provider)
+                actual_model = caller_info.get('model', actual_model)
+            
+            # Log which AI is being used
+            self.logger.info("=" * 60)
+            self.logger.info(f"🤖 Running Agent: {agent_id}")
+            self.logger.info(f"📋 Configured Provider: {configured_provider} | Model: {configured_model}")
+            self.logger.info(f"⚙️ Actual Provider: {actual_provider} | Model: {actual_model}")
+            if configured_provider.lower() not in actual_provider.lower():
+                self.logger.warning(f"⚠️ WARNING: Provider mismatch detected! Using {actual_provider} instead of {configured_provider}")
+            self.logger.info(f"💬 Query: {query[:100]}{'...' if len(query) > 100 else ''}")
+            self.logger.info("=" * 60)
+
+            print(f"🤖 Running Agent: {agent_id}")
+            print(f"📋 Configured Provider: {configured_provider} | Model: {configured_model}")
+            print(f"⚙️ Actual Provider: {actual_provider} | Model: {actual_model}")
+
             # Add context to query if provided
             if context:
                 context_str = "\n".join([f"{k}: {v}" for k, v in context.items()])
@@ -337,13 +444,14 @@ Question: {input}
                 full_query = query
 
             # Check if agent has tools
-            agent_config = agent_data['config']
             has_tools = bool(agent_config.rag_collections or agent_config.tools)
 
             if has_tools:
                 # Use agent for tool-enabled queries
                 agent = agent_data['agent']
                 try:
+                    print('full_query:::::')
+                    print(full_query)
                     response = agent.invoke({"input": full_query})
 
                     # Extract the response from the agent output
@@ -389,6 +497,31 @@ Question: {input}
                 yield f"Error: Agent {agent_id} not found\n"
                 return
 
+            # Get provider information for logging
+            agent_config = agent_data['config']
+            configured_provider = agent_config.llm_provider.value
+            configured_model = agent_config.model_name
+            
+            # Get actual provider being used
+            actual_provider = agent_data.get('provider', 'Unknown')
+            actual_model = agent_data.get('model', 'Unknown')
+            
+            # If we have llm_caller, get fresh info
+            if 'llm_caller' in agent_data:
+                caller_info = agent_data['llm_caller'].get_model_info()
+                actual_provider = caller_info.get('provider', actual_provider)
+                actual_model = caller_info.get('model', actual_model)
+            
+            # Log which AI is being used
+            self.logger.info("=" * 60)
+            self.logger.info(f"🤖 Running Agent (Stream): {agent_id}")
+            self.logger.info(f"📋 Configured Provider: {configured_provider} | Model: {configured_model}")
+            self.logger.info(f"⚙️  Actual Provider: {actual_provider} | Model: {actual_model}")
+            if configured_provider.lower() not in actual_provider.lower():
+                self.logger.warning(f"⚠️  WARNING: Provider mismatch detected! Using {actual_provider} instead of {configured_provider}")
+            self.logger.info(f"💬 Query: {query[:100]}{'...' if len(query) > 100 else ''}")
+            self.logger.info("=" * 60)
+
             # Add context to query if provided
             if context:
                 context_str = "\n".join([f"{k}: {v}" for k, v in context.items()])
@@ -397,7 +530,6 @@ Question: {input}
                 full_query = query
 
             # Check if agent has tools
-            agent_config = agent_data['config']
             has_tools = bool(agent_config.rag_collections or agent_config.tools)
 
             if has_tools:

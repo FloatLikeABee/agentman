@@ -30,7 +30,7 @@ The project has been refactored from using Ollama to a flexible factory pattern 
 
 ```python
 # Gemini
-gemini_api_key: str = "AIzaSyAt19tBj232GyyUbM95MlZzZarqZcTKmsc"
+gemini_api_key: str = "AIzaSyBOE5DEz-Y7PJ4DB1rqR1cSyqWyWWBLl3A"
 gemini_default_model: str = "gemini-2.5-flash"
 
 # Qwen

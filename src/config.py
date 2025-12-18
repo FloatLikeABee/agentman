@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     default_model: str = "gemini-2.5-flash"
 
     # Gemini settings
-    gemini_api_key: str = "AIzaSyC6WILZREdUlsqQvQkNrpg_iqNI1K7SaE4"
+    gemini_api_key: str = "AIzaSyBOE5DEz-Y7PJ4DB1rqR1cSyqWyWWBLl3A"
     gemini_default_model: str = "gemini-2.5-flash"
 
     # Qwen settings
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     smtp_password: Optional[str] = None
 
     # Financial API settings
-    alpha_vantage_api_key: Optional[str] = None
+    alpha_vantage_api_key: Optional[str] = 'ED2OR4DHOZH8Z56J'
 
     class Config:
         env_file = ".env"

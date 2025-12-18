@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -27,6 +27,7 @@ import {
   Delete as DeleteIcon,
   PlayArrow as RunIcon,
   CheckCircle as CheckCircleIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import ReactMarkdown from 'react-markdown';
@@ -36,12 +37,14 @@ const AgentManager = () => {
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openRunDialog, setOpenRunDialog] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [editingAgentId, setEditingAgentId] = useState(null);
   const [queryText, setQueryText] = useState('');
   const [agentResponse, setAgentResponse] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     agent_type: 'rag',
+    llm_provider: 'gemini',
     model_name: '',
     temperature: 0.7,
     max_tokens: 8192,
@@ -61,10 +64,12 @@ const AgentManager = () => {
     onSuccess: () => {
       queryClient.invalidateQueries('agents');
       setOpenCreateDialog(false);
+      setEditingAgentId(null);
       setFormData({
         name: '',
         description: '',
         agent_type: 'rag',
+        llm_provider: 'gemini',
         model_name: '',
         temperature: 0.7,
         max_tokens: 8192,
@@ -75,6 +80,30 @@ const AgentManager = () => {
       });
     },
   });
+
+  const updateAgentMutation = useMutation(
+    ({ agentId, config }) => api.updateAgent(agentId, config),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('agents');
+        setOpenCreateDialog(false);
+        setEditingAgentId(null);
+        setFormData({
+          name: '',
+          description: '',
+          agent_type: 'rag',
+          llm_provider: 'gemini',
+          model_name: '',
+          temperature: 0.7,
+          max_tokens: 8192,
+          rag_collections: [],
+          tools: [],
+          system_prompt: '',
+          is_active: true,
+        });
+      },
+    }
+  );
 
   const deleteAgentMutation = useMutation(api.deleteAgent, {
     onSuccess: () => {
@@ -91,8 +120,67 @@ const AgentManager = () => {
     }
   );
 
+  // Clear query and response when dialog opens or selected agent changes
+  useEffect(() => {
+    if (openRunDialog && selectedAgent) {
+      setQueryText('');
+      setAgentResponse('');
+    }
+  }, [openRunDialog, selectedAgent]);
+
   const handleCreateAgent = () => {
-    createAgentMutation.mutate(formData);
+    if (editingAgentId) {
+      updateAgentMutation.mutate({ agentId: editingAgentId, config: formData });
+    } else {
+      createAgentMutation.mutate(formData);
+    }
+  };
+
+  const handleEditAgent = async (agentId) => {
+    try {
+      // Try to get full agent details from API
+      const agent = await api.getAgent(agentId);
+      let config = null;
+      
+      // Handle different response structures
+      if (agent && agent.config) {
+        config = agent.config;
+      } else if (agent && agent.name) {
+        // If agent data is directly the config
+        config = agent;
+      } else {
+        // Fallback: try to find agent in the list
+        const agentFromList = agents?.find(a => a.id === agentId);
+        if (agentFromList) {
+          // We have limited data from list, need to fetch full details
+          // But if API doesn't return config, we'll use what we have
+          config = agentFromList;
+        }
+      }
+      
+      if (config) {
+        setFormData({
+          name: config.name || '',
+          description: config.description || '',
+          agent_type: config.agent_type || 'rag',
+          llm_provider: config.llm_provider || 'gemini',
+          model_name: config.model_name || '',
+          temperature: config.temperature || 0.7,
+          max_tokens: config.max_tokens || 8192,
+          rag_collections: config.rag_collections || [],
+          tools: config.tools || [],
+          system_prompt: config.system_prompt || '',
+          is_active: config.is_active !== undefined ? config.is_active : true,
+        });
+        setEditingAgentId(agentId);
+        setOpenCreateDialog(true);
+      } else {
+        throw new Error('Agent configuration not found');
+      }
+    } catch (error) {
+      console.error('Error loading agent for editing:', error);
+      alert('Failed to load agent details. Please try again.');
+    }
   };
 
   const handleDeleteAgent = (agentId) => {
@@ -162,18 +250,31 @@ const AgentManager = () => {
                       size="small"
                       color="primary"
                       onClick={() => {
+                        setQueryText(''); // Clear previous query
+                        setAgentResponse(''); // Clear previous response
                         setSelectedAgent(agent);
                         setOpenRunDialog(true);
                       }}
                       sx={{ bgcolor: 'primary.light', '&:hover': { bgcolor: 'primary.main', color: 'white' } }}
+                      title="Run Agent"
                     >
                       <RunIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="secondary"
+                      onClick={() => handleEditAgent(agent.id)}
+                      sx={{ bgcolor: 'secondary.light', '&:hover': { bgcolor: 'secondary.main', color: 'white' } }}
+                      title="Edit Agent"
+                    >
+                      <EditIcon />
                     </IconButton>
                     <IconButton
                       size="small"
                       color="error"
                       onClick={() => handleDeleteAgent(agent.id)}
                       sx={{ bgcolor: 'error.light', '&:hover': { bgcolor: 'error.main', color: 'white' } }}
+                      title="Delete Agent"
                     >
                       <DeleteIcon />
                     </IconButton>
@@ -193,13 +294,38 @@ const AgentManager = () => {
         ))}
       </Grid>
 
-      {/* Create Agent Dialog */}
-      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ pb: 1 }}>Create New Agent</DialogTitle>
+      {/* Create/Edit Agent Dialog */}
+      <Dialog 
+        open={openCreateDialog} 
+        onClose={() => {
+          setOpenCreateDialog(false);
+          setEditingAgentId(null);
+          setFormData({
+            name: '',
+            description: '',
+            agent_type: 'rag',
+            llm_provider: 'gemini',
+            model_name: '',
+            temperature: 0.7,
+            max_tokens: 8192,
+            rag_collections: [],
+            tools: [],
+            system_prompt: '',
+            is_active: true,
+          });
+        }} 
+        maxWidth="md" 
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          {editingAgentId ? 'Edit Agent' : 'Create New Agent'}
+        </DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
-          {createAgentMutation.isError && (
+          {(createAgentMutation.isError || updateAgentMutation.isError) && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              Failed to create agent. Please check your inputs and try again.
+              {editingAgentId 
+                ? 'Failed to update agent. Please check your inputs and try again.'
+                : 'Failed to create agent. Please check your inputs and try again.'}
             </Alert>
           )}
           <Grid container spacing={3}>
@@ -249,6 +375,18 @@ const AgentManager = () => {
               <Typography variant="h6" gutterBottom color="primary">
                 Model Settings
               </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>LLM Provider</InputLabel>
+                <Select
+                  value={formData.llm_provider}
+                  onChange={(e) => setFormData({ ...formData, llm_provider: e.target.value })}
+                >
+                  <MenuItem value="gemini">Gemini</MenuItem>
+                  <MenuItem value="qwen">Qwen</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
@@ -373,13 +511,38 @@ const AgentManager = () => {
           </Grid>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
+          <Button 
+            onClick={() => {
+              setOpenCreateDialog(false);
+              setEditingAgentId(null);
+              setFormData({
+                name: '',
+                description: '',
+                agent_type: 'rag',
+                llm_provider: 'gemini',
+                model_name: '',
+                temperature: 0.7,
+                max_tokens: 8192,
+                rag_collections: [],
+                tools: [],
+                system_prompt: '',
+                is_active: true,
+              });
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={handleCreateAgent}
             variant="contained"
-            disabled={createAgentMutation.isLoading || !formData.name.trim()}
+            disabled={
+              (createAgentMutation.isLoading || updateAgentMutation.isLoading) || 
+              !formData.name.trim()
+            }
           >
-            {createAgentMutation.isLoading ? 'Creating...' : 'Create Agent'}
+            {editingAgentId 
+              ? (updateAgentMutation.isLoading ? 'Updating...' : 'Update Agent')
+              : (createAgentMutation.isLoading ? 'Creating...' : 'Create Agent')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -387,7 +550,11 @@ const AgentManager = () => {
       {/* Run Agent Dialog */}
       <Dialog
         open={openRunDialog}
-        onClose={() => setOpenRunDialog(false)}
+        onClose={() => {
+          setOpenRunDialog(false);
+          setQueryText(''); // Clear query when closing
+          setAgentResponse(''); // Clear response when closing
+        }}
         maxWidth="lg"
         fullWidth
         sx={{

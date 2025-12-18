@@ -51,6 +51,11 @@ export const getAgents = async () => {
   return response.data;
 };
 
+export const getAgent = async (agentId) => {
+  const response = await api.get(`/agents/${agentId}`);
+  return response.data;
+};
+
 export const createAgent = async (config) => {
   const response = await api.post('/agents', config);
   return response.data;
@@ -129,6 +134,12 @@ export const queryCustomization = async (profileId, payload) => {
   return response.data;
 };
 
+// Crawler
+export const crawlWebsite = async (payload) => {
+  const response = await api.post('/crawler/crawl', payload);
+  return response.data;
+};
+
 // Export all functions
 export default {
   getStatus,
@@ -138,6 +149,7 @@ export default {
   queryRAGCollection,
   deleteRAGCollection,
   getAgents,
+  getAgent,
   createAgent,
   updateAgent,
   deleteAgent,
@@ -152,4 +164,5 @@ export default {
   updateCustomization,
   deleteCustomization,
   queryCustomization,
+  crawlWebsite,
 }; 

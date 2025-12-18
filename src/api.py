@@ -22,6 +22,8 @@ from .models import (
     CustomizationCreateRequest,
     CustomizationQueryRequest,
     CustomizationQueryResponse,
+    CrawlerRequest,
+    CrawlerResponse,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -30,6 +32,7 @@ from .mcp_service import MCPService
 from .llm_factory import LLMFactory, LLMProvider
 from .llm_langchain_wrapper import LangChainLLMWrapper
 from .customization import CustomizationManager
+from .crawler import CrawlerService
 
 
 class RAGAPI:
@@ -72,6 +75,7 @@ class RAGAPI:
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
+        self.crawler_service = CrawlerService(self.rag_system)
         
         # Setup CORS - Allow all origins (configurable)
         # By default this uses settings.cors_origins which is ["*"],
@@ -201,14 +205,74 @@ class RAGAPI:
         async def get_agent(agent_id: str):
             """Get detailed information about a specific agent including its configuration and status."""
             try:
-                agent = self.agent_manager.get_agent(agent_id)
-                if agent:
-                    return agent
+                agent_data = self.agent_manager.get_agent(agent_id)
+                if agent_data:
+                    # Get config and convert to dict if it's a Pydantic model
+                    config = agent_data.get('config')
+                    config_dict = {}
+                    
+                    try:
+                        if config and hasattr(config, 'model_dump'):
+                            # Use model_dump with mode='python' to get plain Python types
+                            config_dict = config.model_dump(mode='python')
+                        elif config and hasattr(config, 'dict'):
+                            config_dict = config.dict()
+                        elif isinstance(config, dict):
+                            config_dict = config.copy()
+                        elif config:
+                            # Fallback: manually extract fields
+                            config_dict = {
+                                'name': getattr(config, 'name', 'Unknown') if hasattr(config, 'name') else 'Unknown',
+                                'description': getattr(config, 'description', '') if hasattr(config, 'description') else '',
+                                'agent_type': str(getattr(config, 'agent_type', 'rag')) if hasattr(config, 'agent_type') else 'rag',
+                                'llm_provider': str(getattr(config, 'llm_provider', 'gemini')) if hasattr(config, 'llm_provider') else 'gemini',
+                                'model_name': getattr(config, 'model_name', '') if hasattr(config, 'model_name') else '',
+                                'temperature': float(getattr(config, 'temperature', 0.7)) if hasattr(config, 'temperature') else 0.7,
+                                'max_tokens': int(getattr(config, 'max_tokens', 8192)) if hasattr(config, 'max_tokens') else 8192,
+                                'rag_collections': list(getattr(config, 'rag_collections', [])) if hasattr(config, 'rag_collections') else [],
+                                'tools': list(getattr(config, 'tools', [])) if hasattr(config, 'tools') else [],
+                                'system_prompt': getattr(config, 'system_prompt', '') if hasattr(config, 'system_prompt') else '',
+                                'is_active': bool(getattr(config, 'is_active', True)) if hasattr(config, 'is_active') else True,
+                            }
+                    except Exception as config_error:
+                        self.logger.warning(f"Error converting config to dict: {config_error}, using fallback")
+                        config_dict = {
+                            'name': 'Unknown',
+                            'description': '',
+                            'agent_type': 'rag',
+                            'llm_provider': 'gemini',
+                            'model_name': '',
+                            'temperature': 0.7,
+                            'max_tokens': 8192,
+                            'rag_collections': [],
+                            'tools': [],
+                            'system_prompt': '',
+                            'is_active': True,
+                        }
+                    
+                    # Ensure all values are JSON-serializable (convert enums, etc.)
+                    if 'llm_provider' in config_dict and hasattr(config_dict['llm_provider'], 'value'):
+                        config_dict['llm_provider'] = config_dict['llm_provider'].value
+                    if 'agent_type' in config_dict and hasattr(config_dict['agent_type'], 'value'):
+                        config_dict['agent_type'] = config_dict['agent_type'].value
+                    
+                    # Return only serializable data, exclude runtime objects
+                    return {
+                        'id': agent_id,
+                        'config': config_dict,
+                        'provider': str(agent_data.get('provider', 'Unknown')),
+                        'model': str(agent_data.get('model', 'Unknown')),
+                        # Exclude 'agent', 'llm', 'llm_caller', and 'rag_system' as they are not serializable
+                    }
                 else:
                     raise HTTPException(status_code=404, detail="Agent not found")
+            except HTTPException:
+                raise
             except Exception as e:
                 self.logger.error(f"Error getting agent: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                import traceback
+                self.logger.error(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=f"Error retrieving agent: {str(e)}")
 
         @self.app.put("/agents/{agent_id}", tags=["Agents"])
         async def update_agent(agent_id: str, config: AgentConfig):
@@ -657,6 +721,44 @@ Question: {{input}}
                 raise
             except Exception as e:
                 self.logger.error(f"Error querying customization {profile_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Crawler Endpoints
+        @self.app.post("/crawler/crawl", tags=["Crawler"], response_model=CrawlerResponse)
+        async def crawl_website(request: CrawlerRequest) -> CrawlerResponse:
+            """
+            Crawl a website, extract content with AI, and save to RAG collection.
+            AI will automatically generate collection name and description if not provided.
+            """
+            try:
+                result = self.crawler_service.crawl_and_save(
+                    url=request.url,
+                    use_js=request.use_js,
+                    llm_provider=request.llm_provider,
+                    model=request.model,
+                    collection_name=request.collection_name,
+                    collection_description=request.collection_description
+                )
+                
+                if result.get("success"):
+                    return CrawlerResponse(
+                        success=True,
+                        url=result["url"],
+                        collection_name=result.get("collection_name"),
+                        collection_description=result.get("collection_description"),
+                        raw_file=result.get("raw_file"),
+                        extracted_file=result.get("extracted_file"),
+                        extracted_data=result.get("extracted_data")
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Crawling failed")
+                    )
+            except Exception as e:
+                self.logger.error(f"Error crawling website: {e}")
+                import traceback
+                self.logger.error(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=str(e))
 
     def get_app(self) -> FastAPI:
