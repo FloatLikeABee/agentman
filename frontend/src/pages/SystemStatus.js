@@ -189,7 +189,7 @@ const SystemStatus = () => {
                 icon={<CollectionIcon />}
               >
                 <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  RAG System
+                  Ground Control
                 </Typography>
                 <Typography variant="h6">
                   {status?.rag_collections?.length || 0} collections

@@ -262,6 +262,14 @@ class AgentManager:
                 tool = self.tool_manager.get_tool(tool_name)
                 if tool:
                     tools.append(tool)
+                else:
+                    self.logger.warning(f"Tool '{tool_name}' not found in tool manager. Available tools: {list(self.tool_manager.tools.keys())}")
+            
+            # Log tools being added
+            if tools:
+                self.logger.info(f"Agent '{config.name}' will have {len(tools)} tools: {[t.name for t in tools]}")
+            else:
+                self.logger.warning(f"Agent '{config.name}' has NO tools available! This may cause issues.")
 
             # Create agent using create_react_agent with proper prompt
             from langchain.agents import AgentExecutor, create_react_agent
@@ -309,6 +317,12 @@ Question: {input}
             agent_prompt = create_react_agent(llm, tools, prompt)
             
             # Wrap in AgentExecutor with proper configuration
+            # Enable parsing error handling to allow agent to recover from malformed outputs
+            def handle_parsing_error(error: Exception) -> str:
+                """Handle parsing errors gracefully"""
+                self.logger.warning(f"Parsing error occurred: {error}. Attempting to recover...")
+                return f"Error parsing output: {str(error)}. Please try again with a clearer response format."
+
             agent = AgentExecutor(
                 agent=agent_prompt,
                 tools=tools,
@@ -316,7 +330,7 @@ Question: {input}
                 max_iterations=20,
                 early_stopping_method='force',
                 return_intermediate_steps=False,
-                handle_parsing_errors=False,
+                handle_parsing_errors=handle_parsing_error,
             )
 
             # Store agent with provider information

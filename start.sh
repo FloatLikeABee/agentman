@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# RAG System Startup Script
+# Ground Control Startup Script
 
-echo "🚀 Starting RAG System with MCP Support..."
+echo "🚀 Starting Ground Control with MCP Support..."
 
 # Check if Python is installed
 if ! command -v python3 &> /dev/null; then
@@ -92,7 +92,7 @@ cd frontend
 npm start &
 FRONTEND_PID=$!
 
-echo "✅ RAG System is starting up!"
+echo "✅ Ground Control is starting up!"
 echo "📱 Frontend: http://localhost:3000"
 echo "🔧 Backend API: http://localhost:8000"
 echo "📚 API Docs: http://localhost:8000/docs"
@@ -100,5 +100,5 @@ echo ""
 echo "Press Ctrl+C to stop the system"
 
 # Wait for user to stop
-trap "echo '🛑 Stopping RAG System...'; kill $BACKEND_PID $FRONTEND_PID; exit" INT
+trap "echo '🛑 Stopping Ground Control...'; kill $BACKEND_PID $FRONTEND_PID; exit" INT
 wait 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for the RAG System
+Test script for Ground Control
 """
 
 import requests
@@ -171,7 +171,7 @@ def test_tools():
 
 def main():
     """Run all tests"""
-    print("🧪 Testing RAG System...")
+    print("🧪 Testing Ground Control...")
     print("=" * 50)
     
     tests = [
@@ -196,7 +196,7 @@ def main():
     print(f"📊 Test Results: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed! The RAG system is working correctly.")
+        print("🎉 All tests passed! Ground Control is working correctly.")
         return 0
     else:
         print("⚠️  Some tests failed. Please check the system configuration.")

@@ -1,10 +1,10 @@
-# RAG System with MCP Support
+# Ground Control with MCP Support
 
 A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context Protocol (MCP) support for Ollama models. This system provides a complete solution for building, managing, and deploying AI agents with RAG capabilities.
 
 ## Features
 
-### 🧠 RAG System
+### 🧠 Ground Control
 - **Vector Database**: ChromaDB integration for efficient document storage and retrieval
 - **Multiple Formats**: Support for JSON, CSV, and text data formats
 - **Data Validation**: Built-in validation for all data inputs
@@ -43,7 +43,7 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   React Frontend│    │   FastAPI Backend│    │   Ollama Models │
 │                 │◄──►│                 │◄──►│                 │
-│  Material-UI    │    │  RAG System     │    │  Local/Remote   │
+│  Material-UI    │    │  Ground Control │    │  Local/Remote   │
 │  Components     │    │  Agent Manager  │    │  AI Models      │
 └─────────────────┘    │  Tool Manager   │    └─────────────────┘
                        │  MCP Service    │
@@ -247,7 +247,7 @@ The system implements the Model Context Protocol for stable communication with A
 
 The backend is built with FastAPI and includes:
 
-- **RAG System**: ChromaDB integration with sentence transformers
+- **Ground Control**: ChromaDB integration with sentence transformers
 - **Agent Manager**: LangChain-based agent orchestration
 - **Tool Manager**: Extensible tool system
 - **MCP Service**: WebSocket-based protocol implementation

@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
-    logger.info("Starting RAG System with MCP support...")
+    logger.info("Starting Ground Control with MCP support...")
     
     # Run the FastAPI application
     uvicorn.run(

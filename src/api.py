@@ -38,9 +38,9 @@ from .crawler import CrawlerService
 class RAGAPI:
     def __init__(self):
         self.app = FastAPI(
-            title="RAG System API",
+            title="Ground Control API",
             description="""
-            A comprehensive RAG (Retrieval-Augmented Generation) System API with MCP (Model Context Protocol) support.
+            Ground Control - A comprehensive RAG (Retrieval-Augmented Generation) System API with MCP (Model Context Protocol) support.
 
             ## Features
             - **Agent Management**: Create and manage AI agents with different LLM providers
@@ -58,7 +58,7 @@ class RAGAPI:
             """,
             version="1.0.0",
             contact={
-                "name": "RAG System Team",
+                "name": "Ground Control Team",
                 "email": "support@rag-system.com",
             },
             license_info={
@@ -102,7 +102,7 @@ class RAGAPI:
         
         @self.app.get("/")
         async def root():
-            return {"message": "RAG System API", "version": "1.0.0"}
+            return {"message": "Ground Control API", "version": "1.0.0"}
 
         @self.app.get("/status", tags=["System"])
         async def get_status() -> SystemStatus:

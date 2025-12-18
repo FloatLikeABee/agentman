@@ -1,1 +1,1 @@
-# RAG System with MCP Support 
+# Ground Control with MCP Support 
