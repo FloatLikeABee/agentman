@@ -192,6 +192,64 @@ class CustomizationQueryResponse(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
 
 
+class DatabaseType(str, Enum):
+    SQLSERVER = "sqlserver"
+    MYSQL = "mysql"
+    MONGODB = "mongodb"
+
+
+class DatabaseConnectionConfig(BaseModel):
+    """Database connection configuration"""
+    host: str = Field(..., description="Database host address")
+    port: int = Field(..., description="Database port number")
+    database: str = Field(..., description="Database name")
+    username: str = Field(..., description="Database username")
+    password: str = Field(..., description="Database password")
+    additional_params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional connection parameters (e.g., SSL settings, connection pool settings)"
+    )
+
+
+class DatabaseToolProfile(BaseModel):
+    """Stored database tool profile with connection and query configuration"""
+    id: str = Field(..., description="Unique database tool id")
+    name: str = Field(..., description="Display name")
+    description: Optional[str] = Field(None, description="Description / use case")
+    db_type: DatabaseType = Field(..., description="Database type (sqlserver, mysql, mongodb)")
+    connection_config: DatabaseConnectionConfig = Field(..., description="Database connection configuration")
+    sql_statement: str = Field(..., description="SQL query statement (for SQL databases) or query (for MongoDB)")
+    is_active: bool = Field(default=True, description="Whether this database tool is active")
+    cache_ttl_hours: float = Field(default=1.0, description="Cache TTL in hours (default: 1 hour)")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for this database tool"
+    )
+
+
+class DatabaseToolCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    db_type: DatabaseType
+    connection_config: DatabaseConnectionConfig
+    sql_statement: str
+    is_active: bool = Field(default=True)
+    cache_ttl_hours: float = Field(default=1.0, ge=0.1, le=24.0, description="Cache TTL in hours (0.1 to 24 hours)")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DatabaseToolPreviewResponse(BaseModel):
+    """Preview response showing first 10 rows of query results"""
+    tool_id: str = Field(..., description="Database tool ID")
+    tool_name: str = Field(..., description="Database tool name")
+    columns: List[str] = Field(..., description="Column names")
+    rows: List[List[Any]] = Field(..., description="First 10 rows of data")
+    total_rows: Optional[int] = Field(None, description="Total number of rows (if available)")
+    cached: bool = Field(..., description="Whether data is from cache")
+    cache_expires_at: Optional[str] = Field(None, description="Cache expiration timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
 class CrawlerRequest(BaseModel):
     url: str = Field(..., description="URL to crawl")
     use_js: bool = Field(default=False, description="Use JavaScript rendering (Playwright/Selenium)")

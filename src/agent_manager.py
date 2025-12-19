@@ -479,13 +479,13 @@ Question: {input}
                     self.logger.warning(f"Agent invoke failed: {invoke_error}")
                     # Try direct LLM call as fallback
                     llm = agent_data['llm']
-                    response_text = await llm.apredict(full_query)
+                    response_text = await llm.ainvoke(full_query)
                     print('llm-response:::::')
                     print(response_text)
             else:
                 # No tools, use direct LLM call
                 llm = agent_data['llm']
-                response_text = await llm.apredict(full_query)
+                response_text = await llm.ainvoke(full_query)
 
             return {
                 'response': response_text,

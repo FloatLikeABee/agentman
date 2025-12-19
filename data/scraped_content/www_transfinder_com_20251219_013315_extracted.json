@@ -1,0 +1,54 @@
+{
+  "collection_name": "special_needs_transport_tech",
+  "collection_description": "Insights from a TSD Conference panel on how technology improves safety, efficiency, and communication in special needs student transportation operations.",
+  "title": "TSD Panel Shares How Technology Improves Special Needs Transportation Operations",
+  "summary": "At the Transporting Students with Disabilities (TSD) Conference, three special needs transportation coordinators from Texas and Colorado shared how implementing Transfinder’s technology suite—包括 routing software, driver apps, and parent communication tools—has enhanced operational safety, reduced parent inquiries, and streamlined route management for students with disabilities.",
+  "main_topics": [
+    "special needs transportation",
+    "school bus routing technology",
+    "parent communication apps",
+    "real-time tracking",
+    "digital recordkeeping",
+    "driver support systems"
+  ],
+  "key_points": [
+    "Garland ISD (TX) transports 1,000 SPED students on 77 routes and replaced paper route sheets with Transfinder’s tablet-based system, improving safety and reducing distractions for drivers.",
+    "Stopfinder, a parent communication app, significantly decreased parent calls by providing real-time bus location and updates.",
+    "Melissa ISD (TX), serving ~170 special needs students, switched to Transfinder for its user-friendly interface, geographic filters, and ability to consolidate or split routes with one click.",
+    "Widefield School District #3 (CO) is transitioning from manual processes and fragmented systems to Routefinder PLUS and the Wayfinder driver app to centralize data access.",
+    "RFID cards help pinpoint student locations during emergencies, and digital records enable rapid identification of affected students in accidents.",
+    "Educators use Viewfinder to track student locations, while risk management staff access Transfinder systems for emergency response.",
+    "All districts emphasized phased rollouts, staff training, and keeping all data on a single platform to maximize efficiency and reduce errors."
+  ],
+  "detailed_content": "At the Transporting Students with Disabilities and Special Needs (TSD) Conference in Frisco, Texas, a panel of three female special needs routing specialists discussed how technology enhances special education transportation operations.\n\nSierra Long, special needs router for Garland Independent School District (near Dallas, TX), oversees transportation for 1,000 students across 77 daily SPED routes. The district replaced paper route sheets and siloed communication with Transfinder’s integrated technology suite. School buses are now equipped with tablets that drivers and monitors use to access student-specific information. This shift improved safety by eliminating driver distractions from handling paper documents and allows real-time route updates due to road conditions. Parent inquiries have dropped significantly since families began using the Stopfinder app to track bus locations. Long also highlighted Routefinder’s ability to route dozens of students per hour, saving time, and noted that the rollout began with a pilot program and included extensive staff training to support adoption.\n\nBailey Wouters, special education routing coordinator at Melissa Independent School District (also near Dallas, TX), manages transportation for about 170 special needs students. After switching from older routing software to Transfinder, her team benefited from a more intuitive interface, responsive tech support, and features like geographic filters that notify parents when buses approach designated stops. Construction-related delays now trigger automatic alerts to affected families. With one click, Wouters can visualize all SPED students on a map and adjust routes efficiently, allowing staff to focus more on student care.\n\nYvonne Morrison, special needs coordinator for Widefield School District #3 in Colorado Springs, CO, coordinates transport for over 200 students with disabilities on 27 routes. Her district still relies on paper attendance sheets and uses separate routing and GPS providers, leading to manual check-in/out processes and frustrated parent calls during delays. To address this, they are implementing Routefinder PLUS and rolling out the Wayfinder driver app with the goal of consolidating all relevant data onto a single platform for faster access.\n\nAll three panelists emphasized the critical role of digital records during emergencies. RFID cards help locate students accurately, and route changes automatically generate prepopulated messages to parents via Stopfinder. Risk management teams can instantly identify impacted students in case of an accident, and special education teachers use Viewfinder to monitor student whereabouts. Additionally, Routefinder systems allow specification of operational details like right-side pickups, and driver feedback helps align planned routes with actual performance.",
+  "entities": {
+    "people": [
+      "Sierra Long",
+      "Bailey Wouters",
+      "Yvonne Morrison",
+      "Claudia Newton",
+      "Robb Snyder"
+    ],
+    "organizations": [
+      "Transfinder",
+      "Garland Independent School District",
+      "Melissa Independent School District",
+      "Widefield School District #3",
+      "School Transportation News",
+      "Transporting Students with Disabilities and Special Needs (TSD) Conference"
+    ],
+    "locations": [
+      "Frisco, Texas",
+      "Dallas, Texas",
+      "Colorado Springs, Colorado"
+    ],
+    "dates": [
+      "November 9, 2025"
+    ]
+  },
+  "metadata": {
+    "source_url": "https://www.transfinder.com/news_events/TSD-Panel-Shares-How-Technology-Improves-Special-Needs-Transportation-Operations_2395-blog.htm",
+    "extracted_at": "2025-12-19T01:33:15.727767",
+    "content_type": "news"
+  }
+}

@@ -24,6 +24,10 @@ from .models import (
     CustomizationQueryResponse,
     CrawlerRequest,
     CrawlerResponse,
+    DatabaseToolProfile,
+    DatabaseToolCreateRequest,
+    DatabaseToolPreviewResponse,
+    DatabaseType,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -33,6 +37,7 @@ from .llm_factory import LLMFactory, LLMProvider
 from .llm_langchain_wrapper import LangChainLLMWrapper
 from .customization import CustomizationManager
 from .crawler import CrawlerService
+from .db_tools import DatabaseToolsManager
 
 
 class RAGAPI:
@@ -40,21 +45,127 @@ class RAGAPI:
         self.app = FastAPI(
             title="Ground Control API",
             description="""
-            Ground Control - A comprehensive RAG (Retrieval-Augmented Generation) System API with MCP (Model Context Protocol) support.
-
-            ## Features
-            - **Agent Management**: Create and manage AI agents with different LLM providers
-            - **RAG Collections**: Store and query knowledge bases using vector search
-            - **Tool Integration**: Connect various tools and APIs to agents
-            - **Direct LLM Calls**: Call LLMs directly with optional web search capability
-            - **Streaming Responses**: Real-time streaming of agent responses
-            - **MCP Support**: Compatible with Model Context Protocol for enhanced AI interactions
-
-            ## Authentication
-            Currently, no authentication is required for API access.
-
-            ## Rate Limits
-            No rate limiting is currently implemented.
+            # Ground Control API
+            
+            A comprehensive, production-ready RAG (Retrieval-Augmented Generation) System API with advanced AI agent orchestration, knowledge management, and Model Context Protocol (MCP) support.
+            
+            ## 🚀 Core Capabilities
+            
+            ### Agent Management
+            Create, configure, and manage intelligent AI agents with:
+            - Multiple LLM provider support (Gemini, Qwen)
+            - Customizable behavior via system prompts
+            - Tool integration for extended capabilities
+            - RAG integration for knowledge-augmented responses
+            - Streaming and non-streaming execution modes
+            
+            ### RAG (Retrieval-Augmented Generation)
+            Build and query knowledge bases with:
+            - Vector-based semantic search
+            - Multiple data format support (JSON, CSV, TXT, PDF, DOCX)
+            - Automatic content chunking and embedding
+            - High-performance similarity search
+            - Metadata and tagging support
+            
+            ### Tool Ecosystem
+            Extensible tool system including:
+            - **Web Search**: Real-time internet information retrieval
+            - **Wikipedia**: Factual information from Wikipedia
+            - **Calculator**: Mathematical computations
+            - **Email**: SMTP-based email sending
+            - **Financial**: Stock and financial data retrieval
+            - **Web Crawler**: Automated website content extraction with AI organization
+            - **Decision Equalizer**: AI-powered decision-making assistance
+            - **Custom Tools**: User-defined tool integration
+            
+            ### Direct LLM Access
+            Direct language model access with:
+            - Model selection and parameter control
+            - Optional web search integration
+            - Custom system prompts
+            - Temperature and token limit configuration
+            
+            ### Customization Profiles
+            Reusable AI behavior templates with:
+            - Custom system prompts
+            - RAG collection associations
+            - Model and provider overrides
+            - Template-based query execution
+            
+            ### Model Context Protocol (MCP)
+            WebSocket-based protocol for:
+            - Real-time AI interactions
+            - Enhanced context management
+            - Bidirectional communication
+            - Tool execution via protocol
+            
+            ## 📚 API Organization
+            
+            The API is organized into logical groups:
+            
+            - **System**: Health checks and system status
+            - **RAG**: Knowledge base management and querying
+            - **Agents**: AI agent lifecycle and execution
+            - **Direct LLM**: Direct model access
+            - **Tools**: Tool management and configuration
+            - **Models**: Model and provider information
+            - **MCP**: Model Context Protocol server
+            - **Customizations**: Behavior template management
+            - **Crawler**: Website crawling and content extraction
+            
+            ## 🔧 Technical Details
+            
+            ### LLM Providers
+            - **Google Gemini**: High-performance multimodal models
+            - **Alibaba Qwen**: Advanced language understanding models
+            
+            ### Vector Database
+            - ChromaDB for persistent vector storage
+            - Sentence transformers for embeddings
+            - Configurable chunking strategies
+            
+            ### Agent Framework
+            - LangChain-based agent orchestration
+            - ReAct (Reasoning + Acting) pattern
+            - Tool calling and RAG integration
+            - Streaming response support
+            
+            ## 🔐 Security & Configuration
+            
+            ### Authentication
+            Currently, no authentication is required. For production deployments, implement authentication middleware.
+            
+            ### Rate Limiting
+            No rate limiting is currently implemented. Consider implementing rate limiting for production use.
+            
+            ### CORS
+            Configurable CORS settings support cross-origin requests. Default allows all origins.
+            
+            ## 📖 Getting Started
+            
+            1. **Check System Status**: `GET /status` - Verify system health and available resources
+            2. **Create RAG Collection**: `POST /rag/collections/{name}/data` - Add knowledge base content
+            3. **Create Agent**: `POST /agents` - Configure an AI agent with tools and RAG
+            4. **Execute Agent**: `POST /agents/{id}/run` - Run queries through your agent
+            5. **Query RAG**: `POST /rag/collections/{name}/query` - Direct knowledge base search
+            
+            ## 🎯 Use Cases
+            
+            - **Customer Support**: AI agents with FAQ knowledge bases
+            - **Research Assistants**: Document analysis and information retrieval
+            - **Content Management**: Automated content organization and search
+            - **Decision Support**: AI-powered decision-making tools
+            - **Knowledge Bases**: Enterprise knowledge management systems
+            - **Documentation Systems**: Searchable technical documentation
+            
+            ## 📝 API Documentation
+            
+            This API provides comprehensive Swagger/OpenAPI documentation. Access interactive documentation at:
+            - **Swagger UI**: `/docs` - Interactive API explorer
+            - **ReDoc**: `/redoc` - Alternative documentation interface
+            - **OpenAPI Schema**: `/openapi.json` - Machine-readable API specification
+            
+            All endpoints include detailed descriptions, request/response examples, and parameter documentation.
             """,
             version="1.0.0",
             contact={
@@ -76,6 +187,7 @@ class RAGAPI:
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
+        self.db_tools_manager = DatabaseToolsManager()
         
         # Setup CORS - Allow all origins (configurable)
         # By default this uses settings.cors_origins which is ["*"],
@@ -100,13 +212,53 @@ class RAGAPI:
     def _setup_routes(self):
         """Setup API routes"""
         
-        @self.app.get("/")
+        @self.app.get(
+            "/",
+            tags=["System"],
+            summary="API Root",
+            description="Root endpoint that returns basic API information and version.",
+            response_description="API information including name and version number."
+        )
         async def root():
+            """
+            **API Root Endpoint**
+            
+            Returns basic information about the Ground Control API including the current version.
+            This endpoint can be used for health checks and API discovery.
+            """
             return {"message": "Ground Control API", "version": "1.0.0"}
 
-        @self.app.get("/status", tags=["System"])
+        @self.app.get(
+            "/status",
+            tags=["System"],
+            summary="Get System Status",
+            description="Retrieve comprehensive system status including available LLM providers, models, RAG collections, active agents, and configured tools.",
+            response_model=SystemStatus,
+            response_description="Complete system status with all available resources and configurations."
+        )
         async def get_status() -> SystemStatus:
-            """Get comprehensive system status including available providers, models, collections, agents, and tools."""
+            """
+            **Get Comprehensive System Status**
+            
+            Returns a detailed overview of the entire system state including:
+            
+            - **LLM Providers**: List of available language model providers (e.g., Gemini, Qwen)
+            - **Available Models**: All configured models with their specifications
+            - **RAG Collections**: Knowledge bases available for retrieval
+            - **Active Agents**: Currently configured and active AI agents
+            - **Available Tools**: Tools that can be used by agents
+            
+            This endpoint is useful for:
+            - System monitoring and health checks
+            - Discovering available resources
+            - Debugging configuration issues
+            - Understanding system capabilities
+            
+            **Example Use Cases:**
+            - Check if required providers are configured
+            - Verify RAG collections are loaded
+            - Monitor active agent count
+            """
             try:
                 llm_providers = self.agent_manager.get_available_providers()
                 available_models = self.agent_manager.get_available_models()
@@ -127,18 +279,104 @@ class RAGAPI:
                 raise HTTPException(status_code=500, detail=str(e))
 
         # RAG Endpoints
-        @self.app.post("/rag/validate", tags=["RAG"])
+        @self.app.post(
+            "/rag/validate",
+            tags=["RAG"],
+            summary="Validate RAG Data",
+            description="Validate RAG data input format, structure, and content before adding to collections. Ensures data quality and compatibility.",
+            response_model=RAGDataValidation,
+            response_description="Validation results including validity status, errors, warnings, and record count."
+        )
         async def validate_rag_data(data_input: RAGDataInput) -> RAGDataValidation:
-            """Validate RAG data input before adding to collections."""
+            """
+            **Validate RAG Data Input**
+            
+            Performs comprehensive validation on RAG data before it's added to a collection. This includes:
+            
+            - **Format Validation**: Verifies the data format (JSON, CSV, TXT, PDF, DOCX) is correct
+            - **Structure Validation**: Checks data structure matches expected schema
+            - **Content Validation**: Ensures content is parseable and meaningful
+            - **Record Counting**: Counts records/documents in the data
+            
+            **Validation Checks:**
+            - JSON structure and syntax
+            - CSV column consistency
+            - Text content quality
+            - File format compatibility
+            
+            **Returns:**
+            - `is_valid`: Boolean indicating if data passes all validation checks
+            - `errors`: List of critical errors that prevent data ingestion
+            - `warnings`: List of warnings that don't prevent ingestion but should be reviewed
+            - `record_count`: Number of records/documents found in the data
+            
+            **Best Practice:** Always validate data before adding to collections to catch issues early.
+            """
             try:
                 return self.rag_system.validate_data(data_input)
             except Exception as e:
                 self.logger.error(f"Error validating data: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/rag/collections/{collection_name}/data", tags=["RAG"])
-        async def add_rag_data(collection_name: str, data_input: RAGDataInput):
-            """Add data to a specific RAG collection for vector search and retrieval."""
+        @self.app.post(
+            "/rag/collections/{collection_name}/data",
+            tags=["RAG"],
+            summary="Add Data to RAG Collection",
+            description="Add structured data to a RAG collection. The data will be processed, chunked, embedded, and indexed for semantic search.",
+            response_description="Confirmation message indicating successful data addition.",
+            responses={
+                200: {
+                    "description": "Data successfully added to collection",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Data added to collection my_knowledge_base"}
+                        }
+                    }
+                },
+                400: {"description": "Data validation failed or collection operation failed"},
+                500: {"description": "Internal server error during data processing"}
+            }
+        )
+        async def add_rag_data(
+            collection_name: str,
+            data_input: RAGDataInput
+        ):
+            """
+            **Add Data to RAG Collection**
+            
+            Ingests data into a specified RAG collection for later retrieval via semantic search.
+            
+            **Process Flow:**
+            1. Validates the input data format and structure
+            2. Processes data according to its format (parses JSON, CSV, etc.)
+            3. Splits content into appropriate chunks for embedding
+            4. Generates vector embeddings using the configured embedding model
+            5. Stores vectors and metadata in ChromaDB collection
+            6. Indexes for fast semantic search
+            
+            **Parameters:**
+            - `collection_name`: Name of the target RAG collection (created automatically if doesn't exist)
+            - `data_input`: RAGDataInput object containing:
+              - `name`: Unique identifier for this data entry
+              - `description`: Human-readable description
+              - `format`: Data format (json, csv, txt, pdf, docx)
+              - `content`: The actual data content
+              - `tags`: Optional tags for categorization
+              - `metadata`: Additional metadata dictionary
+            
+            **Supported Formats:**
+            - **JSON**: Structured data, automatically parsed and chunked
+            - **CSV**: Tabular data, each row becomes a searchable document
+            - **TXT**: Plain text, chunked by paragraphs/sentences
+            - **PDF**: PDF documents, text extracted and chunked
+            - **DOCX**: Word documents, text extracted and chunked
+            
+            **Use Cases:**
+            - Building knowledge bases from documents
+            - Adding structured data for retrieval
+            - Populating collections with domain-specific information
+            - Creating searchable document repositories
+            """
             try:
                 success = self.rag_system.add_data_to_collection(collection_name, data_input)
                 if success:
@@ -149,18 +387,120 @@ class RAGAPI:
                 self.logger.error(f"Error adding data: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/rag/collections", tags=["RAG"])
+        @self.app.get(
+            "/rag/collections",
+            tags=["RAG"],
+            summary="List RAG Collections",
+            description="Retrieve a list of all RAG collections in the system with their metadata, document counts, and configuration details.",
+            response_description="Array of collection objects with name, document count, and metadata."
+        )
         async def list_rag_collections():
-            """List all available RAG collections with their metadata and document counts."""
+            """
+            **List All RAG Collections**
+            
+            Returns comprehensive information about all RAG collections in the system.
+            
+            **Response Includes:**
+            - Collection names
+            - Document/record counts per collection
+            - Collection metadata
+            - Creation and modification information
+            
+            **Use Cases:**
+            - Discover available knowledge bases
+            - Monitor collection sizes
+            - Check collection health
+            - Plan data management operations
+            
+            **Example Response:**
+            ```json
+            [
+              {
+                "name": "product_docs",
+                "count": 1250,
+                "metadata": {"description": "Product documentation"}
+              },
+              {
+                "name": "faq_knowledge",
+                "count": 342,
+                "metadata": {"description": "Frequently asked questions"}
+              }
+            ]
+            ```
+            """
             try:
                 return self.rag_system.list_collections()
             except Exception as e:
                 self.logger.error(f"Error listing collections: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/rag/collections/{collection_name}/query", tags=["RAG"])
+        @self.app.post(
+            "/rag/collections/{collection_name}/query",
+            tags=["RAG"],
+            summary="Query RAG Collection",
+            description="Perform semantic search on a RAG collection to find the most relevant documents based on the query. Uses vector similarity search.",
+            response_description="Search results containing relevant documents with similarity scores.",
+            responses={
+                200: {
+                    "description": "Query executed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "results": [
+                                    {
+                                        "content": "Document content here...",
+                                        "metadata": {"source": "doc1"},
+                                        "distance": 0.23
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Collection not found"},
+                500: {"description": "Error during query execution"}
+            }
+        )
         async def query_rag_collection(collection_name: str, request: RAGQueryRequest):
-            """Query a specific RAG collection using semantic search to find relevant documents."""
+            """
+            **Query RAG Collection with Semantic Search**
+            
+            Performs vector similarity search on a RAG collection to find documents most relevant to the query.
+            
+            **How It Works:**
+            1. Converts the query text into a vector embedding
+            2. Searches the collection for vectors with highest cosine similarity
+            3. Returns the top N most relevant documents
+            4. Includes similarity scores (lower distance = more relevant)
+            
+            **Parameters:**
+            - `collection_name`: Name of the RAG collection to search
+            - `query`: Natural language query string
+            - `n_results`: Number of results to return (1-100, default: 5)
+            
+            **Search Characteristics:**
+            - **Semantic Understanding**: Finds documents by meaning, not just keyword matching
+            - **Context-Aware**: Understands synonyms, related concepts, and context
+            - **Ranked Results**: Results sorted by relevance (distance score)
+            - **Metadata Included**: Each result includes source metadata for traceability
+            
+            **Use Cases:**
+            - Finding relevant information in knowledge bases
+            - Retrieving context for LLM prompts (RAG)
+            - Searching document repositories
+            - Answering questions from stored knowledge
+            
+            **Example Queries:**
+            - "How do I reset my password?"
+            - "What are the system requirements?"
+            - "Explain the authentication process"
+            
+            **Response Format:**
+            Each result includes:
+            - `content`: The document text/content
+            - `metadata`: Source information and tags
+            - `distance`: Similarity score (0.0 = perfect match, higher = less similar)
+            """
             try:
                 results = self.rag_system.query_collection(collection_name, request.query, request.n_results)
                 return {"results": results}
@@ -168,9 +508,53 @@ class RAGAPI:
                 self.logger.error(f"Error querying collection: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.delete("/rag/collections/{collection_name}", tags=["RAG"])
+        @self.app.delete(
+            "/rag/collections/{collection_name}",
+            tags=["RAG"],
+            summary="Delete RAG Collection",
+            description="Permanently delete a RAG collection and all its associated data, embeddings, and metadata. This action cannot be undone.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {
+                    "description": "Collection successfully deleted",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Collection product_docs deleted"}
+                        }
+                    }
+                },
+                400: {"description": "Failed to delete collection"},
+                404: {"description": "Collection not found"},
+                500: {"description": "Error during deletion"}
+            }
+        )
         async def delete_rag_collection(collection_name: str):
-            """Delete a RAG collection and all its associated data."""
+            """
+            **Delete RAG Collection**
+            
+            Permanently removes a RAG collection and all associated data from the system.
+            
+            **What Gets Deleted:**
+            - All documents and content in the collection
+            - All vector embeddings
+            - Collection metadata
+            - Index structures
+            
+            **⚠️ Warning:**
+            This operation is **irreversible**. All data in the collection will be permanently lost.
+            Consider backing up important data before deletion.
+            
+            **Use Cases:**
+            - Removing outdated or incorrect collections
+            - Cleaning up test/development collections
+            - Freeing up storage space
+            - Rebuilding collections with new data
+            
+            **Best Practices:**
+            - Verify collection name before deletion
+            - Export important data before deleting
+            - Use this endpoint carefully in production environments
+            """
             try:
                 success = self.rag_system.delete_collection(collection_name)
                 if success:
@@ -182,9 +566,79 @@ class RAGAPI:
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Agent Endpoints
-        @self.app.post("/agents", tags=["Agents"])
+        @self.app.post(
+            "/agents",
+            tags=["Agents"],
+            summary="Create AI Agent",
+            description="Create a new AI agent with custom configuration including LLM provider, model selection, tools, RAG collections, and behavior settings.",
+            response_model=Dict[str, Any],
+            response_description="Agent creation response with agent_id and success message.",
+            responses={
+                200: {
+                    "description": "Agent created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "agent_id": "customer_support_agent",
+                                "message": "Agent created successfully"
+                            }
+                        }
+                    }
+                },
+                500: {"description": "Error during agent creation"}
+            }
+        )
         async def create_agent(config: AgentConfig):
-            """Create a new AI agent with specified configuration including LLM provider, model, tools, and RAG collections."""
+            """
+            **Create New AI Agent**
+            
+            Creates a fully configured AI agent that can process queries, use tools, and access RAG collections.
+            
+            **Agent Configuration Options:**
+            
+            **Basic Settings:**
+            - `name`: Unique agent identifier (required)
+            - `description`: Human-readable description of agent's purpose
+            - `agent_type`: Type of agent (rag, tool, hybrid)
+            
+            **LLM Configuration:**
+            - `llm_provider`: LLM provider (gemini, qwen)
+            - `model_name`: Specific model to use (e.g., "gemini-2.5-flash", "qwen3-max")
+            - `temperature`: Creativity/randomness (0.0-2.0, default: 0.7)
+            - `max_tokens`: Maximum response length (1-32768, default: 8192)
+            
+            **Capabilities:**
+            - `rag_collections`: List of RAG collection names to enable as knowledge sources
+            - `tools`: List of tool IDs to enable (e.g., ["web_search", "calculator", "crawler"])
+            - `system_prompt`: Custom system prompt defining agent behavior and personality
+            
+            **Agent Types:**
+            - **RAG**: Focused on retrieval-augmented generation from knowledge bases
+            - **Tool**: Emphasizes tool usage for actions and external data
+            - **Hybrid**: Combines both RAG and tool capabilities
+            
+            **Use Cases:**
+            - Customer support agents with FAQ knowledge
+            - Research assistants with document access
+            - Task automation agents with tool integration
+            - Specialized domain experts with curated knowledge
+            
+            **Example Configuration:**
+            ```json
+            {
+              "name": "Support Agent",
+              "description": "Customer support assistant",
+              "agent_type": "hybrid",
+              "llm_provider": "gemini",
+              "model_name": "gemini-2.5-flash",
+              "temperature": 0.7,
+              "max_tokens": 4096,
+              "rag_collections": ["faq_knowledge", "product_docs"],
+              "tools": ["web_search", "calculator"],
+              "system_prompt": "You are a helpful customer support agent..."
+            }
+            ```
+            """
             try:
                 agent_id = self.agent_manager.create_agent(config)
                 return {"agent_id": agent_id, "message": "Agent created successfully"}
@@ -192,18 +646,87 @@ class RAGAPI:
                 self.logger.error(f"Error creating agent: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/agents", tags=["Agents"])
+        @self.app.get(
+            "/agents",
+            tags=["Agents"],
+            summary="List All Agents",
+            description="Retrieve a list of all configured agents with their current status, configurations, and capabilities.",
+            response_description="Array of agent objects with complete configuration details."
+        )
         async def list_agents():
-            """List all configured agents with their current status and configurations."""
+            """
+            **List All Configured Agents**
+            
+            Returns comprehensive information about all agents in the system.
+            
+            **Response Includes:**
+            - Agent ID and name
+            - Description and type
+            - LLM provider and model configuration
+            - Enabled RAG collections
+            - Enabled tools
+            - Active/inactive status
+            - System prompt (if configured)
+            
+            **Use Cases:**
+            - Discover available agents
+            - Review agent configurations
+            - Monitor agent status
+            - Plan agent management operations
+            
+            **Response Format:**
+            Each agent object contains:
+            - `id`: Unique agent identifier
+            - `name`: Display name
+            - `description`: Agent purpose description
+            - `agent_type`: Type (rag/tool/hybrid)
+            - `model_name`: LLM model being used
+            - `is_active`: Whether agent is currently active
+            - `rag_collections`: List of enabled knowledge bases
+            - `tools`: List of enabled tool IDs
+            """
             try:
                 return self.agent_manager.list_agents()
             except Exception as e:
                 self.logger.error(f"Error listing agents: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/agents/{agent_id}", tags=["Agents"])
+        @self.app.get(
+            "/agents/{agent_id}",
+            tags=["Agents"],
+            summary="Get Agent Details",
+            description="Retrieve detailed information about a specific agent including full configuration, status, and runtime information.",
+            response_description="Complete agent details with configuration and runtime status.",
+            responses={
+                200: {"description": "Agent found and returned"},
+                404: {"description": "Agent not found"}
+            }
+        )
         async def get_agent(agent_id: str):
-            """Get detailed information about a specific agent including its configuration and status."""
+            """
+            **Get Agent Details**
+            
+            Returns comprehensive details about a specific agent.
+            
+            **Information Included:**
+            - Complete configuration (all settings)
+            - Current runtime status
+            - Active provider and model
+            - Enabled capabilities (RAG collections, tools)
+            - System prompt configuration
+            
+            **Use Cases:**
+            - Inspect agent configuration
+            - Debug agent behavior
+            - Verify agent settings
+            - Prepare for agent updates
+            
+            **Response Includes:**
+            - Full `config` object with all settings
+            - `provider`: Actual LLM provider in use
+            - `model`: Actual model being used
+            - Runtime status information
+            """
             try:
                 agent_data = self.agent_manager.get_agent(agent_id)
                 if agent_data:
@@ -274,9 +797,60 @@ class RAGAPI:
                 self.logger.error(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=f"Error retrieving agent: {str(e)}")
 
-        @self.app.put("/agents/{agent_id}", tags=["Agents"])
+        @self.app.put(
+            "/agents/{agent_id}",
+            tags=["Agents"],
+            summary="Update Agent Configuration",
+            description="Update an existing agent's configuration. The agent will be recreated with new settings, preserving the same agent_id.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {
+                    "description": "Agent updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Agent updated successfully"}
+                        }
+                    }
+                },
+                400: {"description": "Failed to update agent"},
+                404: {"description": "Agent not found"},
+                500: {"description": "Error during update"}
+            }
+        )
         async def update_agent(agent_id: str, config: AgentConfig):
-            """Update an existing agent's configuration. The agent will be recreated with the new settings."""
+            """
+            **Update Agent Configuration**
+            
+            Updates an existing agent with new configuration settings.
+            
+            **Update Process:**
+            1. Validates new configuration
+            2. Removes old agent instance
+            3. Creates new agent with updated settings
+            4. Preserves the same agent_id
+            
+            **What Can Be Updated:**
+            - LLM provider and model
+            - Temperature and max_tokens
+            - RAG collections
+            - Tools
+            - System prompt
+            - Agent type
+            - Active status
+            
+            **Important Notes:**
+            - Agent is recreated, so any in-flight requests may be affected
+            - Agent_id remains the same
+            - All configuration fields must be provided (full replacement)
+            - Changes take effect immediately
+            
+            **Use Cases:**
+            - Adjusting agent behavior
+            - Changing LLM model
+            - Adding/removing capabilities
+            - Updating system prompts
+            - Modifying agent parameters
+            """
             try:
                 success = self.agent_manager.update_agent(agent_id, config)
                 if success:
@@ -287,9 +861,51 @@ class RAGAPI:
                 self.logger.error(f"Error updating agent: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.delete("/agents/{agent_id}", tags=["Agents"])
+        @self.app.delete(
+            "/agents/{agent_id}",
+            tags=["Agents"],
+            summary="Delete Agent",
+            description="Permanently delete an agent and remove it from the system. This action cannot be undone.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {
+                    "description": "Agent deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Agent deleted successfully"}
+                        }
+                    }
+                },
+                400: {"description": "Failed to delete agent"},
+                404: {"description": "Agent not found"},
+                500: {"description": "Error during deletion"}
+            }
+        )
         async def delete_agent(agent_id: str):
-            """Delete an agent and remove it from the system permanently."""
+            """
+            **Delete Agent**
+            
+            Permanently removes an agent from the system.
+            
+            **What Gets Deleted:**
+            - Agent configuration
+            - Agent instance
+            - Agent metadata
+            
+            **What Is Preserved:**
+            - RAG collections (not deleted)
+            - Tools (still available)
+            - Other agents (unaffected)
+            
+            **⚠️ Warning:**
+            This operation is **irreversible**. The agent and its configuration will be permanently lost.
+            
+            **Use Cases:**
+            - Removing unused or obsolete agents
+            - Cleaning up test agents
+            - Freeing system resources
+            - Reorganizing agent structure
+            """
             try:
                 success = self.agent_manager.delete_agent(agent_id)
                 if success:
@@ -300,9 +916,70 @@ class RAGAPI:
                 self.logger.error(f"Error deleting agent: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/agents/{agent_id}/run", tags=["Agents"])
+        @self.app.post(
+            "/agents/{agent_id}/run",
+            tags=["Agents"],
+            summary="Execute Agent",
+            description="Execute an agent with a query. The agent will process the query using its configured LLM, tools, and RAG collections, then return a response.",
+            response_model=QueryResponse,
+            response_description="Agent response with answer, sources, and metadata.",
+            responses={
+                200: {
+                    "description": "Agent executed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "response": "Based on the knowledge base...",
+                                "sources": [],
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Agent not found"},
+                500: {"description": "Error during agent execution"}
+            }
+        )
         async def run_agent(agent_id: str, request: QueryRequest):
-            """Execute an agent with a query and optional context. Returns the agent's response."""
+            """
+            **Execute Agent with Query**
+            
+            Runs an agent to process a query and generate a response.
+            
+            **Execution Flow:**
+            1. Agent receives query and optional context
+            2. If RAG collections enabled: Searches knowledge bases for relevant information
+            3. If tools enabled: Agent decides which tools to use and executes them
+            4. LLM processes query with retrieved context and tool results
+            5. Returns final response
+            
+            **Parameters:**
+            - `agent_id`: Identifier of the agent to execute
+            - `query`: Natural language query/question
+            - `context`: Optional additional context dictionary
+            
+            **Agent Capabilities:**
+            - **RAG Integration**: Automatically searches knowledge bases when relevant
+            - **Tool Usage**: Can use enabled tools (web search, calculator, etc.)
+            - **Reasoning**: Uses ReAct pattern for multi-step reasoning
+            - **Context Awareness**: Incorporates context and retrieved information
+            
+            **Response Includes:**
+            - `response`: The agent's answer
+            - `sources`: Source documents used (if RAG was used)
+            - `metadata`: Execution metadata (model used, tokens, etc.)
+            
+            **Use Cases:**
+            - Answering questions using knowledge bases
+            - Performing tasks with tools
+            - Research and information gathering
+            - Complex multi-step problem solving
+            
+            **Example Queries:**
+            - "What are the system requirements for Product X?"
+            - "Calculate the total cost for 5 units at $25 each"
+            - "Search the web for latest news about AI"
+            """
             try:
                 result = await self.agent_manager.run_agent(
                     agent_id,
@@ -318,9 +995,64 @@ class RAGAPI:
                 self.logger.error(f"Error running agent: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/agents/{agent_id}/run/stream", tags=["Agents"])
+        @self.app.post(
+            "/agents/{agent_id}/run/stream",
+            tags=["Agents"],
+            summary="Execute Agent with Streaming",
+            description="Execute an agent with real-time streaming response. Returns text chunks as they are generated, providing immediate feedback to users.",
+            response_description="Streaming text response (text/plain format).",
+            responses={
+                200: {
+                    "description": "Streaming response initiated",
+                    "content": {
+                        "text/plain": {
+                            "example": "The agent is processing...\n\nBased on the knowledge base..."
+                        }
+                    }
+                },
+                404: {"description": "Agent not found"},
+                500: {"description": "Error during streaming execution"}
+            }
+        )
         async def run_agent_stream(agent_id: str, request: QueryRequest):
-            """Execute an agent with streaming response. Returns a stream of text chunks as the agent generates its response."""
+            """
+            **Execute Agent with Streaming Response**
+            
+            Runs an agent with real-time streaming output for better user experience.
+            
+            **Streaming Benefits:**
+            - **Immediate Feedback**: Users see responses as they're generated
+            - **Better UX**: No need to wait for complete response
+            - **Progress Indication**: Shows when agent is thinking/processing
+            - **Lower Perceived Latency**: Feels faster than waiting for full response
+            
+            **How It Works:**
+            1. Agent processes query (may take time for tool calls/RAG)
+            2. Once LLM starts generating, text is streamed chunk by chunk
+            3. Client receives text in real-time
+            4. Stream completes when agent finishes
+            
+            **Response Format:**
+            - Content-Type: `text/plain`
+            - Streaming: Server-Sent Events (SSE) compatible
+            - Encoding: UTF-8
+            
+            **Use Cases:**
+            - Interactive chat interfaces
+            - Real-time assistant applications
+            - Long-running queries where immediate feedback is important
+            - User-facing applications requiring responsive UX
+            
+            **Client Implementation:**
+            ```javascript
+            const response = await fetch('/agents/my_agent/run/stream', {
+              method: 'POST',
+              body: JSON.stringify({query: "Your question"})
+            });
+            const reader = response.body.getReader();
+            // Read chunks and display in real-time
+            ```
+            """
             try:
                 return StreamingResponse(
                     self.agent_manager.run_agent_stream(
@@ -335,9 +1067,86 @@ class RAGAPI:
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Direct LLM Endpoints
-        @self.app.post("/llm/direct", tags=["Direct LLM"])
+        @self.app.post(
+            "/llm/direct",
+            tags=["Direct LLM"],
+            summary="Direct LLM Call",
+            description="Call an LLM directly without agent orchestration. Supports optional web search tool and custom parameters. Useful for simple queries or testing.",
+            response_model=DirectLLMResponse,
+            response_description="LLM response with model information and metadata.",
+            responses={
+                200: {
+                    "description": "LLM call successful",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "response": "The answer to your question...",
+                                "model_used": "gemini-2.5-flash",
+                                "web_search_used": True,
+                                "metadata": {
+                                    "temperature": 0.7,
+                                    "max_tokens": 8192,
+                                    "provider": "gemini"
+                                }
+                            }
+                        }
+                    }
+                },
+                503: {"description": "LLM service unavailable (network/DNS issues)"},
+                504: {"description": "LLM request timeout"},
+                500: {"description": "Error during LLM call"}
+            }
+        )
         async def call_llm_direct(request: DirectLLMRequest) -> DirectLLMResponse:
-            """Call LLM directly with optional web search capability. Allows specifying model and parameters directly."""
+            """
+            **Direct LLM Call**
+            
+            Calls a language model directly without agent orchestration. This is useful for:
+            - Simple queries that don't need agent reasoning
+            - Testing LLM models and configurations
+            - Quick responses without full agent setup
+            - Custom use cases requiring direct model access
+            
+            **Features:**
+            - **Model Selection**: Choose any available model by name
+            - **Parameter Control**: Set temperature, max_tokens, and system prompt
+            - **Optional Web Search**: Enable web search tool for current information
+            - **Fast Response**: Bypasses agent overhead for quicker responses
+            
+            **Request Parameters:**
+            - `query`: The question or prompt to send to the LLM
+            - `model_name`: Model identifier (e.g., "gemini-2.5-flash", "qwen3-max")
+            - `temperature`: Creativity level (0.0-2.0, default: 0.7)
+            - `max_tokens`: Maximum response length (1-32768, default: 8192)
+            - `use_web_search`: Enable web search tool (default: true)
+            - `system_prompt`: Custom system prompt (optional)
+            
+            **Model Detection:**
+            - Models starting with "gemini" → Uses Gemini API
+            - Models starting with "qwen" → Uses Qwen API
+            - Unknown models → Defaults to Gemini
+            
+            **Web Search Integration:**
+            When enabled, the LLM can search the web for current information and incorporate it into responses.
+            
+            **Response Includes:**
+            - `response`: The LLM's answer
+            - `model_used`: Actual model that processed the request
+            - `web_search_used`: Whether web search was utilized
+            - `metadata`: Request parameters and provider information
+            
+            **Error Handling:**
+            - **503 Service Unavailable**: Network/DNS issues, API unreachable
+            - **504 Gateway Timeout**: Request exceeded timeout limit
+            - **500 Internal Error**: Other processing errors
+            
+            **Use Cases:**
+            - Quick question answering
+            - Model testing and evaluation
+            - Simple text generation
+            - Web-enhanced queries
+            - Custom LLM integrations
+            """
             try:
                 # Determine provider from model name
                 if request.model_name.startswith('gemini'):
@@ -439,7 +1248,7 @@ Question: {{input}}
                                 "Falling back to direct LLM call."
                             )
                             # Fall back to direct LLM call without tools
-                            response_text = await llm.apredict(f"{system_prompt}\n\nQuery: {request.query}")
+                            response_text = await llm.ainvoke(f"{system_prompt}\n\nQuery: {request.query}")
                             web_search_used = False  # Reset since we're not using tools
                         else:
                             raise
@@ -461,7 +1270,7 @@ Question: {{input}}
                     import asyncio
                     try:
                         response_text = await asyncio.wait_for(
-                            llm.apredict(f"{system_prompt}\n\nQuery: {request.query}"),
+                            llm.ainvoke(f"{system_prompt}\n\nQuery: {request.query}"),
                             timeout=settings.api_timeout
                         )
                     except asyncio.TimeoutError:
@@ -517,18 +1326,105 @@ Question: {{input}}
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Tool Endpoints
-        @self.app.get("/tools", tags=["Tools"])
+        @self.app.get(
+            "/tools",
+            tags=["Tools"],
+            summary="List Available Tools",
+            description="Retrieve a comprehensive list of all available tools that can be used by agents, including their configurations, status, and capabilities.",
+            response_description="Array of tool objects with complete configuration details."
+        )
         async def list_tools():
-            """List all available tools that can be used by agents, including their configurations and status."""
+            """
+            **List All Available Tools**
+            
+            Returns information about all tools available in the system.
+            
+            **Tool Information Includes:**
+            - Tool ID and display name
+            - Tool type (web_search, calculator, email, etc.)
+            - Description of tool capabilities
+            - Configuration settings
+            - Active/inactive status
+            
+            **Available Tool Types:**
+            - **Web Search**: Search the internet for current information
+            - **Wikipedia**: Search Wikipedia for factual information
+            - **Calculator**: Perform mathematical calculations
+            - **Email**: Send emails via SMTP
+            - **Financial**: Get financial data and stock information
+            - **Crawler**: Crawl websites and extract data
+            - **Equalizer**: AI-powered decision making assistance
+            - **Custom**: User-defined custom tools
+            
+            **Use Cases:**
+            - Discover available tools for agent configuration
+            - Review tool capabilities and configurations
+            - Check tool status (active/inactive)
+            - Plan tool integration strategies
+            
+            **Response Format:**
+            Each tool object contains:
+            - `id`: Unique tool identifier
+            - `name`: Display name
+            - `tool_type`: Type/category of tool
+            - `description`: What the tool does
+            - `is_active`: Whether tool is currently enabled
+            - `config`: Tool-specific configuration
+            """
             try:
                 return self.tool_manager.list_tools()
             except Exception as e:
                 self.logger.error(f"Error listing tools: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.put("/tools/{tool_id}", tags=["Tools"])
+        @self.app.put(
+            "/tools/{tool_id}",
+            tags=["Tools"],
+            summary="Update Tool Configuration",
+            description="Update the configuration of a specific tool. Changes take effect immediately and affect all agents using the tool.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {
+                    "description": "Tool configuration updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Tool configuration updated successfully"}
+                        }
+                    }
+                },
+                400: {"description": "Failed to update tool configuration"},
+                404: {"description": "Tool not found"},
+                500: {"description": "Error during update"}
+            }
+        )
         async def update_tool_config(tool_id: str, config: ToolConfig):
-            """Update the configuration of a specific tool. Changes take effect immediately."""
+            """
+            **Update Tool Configuration**
+            
+            Modifies the configuration of an existing tool.
+            
+            **What Can Be Updated:**
+            - Tool name and description
+            - Active/inactive status
+            - Tool-specific configuration settings
+            - Custom metadata
+            
+            **Configuration Impact:**
+            - Changes apply immediately
+            - All agents using the tool are affected
+            - Tool behavior may change based on new settings
+            
+            **Use Cases:**
+            - Enabling/disabling tools
+            - Updating tool settings (API keys, endpoints, etc.)
+            - Modifying tool behavior
+            - Adjusting tool metadata
+            
+            **Important Notes:**
+            - Some tools require specific configuration (e.g., email needs SMTP settings)
+            - Disabling a tool prevents agents from using it
+            - Configuration validation is performed before update
+            """
             try:
                 success = self.tool_manager.update_tool_config(tool_id, config)
                 if success:
@@ -540,18 +1436,77 @@ Question: {{input}}
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Model Endpoints
-        @self.app.get("/models", tags=["Models"])
+        @self.app.get(
+            "/models",
+            tags=["Models"],
+            summary="List Available Models",
+            description="Retrieve a list of all available LLM models from configured providers, including their specifications, capabilities, and provider information.",
+            response_description="Array of model objects with specifications and provider details."
+        )
         async def list_models():
-            """List all available LLM models from configured providers with their specifications."""
+            """
+            **List All Available LLM Models**
+            
+            Returns comprehensive information about all LLM models available in the system.
+            
+            **Model Information Includes:**
+            - Model name/identifier
+            - Provider (Gemini, Qwen, etc.)
+            - Model description
+            - Capabilities and specifications
+            
+            **Use Cases:**
+            - Discover available models for agent configuration
+            - Compare model capabilities
+            - Select appropriate models for use cases
+            - Verify model availability
+            
+            **Response Format:**
+            Each model object contains:
+            - `name`: Model identifier (e.g., "gemini-2.5-flash")
+            - `provider`: Provider name (e.g., "gemini")
+            - `description`: Model description and capabilities
+            
+            **Model Selection:**
+            Use model names from this list when configuring agents or making direct LLM calls.
+            """
             try:
                 return self.agent_manager.get_available_models()
             except Exception as e:
                 self.logger.error(f"Error listing models: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/providers", tags=["Models"])
+        @self.app.get(
+            "/providers",
+            tags=["Models"],
+            summary="List LLM Providers",
+            description="Retrieve information about all configured LLM providers, their availability, and the default provider setting.",
+            response_description="Provider information including available providers and default setting."
+        )
         async def list_providers():
-            """List all configured LLM providers and their current status."""
+            """
+            **List LLM Providers**
+            
+            Returns information about configured LLM providers.
+            
+            **Response Includes:**
+            - `providers`: List of available provider names
+            - `default`: Currently configured default provider
+            
+            **Available Providers:**
+            - **Gemini**: Google's Gemini models
+            - **Qwen**: Alibaba's Qwen models
+            
+            **Use Cases:**
+            - Check which providers are configured
+            - Verify default provider setting
+            - Discover available provider options
+            - Plan provider usage strategy
+            
+            **Provider Configuration:**
+            Providers are configured via environment variables or config file.
+            Each provider requires valid API keys to function.
+            """
             try:
                 return {
                     "providers": self.agent_manager.get_available_providers(),
@@ -562,9 +1517,62 @@ Question: {{input}}
                 raise HTTPException(status_code=500, detail=str(e))
 
         # MCP Endpoints
-        @self.app.post("/mcp/start", tags=["MCP"])
+        @self.app.post(
+            "/mcp/start",
+            tags=["MCP"],
+            summary="Start MCP Server",
+            description="Start the Model Context Protocol (MCP) server for enhanced AI interactions via WebSocket. The server runs in the background.",
+            response_description="Confirmation message indicating server startup initiation.",
+            responses={
+                200: {
+                    "description": "MCP server startup initiated",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "MCP server starting"}
+                        }
+                    }
+                },
+                500: {"description": "Error starting MCP server"}
+            }
+        )
         async def start_mcp_server(background_tasks: BackgroundTasks):
-            """Start the Model Context Protocol (MCP) server for enhanced AI interactions."""
+            """
+            **Start Model Context Protocol (MCP) Server**
+            
+            Initiates the MCP server for WebSocket-based AI interactions.
+            
+            **MCP Protocol:**
+            The Model Context Protocol enables enhanced communication with AI models through:
+            - WebSocket connections
+            - Structured message protocols
+            - Real-time bidirectional communication
+            - Enhanced context management
+            
+            **Server Features:**
+            - WebSocket endpoint (default port: 8196)
+            - Tool execution support
+            - RAG query capabilities
+            - Agent execution
+            - Health check (ping/pong)
+            
+            **Server Behavior:**
+            - Starts in background (non-blocking)
+            - Runs until server shutdown
+            - Supports multiple concurrent connections
+            - Handles client initialization and capabilities
+            
+            **Use Cases:**
+            - Real-time AI applications
+            - Interactive AI interfaces
+            - WebSocket-based integrations
+            - Enhanced context-aware interactions
+            
+            **Connection Details:**
+            - Protocol: WebSocket
+            - Default Port: 8196
+            - Message Format: JSON with length prefix
+            - Supports multiple clients simultaneously
+            """
             try:
                 background_tasks.add_task(self.mcp_service.start_server)
                 return {"message": "MCP server starting"}
@@ -573,9 +1581,66 @@ Question: {{input}}
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Customization Endpoints
-        @self.app.post("/customizations", tags=["Customizations"])
+        @self.app.post(
+            "/customizations",
+            tags=["Customizations"],
+            summary="Create Customization Profile",
+            description="Create a new customization profile with system prompts, optional RAG collection, and LLM configuration. Customizations allow reusable AI behavior templates.",
+            response_description="Customization creation response with profile ID.",
+            responses={
+                200: {
+                    "description": "Customization created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "id": "customer_support_template",
+                                "message": "Customization created successfully"
+                            }
+                        }
+                    }
+                },
+                500: {"description": "Error creating customization"}
+            }
+        )
         async def create_customization(req: CustomizationCreateRequest):
-            """Create a new customization profile (instructions + optional RAG/LLM config)."""
+            """
+            **Create Customization Profile**
+            
+            Creates a reusable customization profile that defines AI behavior, knowledge sources, and model settings.
+            
+            **Customization Components:**
+            - **System Prompt**: Instructions defining AI behavior and personality
+            - **RAG Collection**: Optional knowledge base to use as context
+            - **LLM Provider**: Optional provider override (defaults to system default)
+            - **Model Name**: Optional model override (defaults to provider default)
+            - **Description**: Human-readable description of the customization's purpose
+            
+            **Use Cases:**
+            - Creating reusable AI behavior templates
+            - Defining specialized AI assistants (support, research, etc.)
+            - Setting up domain-specific knowledge bases
+            - Standardizing AI interactions across applications
+            
+            **Profile ID Generation:**
+            - Automatically generated from name (URL-friendly)
+            - Lowercase, spaces replaced with underscores
+            - Unique ID ensures no conflicts
+            
+            **Example Use Cases:**
+            - Customer support template with FAQ knowledge
+            - Research assistant with document collection
+            - Code review assistant with coding standards
+            - Content writer with style guidelines
+            
+            **Request Fields:**
+            - `name`: Profile name (required)
+            - `description`: Purpose description (optional)
+            - `system_prompt`: Behavior instructions (required)
+            - `rag_collection`: Knowledge base name (optional)
+            - `llm_provider`: Provider override (optional)
+            - `model_name`: Model override (optional)
+            - `metadata`: Additional metadata (optional)
+            """
             try:
                 profile_id = self.customization_manager.create_profile(req)
                 return {"id": profile_id, "message": "Customization created successfully"}
@@ -583,18 +1648,69 @@ Question: {{input}}
                 self.logger.error(f"Error creating customization: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/customizations", tags=["Customizations"])
+        @self.app.get(
+            "/customizations",
+            tags=["Customizations"],
+            summary="List Customization Profiles",
+            description="Retrieve a list of all customization profiles with their configurations, settings, and metadata.",
+            response_description="Array of customization profile objects."
+        )
         async def list_customizations():
-            """List all customization profiles."""
+            """
+            **List All Customization Profiles**
+            
+            Returns all customization profiles in the system.
+            
+            **Response Includes:**
+            - Profile ID and name
+            - Description and purpose
+            - System prompt
+            - Associated RAG collection (if any)
+            - LLM provider and model overrides (if any)
+            - Metadata
+            
+            **Use Cases:**
+            - Discover available customization templates
+            - Review customization configurations
+            - Plan customization usage
+            - Manage customization library
+            """
             try:
                 return [p.model_dump() for p in self.customization_manager.list_profiles()]
             except Exception as e:
                 self.logger.error(f"Error listing customizations: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/customizations/{profile_id}", tags=["Customizations"])
+        @self.app.get(
+            "/customizations/{profile_id}",
+            tags=["Customizations"],
+            summary="Get Customization Profile",
+            description="Retrieve detailed information about a specific customization profile by its ID.",
+            response_description="Complete customization profile details.",
+            responses={
+                200: {"description": "Customization profile found"},
+                404: {"description": "Customization profile not found"}
+            }
+        )
         async def get_customization(profile_id: str):
-            """Get a single customization profile by id."""
+            """
+            **Get Customization Profile Details**
+            
+            Returns complete information about a specific customization profile.
+            
+            **Information Included:**
+            - Full profile configuration
+            - System prompt
+            - RAG collection association
+            - LLM provider and model settings
+            - Metadata
+            
+            **Use Cases:**
+            - Inspect customization configuration
+            - Review system prompts
+            - Verify settings before use
+            - Prepare for updates
+            """
             try:
                 profile = self.customization_manager.get_profile(profile_id)
                 if not profile:
@@ -606,9 +1722,50 @@ Question: {{input}}
                 self.logger.error(f"Error getting customization {profile_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.put("/customizations/{profile_id}", tags=["Customizations"])
+        @self.app.put(
+            "/customizations/{profile_id}",
+            tags=["Customizations"],
+            summary="Update Customization Profile",
+            description="Update an existing customization profile with new settings. All fields can be modified while preserving the profile ID.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {
+                    "description": "Customization updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Customization updated successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Customization profile not found"},
+                500: {"description": "Error during update"}
+            }
+        )
         async def update_customization(profile_id: str, req: CustomizationCreateRequest):
-            """Update an existing customization profile."""
+            """
+            **Update Customization Profile**
+            
+            Modifies an existing customization profile with new configuration.
+            
+            **What Can Be Updated:**
+            - System prompt (behavior instructions)
+            - RAG collection association
+            - LLM provider and model settings
+            - Description and metadata
+            - Profile name
+            
+            **Update Process:**
+            - Profile ID remains unchanged
+            - All fields are replaced with new values
+            - Changes take effect immediately
+            - Existing queries using the profile are unaffected
+            
+            **Use Cases:**
+            - Refining AI behavior instructions
+            - Changing knowledge base associations
+            - Updating model preferences
+            - Improving customization templates
+            """
             try:
                 success = self.customization_manager.update_profile(profile_id, req)
                 if success:
@@ -620,9 +1777,49 @@ Question: {{input}}
                 self.logger.error(f"Error updating customization {profile_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.delete("/customizations/{profile_id}", tags=["Customizations"])
+        @self.app.delete(
+            "/customizations/{profile_id}",
+            tags=["Customizations"],
+            summary="Delete Customization Profile",
+            description="Permanently delete a customization profile. This action cannot be undone.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {
+                    "description": "Customization deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Customization deleted successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Customization profile not found"},
+                500: {"description": "Error during deletion"}
+            }
+        )
         async def delete_customization(profile_id: str):
-            """Delete a customization profile."""
+            """
+            **Delete Customization Profile**
+            
+            Permanently removes a customization profile from the system.
+            
+            **⚠️ Warning:**
+            This operation is **irreversible**. The customization profile and all its settings will be permanently lost.
+            
+            **What Gets Deleted:**
+            - Customization profile configuration
+            - System prompt and settings
+            - Profile metadata
+            
+            **What Is Preserved:**
+            - RAG collections (not deleted)
+            - Other customization profiles
+            - System settings
+            
+            **Use Cases:**
+            - Removing obsolete templates
+            - Cleaning up test customizations
+            - Reorganizing customization library
+            """
             try:
                 success = self.customization_manager.delete_profile(profile_id)
                 if success:
@@ -634,12 +1831,76 @@ Question: {{input}}
                 self.logger.error(f"Error deleting customization {profile_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/customizations/{profile_id}/query", tags=["Customizations"])
+        @self.app.post(
+            "/customizations/{profile_id}/query",
+            tags=["Customizations"],
+            summary="Query Customization Profile",
+            description="Execute a query using a customization profile. Combines the profile's system prompt with optional RAG context and generates a response using the configured LLM.",
+            response_model=CustomizationQueryResponse,
+            response_description="Response generated using the customization profile with metadata about model and RAG usage.",
+            responses={
+                200: {
+                    "description": "Query executed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "response": "Based on the customization profile...",
+                                "profile_id": "customer_support_template",
+                                "profile_name": "Customer Support Template",
+                                "model_used": "gemini-2.5-flash",
+                                "rag_collection_used": "faq_knowledge",
+                                "metadata": {
+                                    "temperature": 0.7,
+                                    "max_tokens": 8192,
+                                    "provider": "gemini"
+                                }
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Customization profile not found"},
+                500: {"description": "Error during query execution"}
+            }
+        )
         async def query_customization(profile_id: str, request: CustomizationQueryRequest) -> CustomizationQueryResponse:
             """
-            Run a short user query through a customization profile.
-
-            Combines the profile's system_prompt with optional RAG context, then calls the LLM.
+            **Query Customization Profile**
+            
+            Executes a query using a customization profile's configuration.
+            
+            **Execution Process:**
+            1. Loads customization profile configuration
+            2. If RAG collection specified: Searches knowledge base for relevant context
+            3. Combines system prompt + RAG context + user query
+            4. Calls LLM with configured provider/model
+            5. Returns formatted response
+            
+            **Request Parameters:**
+            - `profile_id`: Customization profile identifier
+            - `query`: User's question or prompt
+            - `n_results`: Number of RAG results to include (1-20, default: 3)
+            - `temperature`: Optional temperature override (0.0-2.0)
+            - `max_tokens`: Optional max tokens override (1-32768)
+            
+            **Response Includes:**
+            - `response`: The AI's answer
+            - `profile_id`: Profile used
+            - `profile_name`: Profile display name
+            - `model_used`: Actual model that processed the request
+            - `rag_collection_used`: RAG collection used (if any)
+            - `metadata`: Execution parameters and settings
+            
+            **Use Cases:**
+            - Quick queries using predefined templates
+            - Consistent AI behavior across applications
+            - Domain-specific question answering
+            - Template-based AI interactions
+            
+            **Benefits:**
+            - Reusable AI configurations
+            - Consistent behavior
+            - Easy template management
+            - Quick deployment of AI capabilities
             """
             try:
                 profile = self.customization_manager.get_profile(profile_id)
@@ -703,7 +1964,7 @@ Question: {{input}}
                     full_prompt = f"{system_prompt}\n\nUser query:\n{request.query}"
 
                 # Direct LLM call (no tools for now)
-                response_text = await llm.apredict(full_prompt)
+                response_text = await llm.ainvoke(full_prompt)
 
                 return CustomizationQueryResponse(
                     response=response_text,
@@ -724,11 +1985,102 @@ Question: {{input}}
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Crawler Endpoints
-        @self.app.post("/crawler/crawl", tags=["Crawler"], response_model=CrawlerResponse)
+        @self.app.post(
+            "/crawler/crawl",
+            tags=["Crawler"],
+            summary="Crawl Website",
+            description="Crawl a website, extract and organize content using AI, and save the processed data to a RAG collection. The AI automatically filters and structures the content.",
+            response_model=CrawlerResponse,
+            response_description="Crawling results including collection information and extracted data.",
+            responses={
+                200: {
+                    "description": "Website crawled and processed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "url": "https://example.com",
+                                "collection_name": "example_com_data",
+                                "collection_description": "Data extracted from example.com",
+                                "raw_file": "path/to/raw.json",
+                                "extracted_file": "path/to/extracted.json",
+                                "extracted_data": {"title": "...", "content": "..."}
+                            }
+                        }
+                    }
+                },
+                500: {
+                    "description": "Error during crawling or processing",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": False,
+                                "error": "Failed to crawl website: Connection timeout"
+                            }
+                        }
+                    }
+                }
+            }
+        )
         async def crawl_website(request: CrawlerRequest) -> CrawlerResponse:
             """
-            Crawl a website, extract content with AI, and save to RAG collection.
-            AI will automatically generate collection name and description if not provided.
+            **Crawl Website and Extract Data**
+            
+            Crawls a website, extracts content, uses AI to organize and filter the data, then saves it to a RAG collection.
+            
+            **Crawling Process:**
+            1. **Web Crawling**: Fetches website content (HTML)
+            2. **Content Extraction**: Extracts text, links, headings, and structure
+            3. **AI Processing**: Uses LLM to organize, filter, and structure the data
+            4. **Noise Removal**: AI removes ads, navigation, and irrelevant content
+            5. **RAG Storage**: Saves organized data to specified collection
+            
+            **Request Parameters:**
+            - `url`: Website URL to crawl (required)
+            - `use_js`: Whether to execute JavaScript (default: false)
+            - `llm_provider`: LLM provider for AI processing (optional, uses default if not specified)
+            - `model`: Specific model to use (optional)
+            - `collection_name`: Target RAG collection name (auto-generated if not provided)
+            - `collection_description`: Collection description (auto-generated if not provided)
+            
+            **AI Processing:**
+            The AI automatically:
+            - Identifies main topics and useful information
+            - Removes navigation elements, ads, and noise
+            - Organizes content into structured format
+            - Creates summaries and key points
+            - Generates appropriate metadata
+            
+            **Output Files:**
+            - `raw_file`: Raw extracted data (before AI processing)
+            - `extracted_file`: AI-organized data (after processing)
+            - `extracted_data`: Structured data object
+            
+            **RAG Collection:**
+            - Created automatically if doesn't exist
+            - Contains organized, searchable content
+            - Ready for semantic search queries
+            - Includes metadata and source information
+            
+            **Use Cases:**
+            - Building knowledge bases from websites
+            - Extracting documentation for RAG
+            - Creating searchable content repositories
+            - Automating content ingestion
+            - Research and information gathering
+            
+            **Best Practices:**
+            - Start with simple, well-structured websites
+            - Use specific collection names for organization
+            - Review extracted data quality
+            - Handle large sites in multiple crawls
+            - Respect robots.txt and rate limits
+            
+            **Limitations:**
+            - JavaScript-heavy sites may require `use_js: true`
+            - Very large sites may timeout
+            - Some sites may block automated access
+            - Processing time depends on content size
             """
             try:
                 result = self.crawler_service.crawl_and_save(
@@ -759,6 +2111,359 @@ Question: {{input}}
                 self.logger.error(f"Error crawling website: {e}")
                 import traceback
                 self.logger.error(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Database Tools Endpoints
+        @self.app.post(
+            "/db-tools",
+            tags=["Database Tools"],
+            summary="Create Database Tool",
+            description="Create a new database tool profile with connection configuration and SQL/query statement. The tool will cache query results for the specified TTL period.",
+            response_description="Database tool creation response with tool ID.",
+            responses={
+                200: {
+                    "description": "Database tool created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "tool_id": "customer_db_query",
+                                "message": "Database tool created successfully"
+                            }
+                        }
+                    }
+                },
+                500: {"description": "Error creating database tool"}
+            }
+        )
+        async def create_db_tool(req: DatabaseToolCreateRequest):
+            """
+            **Create Database Tool Profile**
+            
+            Creates a new database tool profile that can execute queries against SQL Server, MySQL, or MongoDB databases.
+            
+            **Database Types Supported:**
+            - **SQL Server**: Microsoft SQL Server databases
+            - **MySQL**: MySQL/MariaDB databases
+            - **MongoDB**: MongoDB NoSQL databases
+            
+            **Connection Configuration:**
+            - `host`: Database server hostname or IP
+            - `port`: Database server port
+            - `database`: Database name
+            - `username`: Database username
+            - `password`: Database password
+            - `additional_params`: Optional connection parameters (SSL, connection pool, etc.)
+            
+            **Query Configuration:**
+            - **SQL Databases**: Standard SQL SELECT statements
+            - **MongoDB**: JSON query format: `{"collection": "users", "query": {...}, "projection": {...}, "limit": 1000}`
+            
+            **Caching:**
+            - Query results are cached for the specified TTL (default: 1 hour)
+            - Cache is stored in TinyDB for persistence
+            - Cache automatically expires after TTL period
+            - Force refresh available via preview endpoint
+            
+            **Use Cases:**
+            - Connecting to production databases for reporting
+            - Creating data preview tools
+            - Building data dashboards
+            - Integrating database data with AI agents
+            - Caching expensive queries
+            
+            **Security Notes:**
+            - Passwords are stored in configuration (consider encryption for production)
+            - Connection strings are not logged
+            - Use read-only database users when possible
+            """
+            try:
+                tool_id = self.db_tools_manager.create_profile(req)
+                return {"tool_id": tool_id, "message": "Database tool created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating database tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/db-tools",
+            tags=["Database Tools"],
+            summary="List Database Tools",
+            description="Retrieve a list of all database tool profiles with their configurations (passwords are not included in response).",
+            response_description="Array of database tool profile objects."
+        )
+        async def list_db_tools():
+            """
+            **List All Database Tool Profiles**
+            
+            Returns all database tool profiles in the system.
+            
+            **Response Includes:**
+            - Tool ID and name
+            - Description and database type
+            - Connection configuration (password excluded for security)
+            - SQL/query statement
+            - Active status
+            - Cache TTL settings
+            - Metadata
+            
+            **Security:**
+            - Passwords are excluded from response for security
+            - Only connection parameters are returned
+            
+            **Use Cases:**
+            - Discover available database connections
+            - Review tool configurations
+            - Manage database tool library
+            """
+            try:
+                profiles = self.db_tools_manager.list_profiles()
+                # Remove passwords from response for security
+                result = []
+                for profile in profiles:
+                    profile_dict = profile.model_dump()
+                    # Remove password from connection config
+                    if "connection_config" in profile_dict and "password" in profile_dict["connection_config"]:
+                        profile_dict["connection_config"]["password"] = "***"
+                    result.append(profile_dict)
+                return result
+            except Exception as e:
+                self.logger.error(f"Error listing database tools: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/db-tools/{tool_id}",
+            tags=["Database Tools"],
+            summary="Get Database Tool",
+            description="Retrieve detailed information about a specific database tool profile (password excluded for security).",
+            response_description="Complete database tool profile details.",
+            responses={
+                200: {"description": "Database tool found"},
+                404: {"description": "Database tool not found"}
+            }
+        )
+        async def get_db_tool(tool_id: str):
+            """
+            **Get Database Tool Details**
+            
+            Returns complete information about a specific database tool.
+            
+            **Information Included:**
+            - Full configuration (password excluded)
+            - Connection settings
+            - SQL/query statement
+            - Cache settings
+            - Active status
+            
+            **Security:**
+            - Password field is masked for security
+            """
+            try:
+                profile = self.db_tools_manager.get_profile(tool_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Database tool not found")
+                
+                profile_dict = profile.model_dump()
+                # Remove password for security
+                if "connection_config" in profile_dict and "password" in profile_dict["connection_config"]:
+                    profile_dict["connection_config"]["password"] = "***"
+                
+                return profile_dict
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting database tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/db-tools/{tool_id}",
+            tags=["Database Tools"],
+            summary="Update Database Tool",
+            description="Update an existing database tool profile. Cache will be invalidated for this tool.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {
+                    "description": "Database tool updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Database tool updated successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Database tool not found"},
+                500: {"description": "Error during update"}
+            }
+        )
+        async def update_db_tool(tool_id: str, req: DatabaseToolCreateRequest):
+            """
+            **Update Database Tool Profile**
+            
+            Updates an existing database tool with new configuration.
+            
+            **Update Process:**
+            - Cache is automatically invalidated
+            - New queries will use updated configuration
+            - Tool ID remains unchanged
+            
+            **What Can Be Updated:**
+            - Connection configuration
+            - SQL/query statement
+            - Cache TTL
+            - Active status
+            - Description and metadata
+            """
+            try:
+                success = self.db_tools_manager.update_profile(tool_id, req)
+                if success:
+                    return {"message": "Database tool updated successfully"}
+                raise HTTPException(status_code=404, detail="Database tool not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating database tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/db-tools/{tool_id}",
+            tags=["Database Tools"],
+            summary="Delete Database Tool",
+            description="Permanently delete a database tool profile and its cached data.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {
+                    "description": "Database tool deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Database tool deleted successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Database tool not found"},
+                500: {"description": "Error during deletion"}
+            }
+        )
+        async def delete_db_tool(tool_id: str):
+            """
+            **Delete Database Tool Profile**
+            
+            Permanently removes a database tool and its cached data.
+            
+            **What Gets Deleted:**
+            - Tool configuration
+            - Cached query results
+            - Tool metadata
+            
+            **⚠️ Warning:**
+            This operation is **irreversible**.
+            """
+            try:
+                success = self.db_tools_manager.delete_profile(tool_id)
+                if success:
+                    return {"message": "Database tool deleted successfully"}
+                raise HTTPException(status_code=404, detail="Database tool not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting database tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/db-tools/{tool_id}/preview",
+            tags=["Database Tools"],
+            summary="Preview Database Query Results",
+            description="Execute the database query and return the first 10 rows of results. Uses cache if available and valid, otherwise executes query and caches results.",
+            response_model=DatabaseToolPreviewResponse,
+            response_description="Preview data with first 10 rows, columns, and cache information.",
+            responses={
+                200: {
+                    "description": "Preview data retrieved successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "tool_id": "customer_db_query",
+                                "tool_name": "Customer Database Query",
+                                "columns": ["id", "name", "email", "created_at"],
+                                "rows": [
+                                    [1, "John Doe", "john@example.com", "2024-01-01"],
+                                    [2, "Jane Smith", "jane@example.com", "2024-01-02"]
+                                ],
+                                "total_rows": 150,
+                                "cached": True,
+                                "cache_expires_at": "2024-01-15T10:30:00",
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Database tool not found"},
+                400: {"description": "Database tool is not active or query execution failed"},
+                500: {"description": "Error executing query or retrieving preview"}
+            }
+        )
+        async def preview_db_tool(tool_id: str, force_refresh: bool = False):
+            """
+            **Preview Database Query Results**
+            
+            Executes the database query and returns the first 10 rows for preview.
+            
+            **Query Execution:**
+            1. Checks cache first (if `force_refresh=False`)
+            2. If cache valid: Returns cached data
+            3. If cache expired/missing: Executes query
+            4. Stores results in cache with TTL
+            5. Returns first 10 rows
+            
+            **Query Parameters:**
+            - `tool_id`: Database tool identifier
+            - `force_refresh`: Force query execution, bypassing cache (default: false)
+            
+            **Response Includes:**
+            - `columns`: Column names from query result
+            - `rows`: First 10 rows of data (list of lists)
+            - `total_rows`: Total number of rows in result set
+            - `cached`: Whether data came from cache
+            - `cache_expires_at`: When cache expires (ISO format)
+            
+            **Database-Specific Notes:**
+            
+            **SQL Server/MySQL:**
+            - Use standard SQL SELECT statements
+            - Example: `SELECT id, name, email FROM users WHERE active = 1`
+            
+            **MongoDB:**
+            - Use JSON query format:
+            ```json
+            {
+              "collection": "users",
+              "query": {"active": true},
+              "projection": {"_id": 1, "name": 1, "email": 1},
+              "limit": 1000
+            }
+            ```
+            
+            **Caching Behavior:**
+            - Results cached for configured TTL (default: 1 hour)
+            - Cache stored in TinyDB for persistence
+            - Automatic cache expiration
+            - Force refresh available via `force_refresh=true`
+            
+            **Use Cases:**
+            - Preview query results before using in production
+            - Verify query correctness
+            - Check data structure and content
+            - Monitor cached data freshness
+            - Debug query issues
+            
+            **Error Handling:**
+            - Connection errors: Returns 400 with error details
+            - Query syntax errors: Returns 400 with error message
+            - Database unavailable: Returns 500 with connection error
+            """
+            try:
+                result = self.db_tools_manager.preview_data(tool_id, force_refresh=force_refresh)
+                return DatabaseToolPreviewResponse(**result)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error previewing database tool {tool_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
     def get_app(self) -> FastAPI:

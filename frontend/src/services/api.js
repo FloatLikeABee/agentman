@@ -140,6 +140,39 @@ export const crawlWebsite = async (payload) => {
   return response.data;
 };
 
+// Database Tools
+export const getDBTools = async () => {
+  const response = await api.get('/db-tools');
+  return response.data;
+};
+
+export const getDBTool = async (toolId) => {
+  const response = await api.get(`/db-tools/${toolId}`);
+  return response.data;
+};
+
+export const createDBTool = async (payload) => {
+  const response = await api.post('/db-tools', payload);
+  return response.data;
+};
+
+export const updateDBTool = async (toolId, payload) => {
+  const response = await api.put(`/db-tools/${toolId}`, payload);
+  return response.data;
+};
+
+export const deleteDBTool = async (toolId) => {
+  const response = await api.delete(`/db-tools/${toolId}`);
+  return response.data;
+};
+
+export const previewDBTool = async (toolId, forceRefresh = false) => {
+  const response = await api.get(`/db-tools/${toolId}/preview`, {
+    params: { force_refresh: forceRefresh }
+  });
+  return response.data;
+};
+
 // Export all functions
 export default {
   getStatus,
@@ -165,4 +198,10 @@ export default {
   deleteCustomization,
   queryCustomization,
   crawlWebsite,
+  getDBTools,
+  getDBTool,
+  createDBTool,
+  updateDBTool,
+  deleteDBTool,
+  previewDBTool,
 }; 
