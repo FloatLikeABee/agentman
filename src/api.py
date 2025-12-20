@@ -26,8 +26,15 @@ from .models import (
     CrawlerResponse,
     DatabaseToolProfile,
     DatabaseToolCreateRequest,
+    DatabaseToolUpdateRequest,
     DatabaseToolPreviewResponse,
     DatabaseType,
+    RequestProfile,
+    RequestCreateRequest,
+    RequestUpdateRequest,
+    RequestExecuteResponse,
+    RequestType,
+    HTTPMethod,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -38,6 +45,7 @@ from .llm_langchain_wrapper import LangChainLLMWrapper
 from .customization import CustomizationManager
 from .crawler import CrawlerService
 from .db_tools import DatabaseToolsManager
+from .request_tools import RequestToolsManager
 
 
 class RAGAPI:
@@ -188,6 +196,7 @@ class RAGAPI:
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
         self.db_tools_manager = DatabaseToolsManager()
+        self.request_tools_manager = RequestToolsManager(api_instance=self)
         
         # Setup CORS - Allow all origins (configurable)
         # By default this uses settings.cors_origins which is ["*"],
@@ -2292,7 +2301,7 @@ Question: {{input}}
                 500: {"description": "Error during update"}
             }
         )
-        async def update_db_tool(tool_id: str, req: DatabaseToolCreateRequest):
+        async def update_db_tool(tool_id: str, req: DatabaseToolUpdateRequest):
             """
             **Update Database Tool Profile**
             
@@ -2464,6 +2473,280 @@ Question: {{input}}
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error previewing database tool {tool_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Request Tools Endpoints
+        @self.app.post(
+            "/request-tools",
+            tags=["Request Tools"],
+            summary="Create Request Configuration",
+            description="Create a new request configuration for HTTP API calls or internal service calls. The configuration will be saved to TinyDB.",
+            response_description="Request creation response with request ID.",
+            responses={
+                200: {
+                    "description": "Request configuration created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "request_id": "get_user_data",
+                                "message": "Request configuration created successfully"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request configuration or duplicate name"},
+                500: {"description": "Error creating request configuration"}
+            }
+        )
+        async def create_request_tool(req: RequestCreateRequest):
+            """
+            **Create Request Configuration**
+            
+            Creates a new request configuration that can execute HTTP API calls or internal service calls.
+            
+            **Request Types:**
+            - **HTTP**: External HTTP API requests (GET, POST, PUT, DELETE, etc.)
+            - **Internal**: Internal service calls within the project
+            
+            **Configuration Fields:**
+            - `name`: Unique request name/task identifier (required, must be unique)
+            - `description`: Optional description
+            - `request_type`: "http" or "internal"
+            - `method`: HTTP method (required for HTTP requests)
+            - `url`: HTTP URL (required for HTTP requests)
+            - `endpoint`: Internal endpoint (required for internal requests)
+            - `headers`: HTTP headers (key-value pairs)
+            - `params`: URL query parameters
+            - `body`: Request body (string or JSON object)
+            - `timeout`: Request timeout in seconds (1-300, default: 30)
+            
+            **Storage:**
+            - Configuration saved to TinyDB
+            - Last response automatically saved after execution
+            - Responses overwrite previous results
+            
+            **Use Cases:**
+            - Configure API endpoints for testing
+            - Set up recurring API calls
+            - Create internal service call templates
+            - Monitor external API responses
+            """
+            try:
+                request_id = self.request_tools_manager.create_profile(req)
+                return {"request_id": request_id, "message": "Request configuration created successfully"}
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error creating request tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/request-tools",
+            tags=["Request Tools"],
+            summary="List Request Configurations",
+            description="Retrieve a list of all request configurations with their settings and last execution status.",
+            response_description="Array of request configuration objects."
+        )
+        async def list_request_tools():
+            """
+            **List All Request Configurations**
+            
+            Returns all request configurations in the system.
+            
+            **Response Includes:**
+            - Request ID and name
+            - Description and type
+            - Configuration details
+            - Last response data
+            - Last execution timestamp
+            """
+            try:
+                profiles = self.request_tools_manager.list_profiles()
+                return [profile.model_dump() for profile in profiles]
+            except Exception as e:
+                self.logger.error(f"Error listing request tools: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/request-tools/{request_id}",
+            tags=["Request Tools"],
+            summary="Get Request Configuration",
+            description="Retrieve detailed information about a specific request configuration including last response.",
+            response_description="Complete request configuration details.",
+            responses={
+                200: {"description": "Request configuration found"},
+                404: {"description": "Request configuration not found"}
+            }
+        )
+        async def get_request_tool(request_id: str):
+            """Get request configuration details including last response."""
+            try:
+                profile = self.request_tools_manager.get_profile(request_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Request configuration not found")
+                return profile.model_dump()
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting request tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/request-tools/{request_id}",
+            tags=["Request Tools"],
+            summary="Update Request Configuration",
+            description="Update an existing request configuration. Last response is preserved.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {
+                    "description": "Request configuration updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Request configuration updated successfully"}
+                        }
+                    }
+                },
+                400: {"description": "Invalid configuration or duplicate name"},
+                404: {"description": "Request configuration not found"},
+                500: {"description": "Error during update"}
+            }
+        )
+        async def update_request_tool(request_id: str, req: RequestUpdateRequest):
+            """
+            **Update Request Configuration**
+            
+            Updates an existing request configuration.
+            
+            **Update Process:**
+            - Last response is preserved
+            - Configuration is updated
+            - Request ID remains unchanged
+            
+            **What Can Be Updated:**
+            - All configuration fields
+            - Request type, method, URL/endpoint
+            - Headers, params, body
+            - Timeout settings
+            """
+            try:
+                success = self.request_tools_manager.update_profile(request_id, req)
+                if success:
+                    return {"message": "Request configuration updated successfully"}
+                raise HTTPException(status_code=404, detail="Request configuration not found")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating request tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/request-tools/{request_id}",
+            tags=["Request Tools"],
+            summary="Delete Request Configuration",
+            description="Permanently delete a request configuration and its saved response.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {
+                    "description": "Request configuration deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Request configuration deleted successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Request configuration not found"},
+                500: {"description": "Error during deletion"}
+            }
+        )
+        async def delete_request_tool(request_id: str):
+            """
+            **Delete Request Configuration**
+            
+            Permanently removes a request configuration and its saved response.
+            
+            **⚠️ Warning:**
+            This operation is **irreversible**.
+            """
+            try:
+                success = self.request_tools_manager.delete_profile(request_id)
+                if success:
+                    return {"message": "Request configuration deleted successfully"}
+                raise HTTPException(status_code=404, detail="Request configuration not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting request tool: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/request-tools/{request_id}/execute",
+            tags=["Request Tools"],
+            summary="Execute Request",
+            description="Execute a configured request (HTTP or internal) and save the response to TinyDB. The response will overwrite the previous result.",
+            response_model=RequestExecuteResponse,
+            response_description="Execution result with response data and metadata.",
+            responses={
+                200: {
+                    "description": "Request executed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "request_id": "get_user_data",
+                                "request_name": "Get User Data",
+                                "success": True,
+                                "status_code": 200,
+                                "response_data": {"users": []},
+                                "response_headers": {},
+                                "execution_time": 0.234,
+                                "error": None,
+                                "executed_at": "2024-01-15T10:30:00",
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Request configuration not found"},
+                500: {"description": "Error executing request"}
+            }
+        )
+        async def execute_request_tool(request_id: str):
+            """
+            **Execute Request**
+            
+            Executes a configured request and saves the response.
+            
+            **Execution Process:**
+            1. Loads request configuration
+            2. Executes HTTP or internal request
+            3. Saves response to TinyDB (overwrites previous)
+            4. Updates last execution timestamp
+            5. Returns execution result
+            
+            **Response Storage:**
+            - Response saved automatically
+            - Previous response is overwritten
+            - Includes status code, data, headers, execution time
+            - Error information if request failed
+            
+            **Request Types:**
+            - **HTTP**: Makes external API call
+            - **Internal**: Calls internal service endpoint (requires routing)
+            
+            **Use Cases:**
+            - Test API endpoints
+            - Monitor external services
+            - Execute recurring requests
+            - Debug API integrations
+            """
+            try:
+                result = self.request_tools_manager.execute_request(request_id)
+                return RequestExecuteResponse(**result)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error executing request tool {request_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
     def get_app(self) -> FastAPI:

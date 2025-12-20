@@ -9,6 +9,7 @@ import ToolManager from './pages/ToolManager';
 import SystemStatus from './pages/SystemStatus';
 import Customizations from './pages/Customizations';
 import Crawler from './pages/Crawler';
+import DBTools from './pages/DBTools';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/tools" element={<ToolManager />} />
             <Route path="/customizations" element={<Customizations />} />
             <Route path="/crawler" element={<Crawler />} />
+            <Route path="/db-tools" element={<DBTools />} />
             <Route path="/status" element={<SystemStatus />} />
           </Routes>
         </Container>

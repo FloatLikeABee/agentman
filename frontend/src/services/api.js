@@ -173,8 +173,39 @@ export const previewDBTool = async (toolId, forceRefresh = false) => {
   return response.data;
 };
 
+// Request Tools
+export const getRequestTools = async () => {
+  const response = await api.get('/request-tools');
+  return response.data;
+};
+
+export const getRequestTool = async (requestId) => {
+  const response = await api.get(`/request-tools/${requestId}`);
+  return response.data;
+};
+
+export const createRequestTool = async (payload) => {
+  const response = await api.post('/request-tools', payload);
+  return response.data;
+};
+
+export const updateRequestTool = async (requestId, payload) => {
+  const response = await api.put(`/request-tools/${requestId}`, payload);
+  return response.data;
+};
+
+export const deleteRequestTool = async (requestId) => {
+  const response = await api.delete(`/request-tools/${requestId}`);
+  return response.data;
+};
+
+export const executeRequestTool = async (requestId) => {
+  const response = await api.post(`/request-tools/${requestId}/execute`);
+  return response.data;
+};
+
 // Export all functions
-export default {
+const apiService = {
   getStatus,
   getRAGCollections,
   addRAGData,
@@ -204,4 +235,12 @@ export default {
   updateDBTool,
   deleteDBTool,
   previewDBTool,
-}; 
+  getRequestTools,
+  getRequestTool,
+  createRequestTool,
+  updateRequestTool,
+  deleteRequestTool,
+  executeRequestTool,
+};
+
+export default apiService; 

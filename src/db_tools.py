@@ -11,8 +11,10 @@ from .config import settings
 from .models import (
     DatabaseToolProfile,
     DatabaseToolCreateRequest,
+    DatabaseToolUpdateRequest,
     DatabaseType,
     DatabaseConnectionConfig,
+    DatabaseConnectionConfigUpdate,
 )
 
 
@@ -359,7 +361,7 @@ class DatabaseToolsManager:
         self.logger.info(f"Created database tool profile: {tool_id}")
         return tool_id
 
-    def update_profile(self, tool_id: str, req: DatabaseToolCreateRequest) -> bool:
+    def update_profile(self, tool_id: str, req: DatabaseToolUpdateRequest) -> bool:
         """Update an existing database tool profile."""
         if tool_id not in self.db_tools:
             return False
@@ -370,12 +372,39 @@ class DatabaseToolsManager:
                 if cache_key in self.cache:
                     del self.cache[cache_key]
             
+            # Get existing profile to preserve password if not provided
+            existing_profile = self.db_tools[tool_id]
+            existing_password = existing_profile.connection_config.password
+            
+            # Use provided password or keep existing
+            update_config = req.connection_config
+            if update_config.password is None or update_config.password == '':
+                # Keep existing password
+                connection_config = DatabaseConnectionConfig(
+                    host=update_config.host,
+                    port=update_config.port,
+                    database=update_config.database,
+                    username=update_config.username,
+                    password=existing_password,
+                    additional_params=update_config.additional_params,
+                )
+            else:
+                # Use new password
+                connection_config = DatabaseConnectionConfig(
+                    host=update_config.host,
+                    port=update_config.port,
+                    database=update_config.database,
+                    username=update_config.username,
+                    password=update_config.password,
+                    additional_params=update_config.additional_params,
+                )
+            
             profile = DatabaseToolProfile(
                 id=tool_id,
                 name=req.name,
                 description=req.description,
                 db_type=req.db_type,
-                connection_config=req.connection_config,
+                connection_config=connection_config,
                 sql_statement=req.sql_statement,
                 is_active=req.is_active,
                 cache_ttl_hours=req.cache_ttl_hours,

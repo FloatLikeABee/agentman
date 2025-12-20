@@ -211,6 +211,19 @@ class DatabaseConnectionConfig(BaseModel):
     )
 
 
+class DatabaseConnectionConfigUpdate(BaseModel):
+    """Database connection configuration for updates (password optional)"""
+    host: str = Field(..., description="Database host address")
+    port: int = Field(..., description="Database port number")
+    database: str = Field(..., description="Database name")
+    username: str = Field(..., description="Database username")
+    password: Optional[str] = Field(None, description="Database password (optional, omit to keep existing)")
+    additional_params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional connection parameters (e.g., SSL settings, connection pool settings)"
+    )
+
+
 class DatabaseToolProfile(BaseModel):
     """Stored database tool profile with connection and query configuration"""
     id: str = Field(..., description="Unique database tool id")
@@ -238,6 +251,18 @@ class DatabaseToolCreateRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class DatabaseToolUpdateRequest(BaseModel):
+    """Update request for database tools (password optional)"""
+    name: str
+    description: Optional[str] = None
+    db_type: DatabaseType
+    connection_config: DatabaseConnectionConfigUpdate
+    sql_statement: str
+    is_active: bool = Field(default=True)
+    cache_ttl_hours: float = Field(default=1.0, ge=0.1, le=24.0, description="Cache TTL in hours (0.1 to 24 hours)")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class DatabaseToolPreviewResponse(BaseModel):
     """Preview response showing first 10 rows of query results"""
     tool_id: str = Field(..., description="Database tool ID")
@@ -247,6 +272,98 @@ class DatabaseToolPreviewResponse(BaseModel):
     total_rows: Optional[int] = Field(None, description="Total number of rows (if available)")
     cached: bool = Field(..., description="Whether data is from cache")
     cache_expires_at: Optional[str] = Field(None, description="Cache expiration timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class RequestType(str, Enum):
+    HTTP = "http"
+    INTERNAL = "internal"
+
+
+class HTTPMethod(str, Enum):
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
+    PATCH = "PATCH"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+
+
+class RequestConfig(BaseModel):
+    """Request configuration for HTTP or internal service calls"""
+    name: str = Field(..., description="Unique request name/task identifier")
+    description: Optional[str] = Field(None, description="Request description")
+    request_type: RequestType = Field(..., description="Type of request (http or internal)")
+    method: Optional[HTTPMethod] = Field(None, description="HTTP method (required for HTTP requests)")
+    url: Optional[str] = Field(None, description="HTTP URL (required for HTTP requests)")
+    endpoint: Optional[str] = Field(None, description="Internal service endpoint (required for internal requests)")
+    headers: Dict[str, str] = Field(default_factory=dict, description="HTTP headers")
+    params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
+    body: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Request body (string or JSON object)")
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class RequestProfile(BaseModel):
+    """Stored request profile with configuration and last response"""
+    id: str = Field(..., description="Unique request ID")
+    name: str = Field(..., description="Request name/task identifier")
+    description: Optional[str] = Field(None, description="Request description")
+    request_type: RequestType = Field(..., description="Type of request")
+    method: Optional[HTTPMethod] = Field(None, description="HTTP method")
+    url: Optional[str] = Field(None, description="HTTP URL")
+    endpoint: Optional[str] = Field(None, description="Internal service endpoint")
+    headers: Dict[str, str] = Field(default_factory=dict, description="HTTP headers")
+    params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
+    body: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Request body")
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    last_response: Optional[Dict[str, Any]] = Field(None, description="Last response data")
+    last_executed_at: Optional[str] = Field(None, description="Last execution timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class RequestCreateRequest(BaseModel):
+    """Request to create a new request configuration"""
+    name: str = Field(..., description="Unique request name/task identifier")
+    description: Optional[str] = None
+    request_type: RequestType
+    method: Optional[HTTPMethod] = None
+    url: Optional[str] = None
+    endpoint: Optional[str] = None
+    headers: Dict[str, str] = Field(default_factory=dict)
+    params: Dict[str, Any] = Field(default_factory=dict)
+    body: Optional[Union[str, Dict[str, Any]]] = None
+    timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RequestUpdateRequest(BaseModel):
+    """Request to update an existing request configuration"""
+    name: str = Field(..., description="Unique request name/task identifier")
+    description: Optional[str] = None
+    request_type: RequestType
+    method: Optional[HTTPMethod] = None
+    url: Optional[str] = None
+    endpoint: Optional[str] = None
+    headers: Dict[str, str] = Field(default_factory=dict)
+    params: Dict[str, Any] = Field(default_factory=dict)
+    body: Optional[Union[str, Dict[str, Any]]] = None
+    timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RequestExecuteResponse(BaseModel):
+    """Response from executing a request"""
+    request_id: str = Field(..., description="Request ID")
+    request_name: str = Field(..., description="Request name")
+    success: bool = Field(..., description="Whether request was successful")
+    status_code: Optional[int] = Field(None, description="HTTP status code")
+    response_data: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Response data")
+    response_headers: Dict[str, str] = Field(default_factory=dict, description="Response headers")
+    execution_time: float = Field(..., description="Execution time in seconds")
+    error: Optional[str] = Field(None, description="Error message if request failed")
+    executed_at: str = Field(..., description="Execution timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 

@@ -5,7 +5,6 @@ import {
   Typography,
   Button,
   Box,
-  Chip,
   IconButton,
   Menu,
   MenuItem,
@@ -21,6 +20,7 @@ import {
   Tune as CustomIcon,
   Menu as MenuIcon,
   Web as CrawlerIcon,
+  Dns as DBIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -33,7 +33,7 @@ const Header = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [anchorEl, setAnchorEl] = useState(null);
 
-  const { data: status } = useQuery('status', api.getStatus, {
+  useQuery('status', api.getStatus, {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
@@ -43,6 +43,7 @@ const Header = () => {
     { path: '/agents', label: 'Agent Manager', icon: <AgentIcon /> },
     { path: '/tools', label: 'Tool Manager', icon: <ToolIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
+    { path: '/db-tools', label: 'DB Tools', icon: <DBIcon /> },
     { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },
     { path: '/status', label: 'System Status', icon: <StatusIcon /> },
   ];
