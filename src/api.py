@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi import status
 import logging
 from typing import List, Dict, Any, Optional
 import asyncio
@@ -82,7 +84,7 @@ class RAGAPI:
             - **Calculator**: Mathematical computations
             - **Email**: SMTP-based email sending
             - **Financial**: Stock and financial data retrieval
-            - **Web Crawler**: Automated website content extraction with AI organization
+            - **Crawler Service**: Standalone website content extraction with AI organization (available via /crawler endpoint)
             - **Decision Equalizer**: AI-powered decision-making assistance
             - **Custom Tools**: User-defined tool integration
             
@@ -198,6 +200,17 @@ class RAGAPI:
         self.db_tools_manager = DatabaseToolsManager()
         self.request_tools_manager = RequestToolsManager(api_instance=self)
         
+        # Initialize Flow Service
+        from .flow import FlowService
+        self.flow_service = FlowService(
+            customization_manager=self.customization_manager,
+            agent_manager=self.agent_manager,
+            db_tools_manager=self.db_tools_manager,
+            request_tools_manager=self.request_tools_manager,
+            crawler_service=self.crawler_service,
+            rag_system=self.rag_system,
+        )
+        
         # Setup CORS - Allow all origins (configurable)
         # By default this uses settings.cors_origins which is ["*"],
         # meaning any frontend origin (localhost, 127.0.0.1, any port) is allowed.
@@ -214,6 +227,23 @@ class RAGAPI:
         # Setup logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        
+        # Add exception handler for validation errors to log details
+        @self.app.exception_handler(RequestValidationError)
+        async def validation_exception_handler(request: Request, exc: RequestValidationError):
+            """Handle Pydantic validation errors with detailed logging"""
+            body = await request.body()
+            self.logger.error(f"Validation error on {request.method} {request.url.path}")
+            self.logger.error(f"Validation errors: {exc.errors()}")
+            try:
+                body_str = body.decode('utf-8') if body else "No body"
+                self.logger.error(f"Request body: {body_str}")
+            except:
+                self.logger.error(f"Request body (raw): {body}")
+            return JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content={"detail": exc.errors()},
+            )
         
         # Setup routes
         self._setup_routes()
@@ -2537,7 +2567,7 @@ Question: {{input}}
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:
-                self.logger.error(f"Error creating request tool: {e}")
+                self.logger.error(f"Error creating request tool: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get(
@@ -2747,6 +2777,125 @@ Question: {{input}}
                 raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error executing request tool {request_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Flow Endpoints
+        from .models import (
+            FlowCreateRequest,
+            FlowUpdateRequest,
+            FlowExecuteRequest,
+            FlowExecuteResponse,
+        )
+
+        @self.app.get(
+            "/flows",
+            tags=["Flows"],
+            summary="List All Flows",
+            description="Get a list of all workflow flows.",
+            response_description="List of flow profiles.",
+        )
+        async def list_flows():
+            """List all workflow flows."""
+            try:
+                flows = self.flow_service.list_flows()
+                return flows
+            except Exception as e:
+                self.logger.error(f"Error listing flows: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/flows/{flow_id}",
+            tags=["Flows"],
+            summary="Get Flow",
+            description="Get detailed information about a specific flow.",
+            response_description="Flow profile details.",
+        )
+        async def get_flow(flow_id: str):
+            """Get a specific flow by ID."""
+            try:
+                flow = self.flow_service.get_flow(flow_id)
+                if not flow:
+                    raise HTTPException(status_code=404, detail="Flow not found")
+                return flow
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting flow {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/flows",
+            tags=["Flows"],
+            summary="Create Flow",
+            description="Create a new workflow flow that chains together Customization, Agents, DBTools, Requests, and Crawler components.",
+            response_description="Flow creation response with flow ID.",
+        )
+        async def create_flow(req: FlowCreateRequest):
+            """Create a new workflow flow."""
+            try:
+                flow_id = self.flow_service.create_flow(req)
+                return {"flow_id": flow_id, "message": "Flow created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating flow: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/flows/{flow_id}",
+            tags=["Flows"],
+            summary="Update Flow",
+            description="Update an existing workflow flow.",
+            response_description="Confirmation message.",
+        )
+        async def update_flow(flow_id: str, req: FlowUpdateRequest):
+            """Update an existing flow."""
+            try:
+                success = self.flow_service.update_flow(flow_id, req)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Flow not found")
+                return {"message": "Flow updated successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating flow {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/flows/{flow_id}",
+            tags=["Flows"],
+            summary="Delete Flow",
+            description="Delete a workflow flow.",
+            response_description="Confirmation message.",
+        )
+        async def delete_flow(flow_id: str):
+            """Delete a flow."""
+            try:
+                success = self.flow_service.delete_flow(flow_id)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Flow not found")
+                return {"message": "Flow deleted successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting flow {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/flows/{flow_id}/execute",
+            tags=["Flows"],
+            summary="Execute Flow",
+            description="Execute a workflow flow. Each step uses the output from the previous step as input.",
+            response_model=FlowExecuteResponse,
+            response_description="Flow execution results including all step outputs.",
+        )
+        async def execute_flow(flow_id: str, request: FlowExecuteRequest):
+            """Execute a workflow flow."""
+            try:
+                result = await self.flow_service.execute_flow(flow_id, request)
+                return result
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error executing flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
     def get_app(self) -> FastAPI:

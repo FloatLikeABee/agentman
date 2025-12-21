@@ -51,6 +51,7 @@ const AgentManager = () => {
     rag_collections: [],
     tools: [],
     system_prompt: '',
+    system_prompt_data: '',
     is_active: true,
   });
 
@@ -170,6 +171,7 @@ const AgentManager = () => {
           rag_collections: config.rag_collections || [],
           tools: config.tools || [],
           system_prompt: config.system_prompt || '',
+          system_prompt_data: config.system_prompt_data || '',
           is_active: config.is_active !== undefined ? config.is_active : true,
         });
         setEditingAgentId(agentId);
@@ -505,7 +507,20 @@ const AgentManager = () => {
                 label="System Prompt"
                 value={formData.system_prompt}
                 onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
-                placeholder="Enter system prompt for the agent..."
+                placeholder="Enter system prompt for the agent... Use {data} placeholder to inject data from flows."
+                helperText="Use {data} placeholder to inject data from flows into the system prompt"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                label="System Prompt Data (Optional)"
+                value={formData.system_prompt_data || ''}
+                onChange={(e) => setFormData({ ...formData, system_prompt_data: e.target.value })}
+                placeholder="Data to inject into system prompt (replaces {data} placeholder). Leave empty if using flows."
+                helperText="This data will replace {data} in the system prompt. Leave empty if data will come from flows."
               />
             </Grid>
           </Grid>
@@ -526,6 +541,7 @@ const AgentManager = () => {
                 rag_collections: [],
                 tools: [],
                 system_prompt: '',
+                system_prompt_data: '',
                 is_active: true,
               });
             }}

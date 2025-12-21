@@ -218,7 +218,7 @@ class RequestToolsManager:
             data = None
             json_data = None
             if profile.body:
-                if isinstance(profile.body, dict):
+                if isinstance(profile.body, dict) or isinstance(profile.body, list):
                     json_data = profile.body
                 elif isinstance(profile.body, str):
                     try:

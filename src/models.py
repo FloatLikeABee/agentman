@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any, Union
 from enum import Enum
 import json
@@ -61,6 +61,7 @@ class AgentConfig(BaseModel):
     rag_collections: List[str] = Field(default=[], description="RAG collections to use")
     tools: List[str] = Field(default=[], description="Tools to enable")
     system_prompt: Optional[str] = Field(None, description="System prompt")
+    system_prompt_data: Optional[str] = Field(None, description="Data to inject into system prompt (replaces {data} placeholder)")
     is_active: bool = Field(default=True, description="Whether agent is active")
 
 
@@ -300,7 +301,7 @@ class RequestConfig(BaseModel):
     endpoint: Optional[str] = Field(None, description="Internal service endpoint (required for internal requests)")
     headers: Dict[str, str] = Field(default_factory=dict, description="HTTP headers")
     params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
-    body: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Request body (string or JSON object)")
+    body: Optional[Union[str, Dict[str, Any], List[Any]]] = Field(None, description="Request body (string, JSON object, or array)")
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
@@ -316,7 +317,7 @@ class RequestProfile(BaseModel):
     endpoint: Optional[str] = Field(None, description="Internal service endpoint")
     headers: Dict[str, str] = Field(default_factory=dict, description="HTTP headers")
     params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
-    body: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Request body")
+    body: Optional[Union[str, Dict[str, Any], List[Any]]] = Field(None, description="Request body (string, JSON object, or array)")
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
     last_response: Optional[Dict[str, Any]] = Field(None, description="Last response data")
     last_executed_at: Optional[str] = Field(None, description="Last execution timestamp")
@@ -333,9 +334,130 @@ class RequestCreateRequest(BaseModel):
     endpoint: Optional[str] = None
     headers: Dict[str, str] = Field(default_factory=dict)
     params: Dict[str, Any] = Field(default_factory=dict)
-    body: Optional[Union[str, Dict[str, Any]]] = None
+    body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    @field_validator('description', mode='before')
+    @classmethod
+    def convert_empty_description(cls, v):
+        """Convert empty strings to None for description"""
+        if v == "":
+            return None
+        return v
+    
+    @field_validator('url', mode='before')
+    @classmethod
+    def convert_empty_url(cls, v):
+        """Convert empty strings to None for url"""
+        if v == "":
+            return None
+        return v
+    
+    @field_validator('endpoint', mode='before')
+    @classmethod
+    def convert_empty_endpoint(cls, v):
+        """Convert empty strings to None for endpoint"""
+        if v == "":
+            return None
+        return v
+    
+    @field_validator('body', mode='before')
+    @classmethod
+    def convert_empty_body(cls, v):
+        """Convert empty strings to None for body field, accept lists/arrays"""
+        if v == "":
+            return None
+        # Accept lists, dicts, or strings as-is
+        return v
+    
+    @field_validator('timeout', mode='before')
+    @classmethod
+    def convert_timeout(cls, v):
+        """Convert integer timeout to float if needed"""
+        if v is None:
+            return 30.0
+        if isinstance(v, int):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return float(v)
+            except ValueError:
+                return 30.0
+        return v
+    
+    @field_validator('request_type', mode='before')
+    @classmethod
+    def normalize_request_type(cls, v):
+        """Normalize request_type to enum value"""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            if v_lower == 'http':
+                return RequestType.HTTP
+            elif v_lower == 'internal':
+                return RequestType.INTERNAL
+        return v
+    
+    @field_validator('method', mode='before')
+    @classmethod
+    def normalize_method(cls, v):
+        """Normalize HTTP method to enum value"""
+        if v is None:
+            return None
+        if isinstance(v, str) and v:
+            v_upper = v.upper()
+            try:
+                return HTTPMethod(v_upper)
+            except ValueError:
+                # Return None if invalid method instead of raising error
+                return None
+        return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_model(cls, data):
+        """Pre-process the entire model data"""
+        if isinstance(data, dict):
+            # Convert empty strings to None for optional fields
+            for field in ['description', 'url', 'endpoint']:
+                if field in data and data[field] == "":
+                    data[field] = None
+            
+            # Handle body - convert empty string to None, allow arrays/dicts/strings
+            if 'body' in data:
+                if data['body'] == "":
+                    data['body'] = None
+                # Arrays, dicts, and strings are all valid - keep as-is
+            
+            # Convert timeout to float
+            if 'timeout' in data:
+                if data['timeout'] is None:
+                    data['timeout'] = 30.0
+                elif isinstance(data['timeout'], int):
+                    data['timeout'] = float(data['timeout'])
+                elif isinstance(data['timeout'], str):
+                    try:
+                        data['timeout'] = float(data['timeout'])
+                    except ValueError:
+                        data['timeout'] = 30.0
+            
+            # Normalize request_type
+            if 'request_type' in data and isinstance(data['request_type'], str):
+                v_lower = data['request_type'].lower()
+                if v_lower == 'http':
+                    data['request_type'] = RequestType.HTTP
+                elif v_lower == 'internal':
+                    data['request_type'] = RequestType.INTERNAL
+            
+            # Normalize method
+            if 'method' in data and data['method']:
+                if isinstance(data['method'], str):
+                    try:
+                        data['method'] = HTTPMethod(data['method'].upper())
+                    except ValueError:
+                        data['method'] = None
+        
+        return data
 
 
 class RequestUpdateRequest(BaseModel):
@@ -348,7 +470,7 @@ class RequestUpdateRequest(BaseModel):
     endpoint: Optional[str] = None
     headers: Dict[str, str] = Field(default_factory=dict)
     params: Dict[str, Any] = Field(default_factory=dict)
-    body: Optional[Union[str, Dict[str, Any]]] = None
+    body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -385,3 +507,92 @@ class CrawlerResponse(BaseModel):
     extracted_file: Optional[str] = None
     extracted_data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+class FlowStepType(str, Enum):
+    """Types of steps in a flow"""
+    CUSTOMIZATION = "customization"
+    AGENT = "agent"
+    DB_TOOL = "db_tool"
+    REQUEST = "request"
+    CRAWLER = "crawler"
+
+
+class FlowStepConfig(BaseModel):
+    """Configuration for a single step in a flow"""
+    step_id: str = Field(..., description="Unique step identifier within the flow")
+    step_type: FlowStepType = Field(..., description="Type of step")
+    step_name: str = Field(..., description="Display name for this step")
+    resource_id: str = Field(..., description="ID of the resource to use (customization_id, agent_id, db_tool_id, request_id)")
+    input_query: Optional[str] = Field(None, description="Input query/prompt for this step (if not using previous step output)")
+    use_previous_output: bool = Field(default=False, description="Whether to use output from previous step as input")
+    output_mapping: Optional[Dict[str, str]] = Field(None, description="Mapping previous step output to this step's parameters")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional step metadata")
+
+
+class FlowConfig(BaseModel):
+    """Configuration for a complete flow"""
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = Field(None, description="Flow description")
+    steps: List[FlowStepConfig] = Field(..., description="Ordered list of flow steps")
+    is_active: bool = Field(default=True, description="Whether flow is active")
+
+
+class FlowProfile(BaseModel):
+    """Stored flow profile"""
+    id: str = Field(..., description="Unique flow ID")
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = Field(None, description="Flow description")
+    steps: List[FlowStepConfig] = Field(..., description="Ordered list of flow steps")
+    is_active: bool = Field(default=True, description="Whether flow is active")
+    created_at: Optional[str] = Field(None, description="Creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class FlowCreateRequest(BaseModel):
+    """Request to create a new flow"""
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = None
+    steps: List[FlowStepConfig] = Field(..., description="Ordered list of flow steps")
+    is_active: bool = Field(default=True)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FlowUpdateRequest(BaseModel):
+    """Request to update an existing flow"""
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = None
+    steps: List[FlowStepConfig] = Field(..., description="Ordered list of flow steps")
+    is_active: bool = Field(default=True)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FlowExecuteRequest(BaseModel):
+    """Request to execute a flow"""
+    initial_input: Optional[str] = Field(None, description="Initial input for the first step (if needed)")
+    context: Optional[Dict[str, Any]] = Field(None, description="Additional context for flow execution")
+
+
+class FlowStepResult(BaseModel):
+    """Result from executing a single flow step"""
+    step_id: str = Field(..., description="Step ID")
+    step_name: str = Field(..., description="Step name")
+    step_type: FlowStepType = Field(..., description="Step type")
+    success: bool = Field(..., description="Whether step executed successfully")
+    output: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Step output")
+    error: Optional[str] = Field(None, description="Error message if step failed")
+    execution_time: float = Field(..., description="Execution time in seconds")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class FlowExecuteResponse(BaseModel):
+    """Response from executing a flow"""
+    flow_id: str = Field(..., description="Flow ID")
+    flow_name: str = Field(..., description="Flow name")
+    success: bool = Field(..., description="Whether flow completed successfully")
+    step_results: List[FlowStepResult] = Field(..., description="Results from each step")
+    final_output: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Final output from last step")
+    total_execution_time: float = Field(..., description="Total execution time in seconds")
+    error: Optional[str] = Field(None, description="Error message if flow failed")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")

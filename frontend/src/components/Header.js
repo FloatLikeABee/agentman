@@ -21,6 +21,7 @@ import {
   Menu as MenuIcon,
   Web as CrawlerIcon,
   Dns as DBIcon,
+  AccountTree as FlowIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -45,6 +46,7 @@ const Header = () => {
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
     { path: '/db-tools', label: 'DB Tools', icon: <DBIcon /> },
     { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },
+    { path: '/flow', label: 'Flow', icon: <FlowIcon /> },
     { path: '/status', label: 'System Status', icon: <StatusIcon /> },
   ];
 
