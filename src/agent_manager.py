@@ -269,28 +269,45 @@ class AgentManager:
             if tools:
                 self.logger.info(f"Agent '{config.name}' will have {len(tools)} tools: {[t.name for t in tools]}")
             else:
-                self.logger.warning(f"Agent '{config.name}' has NO tools available! This may cause issues.")
-
-            # Create agent using create_react_agent with proper prompt
-            from langchain.agents import AgentExecutor, create_react_agent
-            from langchain.prompts import PromptTemplate
+                self.logger.warning(f"Agent '{config.name}' has NO tools available! Will use direct LLM calls instead of agent executor.")
             
+            # Only create agent executor if we have tools
+            agent = None
+            if tools:
+                # Create agent using create_react_agent with proper prompt
+                from langchain.agents import AgentExecutor, create_react_agent
+                from langchain.prompts import PromptTemplate
+                
             # Create an enhanced ReAct prompt template that encourages tool usage
             system_instruction = config.system_prompt or "You are a helpful AI assistant."
-            if config.tools:
-                system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed. Do NOT say you cannot do something if you have a tool that can do it. For example, if asked to browse a website or get information from a URL, use the Web Crawler tool."
             
-            react_template = system_instruction + """
+            # Inject system_prompt_data if provided (replace {data} placeholder)
+            if config.system_prompt_data:
+                if "{data}" in system_instruction:
+                    system_instruction = system_instruction.replace("{data}", config.system_prompt_data)
+                else:
+                    # Append data to system prompt if no placeholder
+                    system_instruction = f"{system_instruction}\n\nAdditional Data:\n{config.system_prompt_data}"
+            
+            if tools:
+                system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed. Do NOT say you cannot do something if you have a tool that can do it. Only use tools that are actually available in the tools list below."
+                
+                # Build tool names list for the prompt
+                tool_names = ", ".join([t.name for t in tools])
+                
+                react_template = system_instruction + f"""
 
 You have access to the following tools:
 
-{tools}
+{{tools}}
 
 IMPORTANT INSTRUCTIONS:
 - ALWAYS use the available tools when they can help answer the question
 - Do NOT say you cannot do something if you have a tool that can do it
-- If asked to browse a website, fetch web content, or get information from a URL, use the Web Crawler tool
+- ONLY use tools that are listed above - do NOT try to use tools that are not in the list
+- Available tool names: {tool_names}
 - Read tool descriptions carefully to understand what each tool can do
+- If a tool is not available, explain that you don't have access to that specific tool
 
 Use the following format:
 
@@ -305,43 +322,48 @@ Final Answer: the final answer to the original input question
 
 Begin!
 
-Question: {input}
-{agent_scratchpad}"""
+Question: {{input}}
+{{agent_scratchpad}}"""
 
-            prompt = PromptTemplate(
-                input_variables=["tools", "tool_names", "input", "agent_scratchpad"],
-                template=react_template
-            )
-            
-            # Create the agent with the required prompt
-            agent_prompt = create_react_agent(llm, tools, prompt)
-            
-            # Wrap in AgentExecutor with proper configuration
-            # Enable parsing error handling to allow agent to recover from malformed outputs
-            def handle_parsing_error(error: Exception) -> str:
-                """Handle parsing errors gracefully"""
-                self.logger.warning(f"Parsing error occurred: {error}. Attempting to recover...")
-                return f"Error parsing output: {str(error)}. Please try again with a clearer response format."
+                prompt = PromptTemplate(
+                    input_variables=["tools", "tool_names", "input", "agent_scratchpad"],
+                    template=react_template
+                )
+                
+                # Create the agent with the required prompt
+                agent_prompt = create_react_agent(llm, tools, prompt)
+                
+                # Wrap in AgentExecutor with proper configuration
+                # Enable parsing error handling to allow agent to recover from malformed outputs
+                def handle_parsing_error(error: Exception) -> str:
+                    """Handle parsing errors gracefully"""
+                    self.logger.warning(f"Parsing error occurred: {error}. Attempting to recover...")
+                    return f"Error parsing output: {str(error)}. Please try again with a clearer response format."
 
-            agent = AgentExecutor(
-                agent=agent_prompt,
-                tools=tools,
-                verbose=True,
-                max_iterations=20,
-                early_stopping_method='force',
-                return_intermediate_steps=False,
-                handle_parsing_errors=handle_parsing_error,
-            )
+                agent = AgentExecutor(
+                    agent=agent_prompt,
+                    tools=tools,
+                    verbose=True,
+                    max_iterations=20,
+                    early_stopping_method='force',
+                    return_intermediate_steps=False,
+                    handle_parsing_errors=handle_parsing_error,
+                )
+            else:
+                # No tools available - agent will be None, and we'll use direct LLM calls
+                self.logger.info(f"Agent '{config.name}' created without agent executor (no tools). Will use direct LLM calls.")
 
             # Store agent with provider information
             agent_id = config.name.lower().replace(' ', '_')
             self.agents[agent_id] = {
+                'id': agent_id,
                 'config': config,
-                'agent': agent,
+                'agent': agent,  # Will be None if no tools available
                 'llm': llm,
                 'llm_caller': llm_caller,  # Store caller for provider info
                 'provider': provider_name,
-                'model': model_name
+                'model': model_name,
+                'has_tools': bool(tools)  # Track if agent has tools
             }
 
             self.logger.info(f"Created agent: {agent_id}")
@@ -452,17 +474,37 @@ Question: {input}
 
             # Add context to query if provided
             if context:
-                context_str = "\n".join([f"{k}: {v}" for k, v in context.items()])
-                full_query = f"Context: {context_str}\n\nQuery: {query}"
+                # Check if system_prompt_data is in context (from flow execution)
+                system_prompt_data = context.get("system_prompt_data")
+                if system_prompt_data:
+                    # Update agent's system prompt with data if needed
+                    agent_config = agent_data.get('config')
+                    if agent_config and hasattr(agent_config, 'system_prompt'):
+                        # Temporarily inject data into system prompt
+                        system_prompt = agent_config.system_prompt or ""
+                        if isinstance(system_prompt_data, dict):
+                            data_str = str(system_prompt_data)
+                        else:
+                            data_str = str(system_prompt_data)
+                        
+                        if "{data}" in system_prompt:
+                            system_prompt = system_prompt.replace("{data}", data_str)
+                        else:
+                            system_prompt = f"{system_prompt}\n\nAdditional Data:\n{data_str}"
+                        # Note: This won't update the stored agent, but will affect this execution
+                        # For permanent updates, the agent config should be updated
+                
+                context_str = "\n".join([f"{k}: {v}" for k, v in context.items() if k != "system_prompt_data"])
+                full_query = f"Context: {context_str}\n\nQuery: {query}" if context_str else query
             else:
                 full_query = query
 
-            # Check if agent has tools
-            has_tools = bool(agent_config.rag_collections or agent_config.tools)
+            # Check if agent has tools and agent executor is available
+            has_tools = agent_data.get('has_tools', False)
+            agent = agent_data.get('agent')
 
-            if has_tools:
-                # Use agent for tool-enabled queries
-                agent = agent_data['agent']
+            if has_tools and agent is not None:
+                # Use agent executor for tool-enabled queries
                 try:
                     print('full_query:::::')
                     print(full_query)
@@ -483,7 +525,9 @@ Question: {input}
                     print('llm-response:::::')
                     print(response_text)
             else:
-                # No tools, use direct LLM call
+                # No tools or agent executor not available, use direct LLM call
+                if not has_tools:
+                    self.logger.info(f"Agent '{agent_id}' has no tools configured, using direct LLM call")
                 llm = agent_data['llm']
                 response_text = await llm.ainvoke(full_query)
 

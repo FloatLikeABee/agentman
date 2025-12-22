@@ -241,6 +241,32 @@ const apiService = {
   updateRequestTool,
   deleteRequestTool,
   executeRequestTool,
+  
+  // Flows
+  getFlows: async () => {
+    const response = await api.get('/flows');
+    return response.data;
+  },
+  getFlow: async (flowId) => {
+    const response = await api.get(`/flows/${flowId}`);
+    return response.data;
+  },
+  createFlow: async (payload) => {
+    const response = await api.post('/flows', payload);
+    return response.data;
+  },
+  updateFlow: async (flowId, payload) => {
+    const response = await api.put(`/flows/${flowId}`, payload);
+    return response.data;
+  },
+  deleteFlow: async (flowId) => {
+    const response = await api.delete(`/flows/${flowId}`);
+    return response.data;
+  },
+  executeFlow: async (flowId, payload) => {
+    const response = await api.post(`/flows/${flowId}/execute`, payload);
+    return response.data;
+  },
 };
 
 export default apiService; 
