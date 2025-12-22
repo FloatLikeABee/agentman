@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     data_directory: str = "./data"
 
     # LLM Provider settings
-    default_llm_provider: str = "gemini"  # Options: gemini, qwen, glm
+    default_llm_provider: str = "gemini"  # Options: gemini, qwen, mistral
     default_model: str = "gemini-2.5-flash"
 
     # Gemini settings
@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     qwen_api_key: str = "sk-fc88e8c463e94a43bc41f1094a28fa1f"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     qwen_default_model: str = "qwen3-max"
+
+    # Mistral settings
+    mistral_api_key: str = "2IGzr4XnznEjh3O3vs0wFf0lwh7r7yhU"
+    mistral_default_model: str = "mistral-large-latest"
 
     # Embedding settings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

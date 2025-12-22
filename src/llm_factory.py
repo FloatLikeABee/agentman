@@ -12,6 +12,7 @@ class LLMProvider(str, Enum):
     """Supported LLM providers"""
     GEMINI = "gemini"
     QWEN = "qwen"
+    MISTRAL = "mistral"
 
 
 class BaseLLMCaller(ABC):

@@ -51,6 +51,7 @@ const Customizations = () => {
   const [queryResult, setQueryResult] = useState('');
   const [queryMeta, setQueryMeta] = useState(null);
   const [queryError, setQueryError] = useState('');
+  const [isRunningQuery, setIsRunningQuery] = useState(false);
 
   const createMutation = useMutation(api.createCustomization, {
     onSuccess: () => {
@@ -109,15 +110,29 @@ const Customizations = () => {
     });
   };
 
-  const handleRunQuery = async () => {
-    if (!selectedProfile || !queryText.trim()) return;
+  const handleRunQuery = async (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    
+    if (!selectedProfile || !queryText.trim()) {
+      console.log('Cannot run query: no profile selected or query is empty', { selectedProfile, queryText });
+      return;
+    }
+    
+    console.log('Running customization query:', { profileId: selectedProfile.id, query: queryText });
+    
+    setIsRunningQuery(true);
+    setQueryError('');
+    setQueryResult('');
+    setQueryMeta(null);
+    
     try {
-      setQueryError('');
-      setQueryResult('');
-      setQueryMeta(null);
       const res = await api.queryCustomization(selectedProfile.id, {
         query: queryText,
       });
+      
+      console.log('Customization query response:', res);
+      
       setQueryResult(res.response || '');
       setQueryMeta({
         model_used: res.model_used,
@@ -125,7 +140,11 @@ const Customizations = () => {
       });
     } catch (err) {
       console.error('Customization query error:', err);
-      setQueryError('Failed to run customization. Please try again.');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to run customization. Please try again.';
+      setQueryError(errorMessage);
+      console.error('Full error object:', err);
+    } finally {
+      setIsRunningQuery(false);
     }
   };
 
@@ -294,10 +313,15 @@ const Customizations = () => {
                     variant="contained"
                     startIcon={<RunIcon />}
                     fullWidth
-                    onClick={handleRunQuery}
-                    disabled={!queryText.trim()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRunQuery(e);
+                    }}
+                    disabled={!queryText.trim() || !selectedProfile || isRunningQuery}
+                    type="button"
                   >
-                    Run
+                    {isRunningQuery ? 'Running...' : 'Run'}
                   </Button>
 
                   {queryError && (

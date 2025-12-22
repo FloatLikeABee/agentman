@@ -21,6 +21,7 @@ from .llm_langchain_wrapper import LangChainLLMWrapper
 # Import all callers to register them with the factory
 import gemini_caller
 import qwen_caller
+import mistral_caller
 
 
 class AgentManager:
@@ -124,6 +125,12 @@ class AgentManager:
             'description': 'Alibaba Qwen model'
         })
 
+        # Mistral models
+        models.append({
+            'name': settings.mistral_default_model,
+            'provider': 'mistral',
+            'description': 'Mistral AI model'
+        })
 
         return models
 
@@ -139,6 +146,10 @@ class AgentManager:
                 api_key = settings.qwen_api_key
                 # Use appropriate model for Qwen
                 model_to_use = model if model.startswith('qwen') else settings.qwen_default_model
+            elif preferred_provider == LLMProviderType.MISTRAL:
+                api_key = settings.mistral_api_key
+                # Use appropriate model for Mistral
+                model_to_use = model if model.startswith('mistral') else settings.mistral_default_model
             else:
                 raise ValueError(f"Unknown provider: {preferred_provider}")
 
@@ -163,7 +174,7 @@ class AgentManager:
             self.logger.warning(f"Error creating {preferred_provider.value} caller: {e}. Attempting fallback...")
 
         # Fallback: try other providers only if preferred failed
-        fallback_providers = [LLMProviderType.GEMINI, LLMProviderType.QWEN]
+        fallback_providers = [LLMProviderType.GEMINI, LLMProviderType.QWEN, LLMProviderType.MISTRAL]
         # Remove the preferred provider from fallback list
         fallback_providers = [p for p in fallback_providers if p != preferred_provider]
 
@@ -175,6 +186,9 @@ class AgentManager:
                 elif provider == LLMProviderType.QWEN:
                     api_key = settings.qwen_api_key
                     model_to_use = model if model.startswith('qwen') else settings.qwen_default_model
+                elif provider == LLMProviderType.MISTRAL:
+                    api_key = settings.mistral_api_key
+                    model_to_use = model if model.startswith('mistral') else settings.mistral_default_model
                 else:
                     continue
 
@@ -228,10 +242,11 @@ class AgentManager:
             actual_provider_lower = provider_name.lower()
             
             # Check if we're using the correct provider
-            # Provider names: "GeminiCaller" contains "gemini", "QwenCaller" contains "qwen"
+            # Provider names: "GeminiCaller" contains "gemini", "QwenCaller" contains "qwen", "MistralCaller" contains "mistral"
             provider_match = (
                 (configured_provider_lower == 'gemini' and 'gemini' in actual_provider_lower) or
-                (configured_provider_lower == 'qwen' and 'qwen' in actual_provider_lower)
+                (configured_provider_lower == 'qwen' and 'qwen' in actual_provider_lower) or
+                (configured_provider_lower == 'mistral' and 'mistral' in actual_provider_lower)
             )
             
             if not provider_match:
@@ -293,13 +308,15 @@ class AgentManager:
                 system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed. Do NOT say you cannot do something if you have a tool that can do it. Only use tools that are actually available in the tools list below."
                 
                 # Build tool names list for the prompt
-                tool_names = ", ".join([t.name for t in tools])
+                tool_names_str = ", ".join([t.name for t in tools])
                 
-                react_template = system_instruction + f"""
+                # Create template with tool_names as a placeholder variable
+                # This is required by create_react_agent
+                react_template = system_instruction + """
 
 You have access to the following tools:
 
-{{tools}}
+{tools}
 
 IMPORTANT INSTRUCTIONS:
 - ALWAYS use the available tools when they can help answer the question
@@ -322,15 +339,17 @@ Final Answer: the final answer to the original input question
 
 Begin!
 
-Question: {{input}}
-{{agent_scratchpad}}"""
+Question: {input}
+{agent_scratchpad}"""
 
                 prompt = PromptTemplate(
-                    input_variables=["tools", "tool_names", "input", "agent_scratchpad"],
-                    template=react_template
+                    input_variables=["tools", "input", "agent_scratchpad"],
+                    template=react_template,
+                    partial_variables={"tool_names": tool_names_str}
                 )
                 
                 # Create the agent with the required prompt
+                # create_react_agent expects tool_names to be provided
                 agent_prompt = create_react_agent(llm, tools, prompt)
                 
                 # Wrap in AgentExecutor with proper configuration

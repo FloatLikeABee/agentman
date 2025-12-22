@@ -93,11 +93,11 @@ class ToolManager:
             )
         )
 
-        # Financial Data Tool
+        # Financial Data Tool (using free yfinance API)
         financial_tool = Tool(
             name="Financial Data",
             func=self._get_financial_data,
-            description="Get financial data for stocks and other financial instruments"
+            description="Get real-time stock prices and financial data using free yfinance API. Input format: 'stock price of SYMBOL' or 'SYMBOL price' where SYMBOL is the stock ticker (e.g., AAPL, MSFT, TSLA). Returns current price, market cap, volume, and other key metrics."
         )
         self.register_tool(
             "financial",
@@ -105,10 +105,8 @@ class ToolManager:
             ToolConfig(
                 name="Financial Data",
                 tool_type=ToolType.FINANCIAL,
-                description="Get financial data for stocks and other financial instruments",
-                config={
-                    "alpha_vantage_key": settings.alpha_vantage_api_key
-                }
+                description="Get real-time stock prices and financial data using free yfinance API. No API key required. Supports all major stock exchanges.",
+                config={}
             )
         )
 
@@ -136,8 +134,23 @@ class ToolManager:
         self.logger.info(f"Registered tool: {tool_id}")
 
     def get_tool(self, tool_id: str) -> Optional[Tool]:
-        """Get a tool by ID"""
-        return self.tools.get(tool_id)
+        """Get a tool by ID or name (case-insensitive)"""
+        # First try exact match
+        if tool_id in self.tools:
+            return self.tools.get(tool_id)
+        
+        # Try case-insensitive match
+        tool_id_lower = tool_id.lower()
+        for key in self.tools.keys():
+            if key.lower() == tool_id_lower:
+                return self.tools.get(key)
+        
+        # Try matching by tool config name
+        for key, config in self.tool_configs.items():
+            if config.name.lower() == tool_id_lower or config.name == tool_id:
+                return self.tools.get(key)
+        
+        return None
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """List all available tools"""
@@ -221,38 +234,197 @@ class ToolManager:
             return f"Error sending email: {str(e)}"
 
     def _get_financial_data(self, query: str) -> str:
-        """Financial data tool function"""
+        """Financial data tool function using free yfinance API (no API key required)"""
         try:
-            # Parse query for stock symbol
-            if 'stock' in query.lower() or 'price' in query.lower():
-                # Extract stock symbol (simple approach)
-                words = query.split()
-                for word in words:
-                    if len(word) <= 5 and word.isupper():
-                        symbol = word
+            import time
+            import re
+            from datetime import datetime
+            
+            # Parse query for stock symbol - improved extraction
+            symbol = None
+            
+            # Try to extract symbol from common patterns
+            words = query.split()
+            for i, word in enumerate(words):
+                # Look for uppercase ticker symbols (1-5 characters)
+                if len(word) <= 5 and word.isupper() and word.isalpha():
+                    symbol = word
+                    break
+                # Look for patterns like "AAPL stock" or "stock AAPL"
+                if word.lower() in ['stock', 'price', 'quote', 'of'] and i + 1 < len(words):
+                    potential_symbol = words[i + 1].upper().strip('.,;:!?')
+                    if len(potential_symbol) <= 5 and potential_symbol.isalpha():
+                        symbol = potential_symbol
                         break
-                else:
-                    return "Error: Please specify a stock symbol"
-
-                # Get stock data using yfinance
+            
+            if not symbol:
+                # Try to find symbol in the query more flexibly using regex
+                symbol_match = re.search(r'\b([A-Z]{1,5})\b', query.upper())
+                if symbol_match:
+                    symbol = symbol_match.group(1)
+            
+            if not symbol:
+                return "FORMAT: Please provide a stock symbol (e.g., AAPL, MSFT, TSLA). Example: 'stock price of AAPL' or 'AAPL price'"
+            
+            # Get stock data using yfinance (free, no API key required)
+            # Use history first as it's less likely to hit rate limits
+            try:
                 stock = yf.Ticker(symbol)
-                info = stock.info
+                current_price = None
+                info = {}
                 
-                if info:
-                    return f"Stock: {symbol}\nPrice: ${info.get('currentPrice', 'N/A')}\nMarket Cap: ${info.get('marketCap', 'N/A'):,}\nVolume: {info.get('volume', 'N/A'):,}"
+                # Method 1: Try history first (less rate-limited than info)
+                try:
+                    # Try 1 day history with daily intervals (most reliable)
+                    hist = stock.history(period="1d", interval="1d")
+                    if not hist.empty and len(hist) > 0:
+                        current_price = float(hist['Close'].iloc[-1])
+                except:
+                    try:
+                        # Fallback: Try 5 day history
+                        hist = stock.history(period="5d", interval="1d")
+                        if not hist.empty and len(hist) > 0:
+                            current_price = float(hist['Close'].iloc[-1])
+                    except:
+                        pass
+                
+                # Method 2: Try info if history worked (for additional data)
+                # Only try info if we got price from history, to avoid rate limits
+                if current_price is not None:
+                    try:
+                        info = stock.info
+                        if info and not info.get('currentPrice'):
+                            # If info doesn't have currentPrice, use the one from history
+                            pass
+                    except Exception as e1:
+                        # If info fails due to rate limit, that's okay - we have price from history
+                        self.logger.debug(f"Info unavailable for {symbol} (may be rate limited): {e1}")
+                        info = {}
+                
+                # Method 3: If history failed, try info as last resort
+                if current_price is None:
+                    try:
+                        info = stock.info
+                        if info:
+                            # Try various price fields
+                            current_price = (info.get('currentPrice') or 
+                                            info.get('regularMarketPrice') or 
+                                            info.get('regularMarketPreviousClose') or
+                                            info.get('previousClose') or
+                                            info.get('ask') or
+                                            info.get('bid'))
+                            if current_price:
+                                current_price = float(current_price)
+                    except Exception as e1:
+                        # Check if it's a rate limit error
+                        error_str = str(e1).lower()
+                        if 'rate limit' in error_str or 'too many' in error_str:
+                            # Return helpful message about rate limiting
+                            return f"Stock: {symbol} | Status: Rate limited by Yahoo Finance. Please wait 30-60 seconds and try again. The free API has usage limits."
+                        self.logger.debug(f"Error getting info for {symbol}: {e1}")
+                        info = {}
+                
+                # Method 4: Try fast_info as final fallback
+                if current_price is None:
+                    try:
+                        fast_info = stock.fast_info
+                        if hasattr(fast_info, 'last_price') and fast_info.last_price:
+                            current_price = float(fast_info.last_price)
+                        elif hasattr(fast_info, 'regular_market_price') and fast_info.regular_market_price:
+                            current_price = float(fast_info.regular_market_price)
+                    except:
+                        pass
+                
+                # Build structured response that won't break agent parsing
+                result_parts = [f"Stock: {symbol}"]
+                
+                if current_price:
+                    result_parts.append(f"Price: ${current_price:.2f}")
+                elif info and info.get('previousClose'):
+                    # If we have previous close but no current price, show that
+                    prev_close = float(info.get('previousClose'))
+                    result_parts.append(f"Previous Close: ${prev_close:.2f}")
+                    result_parts.append("Note: Current price unavailable (market may be closed)")
                 else:
-                    return f"Error: Could not fetch data for {symbol}"
-
-            elif 'alpha_vantage' in query.lower() and settings.alpha_vantage_api_key:
-                # Use Alpha Vantage API for more detailed data
-                # This is a placeholder - implement based on specific needs
-                return "Alpha Vantage integration available but not implemented"
-
-            else:
-                return "Please specify what financial data you need (stock price, etc.)"
+                    # Last resort: try to get any price data
+                    if info:
+                        for price_key in ['regularMarketPreviousClose', 'previousClose', 'fiftyTwoWeekHigh', 'fiftyTwoWeekLow']:
+                            if price_key in info and info[price_key]:
+                                price_val = float(info[price_key])
+                                result_parts.append(f"{price_key.replace('fiftyTwo', '52W').replace('regularMarket', '')}: ${price_val:.2f}")
+                                break
+                    
+                    if len(result_parts) == 1:  # Only has "Stock: SYMBOL"
+                        result_parts.append("Price: Unable to fetch current price. Market may be closed or symbol invalid.")
+                
+                # Add more data if available
+                if info:
+                    if 'marketCap' in info and info['marketCap']:
+                        try:
+                            market_cap = float(info['marketCap'])
+                            if market_cap >= 1e12:
+                                market_cap_str = f"${market_cap/1e12:.2f}T"
+                            elif market_cap >= 1e9:
+                                market_cap_str = f"${market_cap/1e9:.2f}B"
+                            elif market_cap >= 1e6:
+                                market_cap_str = f"${market_cap/1e6:.2f}M"
+                            else:
+                                market_cap_str = f"${market_cap:,.0f}"
+                            result_parts.append(f"Market Cap: {market_cap_str}")
+                        except:
+                            pass
+                    
+                    if 'volume' in info and info['volume']:
+                        try:
+                            result_parts.append(f"Volume: {int(info['volume']):,}")
+                        except:
+                            pass
+                    
+                    if current_price and 'previousClose' in info and info['previousClose']:
+                        try:
+                            prev_close = float(info['previousClose'])
+                            change = current_price - prev_close
+                            change_pct = (change / prev_close) * 100
+                            result_parts.append(f"Previous Close: ${prev_close:.2f}")
+                            result_parts.append(f"Change: ${change:+.2f} ({change_pct:+.2f}%)")
+                        except:
+                            pass
+                    
+                    if '52WeekHigh' in info and info['52WeekHigh']:
+                        try:
+                            result_parts.append(f"52W High: ${float(info['52WeekHigh']):.2f}")
+                        except:
+                            pass
+                    
+                    if '52WeekLow' in info and info['52WeekLow']:
+                        try:
+                            result_parts.append(f"52W Low: ${float(info['52WeekLow']):.2f}")
+                        except:
+                            pass
+                
+                return "\n".join(result_parts)
+                
+            except Exception as yf_error:
+                # Handle yfinance-specific errors gracefully with structured format
+                error_msg = str(yf_error).lower()
+                if 'rate limit' in error_msg or 'too many' in error_msg or '429' in str(yf_error):
+                    return f"Stock: {symbol} | Status: Rate limited. Please wait 10 seconds and try again."
+                elif 'not found' in error_msg or 'invalid' in error_msg or '404' in str(yf_error):
+                    return f"Stock: {symbol} | Status: Symbol not found. Please verify the stock symbol is correct."
+                else:
+                    # Try one more time with a simpler approach
+                    try:
+                        stock = yf.Ticker(symbol)
+                        fast_info = stock.fast_info
+                        if hasattr(fast_info, 'last_price'):
+                            price = float(fast_info.last_price)
+                            return f"Stock: {symbol}\nPrice: ${price:.2f}"
+                    except:
+                        return f"Stock: {symbol} | Status: Unable to fetch data. Please verify symbol and try again later."
 
         except Exception as e:
-            return f"Error getting financial data: {str(e)}"
+            # Return structured error format that won't break agent parsing
+            return f"Status: Error retrieving financial data. Please provide a valid stock symbol (e.g., AAPL, MSFT)."
 
     def create_custom_tool(self, tool_id: str, name: str, description: str, func) -> bool:
         """Create a custom tool"""

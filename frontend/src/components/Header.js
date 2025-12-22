@@ -21,6 +21,7 @@ import {
   Menu as MenuIcon,
   Web as CrawlerIcon,
   Dns as DBIcon,
+  Chat as DialogueIcon,
   AccountTree as FlowIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -40,14 +41,15 @@ const Header = () => {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
-    { path: '/rag', label: 'RAG Manager', icon: <RAGIcon /> },
-    { path: '/agents', label: 'Agent Manager', icon: <AgentIcon /> },
-    { path: '/tools', label: 'Tool Manager', icon: <ToolIcon /> },
+    { path: '/agents', label: 'Agent', icon: <AgentIcon /> },
+    { path: '/rag', label: 'RAG', icon: <RAGIcon /> },
+    { path: '/tools', label: 'Tool', icon: <ToolIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
-    { path: '/db-tools', label: 'DB Tools', icon: <DBIcon /> },
+    { path: '/db-tools', label: 'Database', icon: <DBIcon /> },
     { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },
+    { path: '/dialogue', label: 'Dialogue', icon: <DialogueIcon /> },
     { path: '/flow', label: 'Flow', icon: <FlowIcon /> },
-    { path: '/status', label: 'System Status', icon: <StatusIcon /> },
+    { path: '/status', label: 'System', icon: <StatusIcon /> },
   ];
 
   const handleMenuOpen = (event) => {

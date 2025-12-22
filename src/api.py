@@ -37,6 +37,13 @@ from .models import (
     RequestExecuteResponse,
     RequestType,
     HTTPMethod,
+    DialogueProfile,
+    DialogueCreateRequest,
+    DialogueUpdateRequest,
+    DialogueStartRequest,
+    DialogueContinueRequest,
+    DialogueResponse,
+    DialogueMessage,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -45,6 +52,7 @@ from .mcp_service import MCPService
 from .llm_factory import LLMFactory, LLMProvider
 from .llm_langchain_wrapper import LangChainLLMWrapper
 from .customization import CustomizationManager
+from .dialogue import DialogueManager
 from .crawler import CrawlerService
 from .db_tools import DatabaseToolsManager
 from .request_tools import RequestToolsManager
@@ -196,6 +204,7 @@ class RAGAPI:
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
+        self.dialogue_manager = DialogueManager(rag_system=self.rag_system)
         self.crawler_service = CrawlerService(self.rag_system)
         self.db_tools_manager = DatabaseToolsManager()
         self.request_tools_manager = RequestToolsManager(api_instance=self)
@@ -1231,18 +1240,21 @@ class RAGAPI:
                     from langchain.agents import AgentExecutor, create_react_agent
                     from langchain.prompts import PromptTemplate
 
+                    # Build tool names list
+                    tool_names_str = ", ".join([t.name for t in tools])
+                    
                     # Create ReAct prompt template
-                    react_template = f"""{system_prompt}
+                    react_template = (system_prompt + """
 
 You have access to the following tools:
 
-{{tools}}
+{tools}
 
 Use the following format:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
-Action: the action to take, should be one of [{{tool_names}}]
+Action: the action to take, should be one of [""" + tool_names_str + """]
 Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
@@ -1251,11 +1263,11 @@ Final Answer: the final answer to the original input question
 
 Begin!
 
-Question: {{input}}
-{{agent_scratchpad}}"""
+Question: {input}
+{agent_scratchpad}""")
 
                     prompt = PromptTemplate(
-                        input_variables=["tools", "tool_names", "input", "agent_scratchpad"],
+                        input_variables=["tools", "input", "agent_scratchpad"],
                         template=react_template
                     )
 
@@ -1535,6 +1547,7 @@ Question: {{input}}
             **Available Providers:**
             - **Gemini**: Google's Gemini models
             - **Qwen**: Alibaba's Qwen models
+            - **Mistral**: Mistral AI models
             
             **Use Cases:**
             - Check which providers are configured
@@ -1960,6 +1973,10 @@ Question: {{input}}
                     provider = LLMProviderType.QWEN
                     api_key = settings.qwen_api_key
                     model_name = profile.model_name or settings.qwen_default_model
+                elif provider_str == "mistral":
+                    provider = LLMProviderType.MISTRAL
+                    api_key = settings.mistral_api_key
+                    model_name = profile.model_name or settings.mistral_default_model
                 else:
                     # Fallback to default provider
                     provider = LLMProviderType.GEMINI
@@ -2777,6 +2794,668 @@ Question: {{input}}
                 raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error executing request tool {request_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Dialogue Endpoints
+        @self.app.post(
+            "/dialogues",
+            tags=["Dialogues"],
+            summary="Create Dialogue Profile",
+            description="Create a new dialogue profile for multi-turn conversations. Similar to Customization but supports back-and-forth dialogue with a maximum number of turns (default: 5). The dialogue allows the AI to ask follow-up questions if more context is needed before providing a final answer.",
+            response_description="Dialogue creation response with dialogue ID.",
+            responses={
+                200: {
+                    "description": "Dialogue profile created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "id": "customer_support_dialogue",
+                                "message": "Dialogue created successfully"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request data"},
+                500: {"description": "Error creating dialogue profile"}
+            }
+        )
+        async def create_dialogue(req: DialogueCreateRequest):
+            """
+            **Create Dialogue Profile**
+            
+            Creates a new dialogue profile that enables multi-turn conversations with AI.
+            
+            **Key Features:**
+            - System prompt configuration for AI behavior
+            - Optional RAG collection integration for context
+            - LLM provider and model selection
+            - Configurable maximum conversation turns (1-10, default: 5)
+            - Multi-turn conversation support with automatic continuation detection
+            
+            **Request Parameters:**
+            - `name`: Unique name for the dialogue profile
+            - `description`: Optional description of the dialogue's purpose
+            - `system_prompt`: Instructions for how the AI should behave
+            - `rag_collection`: Optional RAG collection name for context
+            - `llm_provider`: Optional LLM provider override (gemini, qwen, mistral)
+            - `model_name`: Optional model name override
+            - `max_turns`: Maximum conversation turns (1-10, default: 5)
+            
+            **Use Cases:**
+            - Customer support dialogues that gather information before providing solutions
+            - Form-filling assistants that ask clarifying questions
+            - Consultation dialogues that need multiple exchanges
+            - Any scenario requiring back-and-forth conversation
+            
+            **Example:**
+            Create a customer support dialogue that asks for order number, issue type, and description before providing help.
+            """
+            try:
+                dialogue_id = self.dialogue_manager.create_profile(req)
+                return {"id": dialogue_id, "message": "Dialogue created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating dialogue: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/dialogues",
+            tags=["Dialogues"],
+            summary="List All Dialogues",
+            description="Retrieve a comprehensive list of all dialogue profiles configured in the system, including their settings, configurations, and metadata.",
+            response_description="Array of dialogue profile objects with complete configuration details.",
+            responses={
+                200: {
+                    "description": "List of dialogue profiles retrieved successfully",
+                    "content": {
+                        "application/json": {
+                            "example": [
+                                {
+                                    "id": "customer_support_dialogue",
+                                    "name": "Customer Support Dialogue",
+                                    "description": "Multi-turn customer support assistant",
+                                    "system_prompt": "You are a helpful customer support agent...",
+                                    "rag_collection": "support_knowledge",
+                                    "llm_provider": "gemini",
+                                    "model_name": "gemini-2.5-flash",
+                                    "max_turns": 5,
+                                    "metadata": {}
+                                }
+                            ]
+                        }
+                    }
+                },
+                500: {"description": "Error retrieving dialogue profiles"}
+            }
+        )
+        async def list_dialogues():
+            """
+            **List All Dialogue Profiles**
+            
+            Returns information about all dialogue profiles available in the system.
+            
+            **Response Includes:**
+            - Profile ID and name
+            - System prompt configuration
+            - RAG collection associations
+            - LLM provider and model settings
+            - Maximum turns configuration
+            - Metadata and descriptions
+            
+            **Use Cases:**
+            - Discover available dialogue profiles
+            - Review dialogue configurations
+            - Plan dialogue usage strategies
+            - Check dialogue status and settings
+            """
+            try:
+                return [p.model_dump() for p in self.dialogue_manager.list_profiles()]
+            except Exception as e:
+                self.logger.error(f"Error listing dialogues: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/dialogues/{dialogue_id}",
+            tags=["Dialogues"],
+            summary="Get Dialogue Profile",
+            description="Retrieve detailed information about a specific dialogue profile, including its complete configuration, system prompt, and settings.",
+            response_description="Dialogue profile object with all configuration details.",
+            responses={
+                200: {
+                    "description": "Dialogue profile retrieved successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "id": "customer_support_dialogue",
+                                "name": "Customer Support Dialogue",
+                                "description": "Multi-turn customer support assistant",
+                                "system_prompt": "You are a helpful customer support agent...",
+                                "rag_collection": "support_knowledge",
+                                "llm_provider": "gemini",
+                                "model_name": "gemini-2.5-flash",
+                                "max_turns": 5,
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Dialogue profile not found"},
+                500: {"description": "Error retrieving dialogue profile"}
+            }
+        )
+        async def get_dialogue(dialogue_id: str):
+            """
+            **Get Dialogue Profile Details**
+            
+            Returns complete information about a specific dialogue profile.
+            
+            **Profile Information Includes:**
+            - Profile ID and display name
+            - System prompt configuration
+            - RAG collection association (if any)
+            - LLM provider and model settings
+            - Maximum conversation turns
+            - Description and metadata
+            
+            **Use Cases:**
+            - Review dialogue configuration before use
+            - Verify dialogue settings
+            - Understand dialogue behavior and capabilities
+            - Check dialogue profile details
+            """
+            try:
+                dialogue = self.dialogue_manager.get_profile(dialogue_id)
+                if not dialogue:
+                    raise HTTPException(status_code=404, detail="Dialogue not found")
+                return dialogue.model_dump()
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting dialogue {dialogue_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/dialogues/{dialogue_id}",
+            tags=["Dialogues"],
+            summary="Update Dialogue Profile",
+            description="Update an existing dialogue profile's configuration, including system prompt, RAG collection, LLM settings, and maximum turns.",
+            response_description="Update confirmation message.",
+            responses={
+                200: {
+                    "description": "Dialogue profile updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Dialogue updated successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Dialogue profile not found"},
+                500: {"description": "Error updating dialogue profile"}
+            }
+        )
+        async def update_dialogue(dialogue_id: str, req: DialogueUpdateRequest):
+            """
+            **Update Dialogue Profile**
+            
+            Modifies an existing dialogue profile's configuration.
+            
+            **Updateable Fields:**
+            - Profile name and description
+            - System prompt/instructions
+            - RAG collection association
+            - LLM provider and model selection
+            - Maximum conversation turns
+            - Metadata
+            
+            **Update Behavior:**
+            - All provided fields will replace existing values
+            - Active conversations using this profile are not affected
+            - Changes take effect immediately for new conversations
+            
+            **Use Cases:**
+            - Refine dialogue behavior by updating system prompt
+            - Change LLM provider or model
+            - Adjust maximum turns based on usage patterns
+            - Update RAG collection for better context
+            """
+            try:
+                success = self.dialogue_manager.update_profile(dialogue_id, req)
+                if success:
+                    return {"message": "Dialogue updated successfully"}
+                else:
+                    raise HTTPException(status_code=404, detail="Dialogue not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating dialogue {dialogue_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/dialogues/{dialogue_id}",
+            tags=["Dialogues"],
+            summary="Delete Dialogue Profile",
+            description="Permanently delete a dialogue profile and clean up any associated active conversations. This action cannot be undone.",
+            response_description="Deletion confirmation message.",
+            responses={
+                200: {
+                    "description": "Dialogue profile deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {"message": "Dialogue deleted successfully"}
+                        }
+                    }
+                },
+                404: {"description": "Dialogue profile not found"},
+                500: {"description": "Error deleting dialogue profile"}
+            }
+        )
+        async def delete_dialogue(dialogue_id: str):
+            """
+            **Delete Dialogue Profile**
+            
+            Permanently removes a dialogue profile from the system.
+            
+            **Deletion Effects:**
+            - Dialogue profile is removed from storage
+            - All active conversations for this profile are terminated
+            - Profile configuration is permanently deleted
+            - Cannot be undone
+            
+            **Use Cases:**
+            - Remove obsolete dialogue profiles
+            - Clean up test or unused dialogues
+            - Remove dialogues that are no longer needed
+            
+            **Warning:** This action is permanent and will terminate any active conversations using this profile.
+            """
+            try:
+                success = self.dialogue_manager.delete_profile(dialogue_id)
+                if success:
+                    return {"message": "Dialogue deleted successfully"}
+                else:
+                    raise HTTPException(status_code=404, detail="Dialogue not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting dialogue {dialogue_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/dialogues/{dialogue_id}/start",
+            tags=["Dialogues"],
+            summary="Start Dialogue Conversation",
+            description="Start a new multi-turn dialogue conversation with an initial user message. The AI will process the message, optionally use RAG context if configured, and respond. The response may indicate that more information is needed (needs_more_info=true) or provide a final answer (is_complete=true).",
+            response_model=DialogueResponse,
+            response_description="AI response with conversation ID, turn number, completion status, and full conversation history.",
+            responses={
+                200: {
+                    "description": "Dialogue conversation started successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+                                "turn_number": 1,
+                                "max_turns": 5,
+                                "response": "I'd be happy to help! To assist you better, could you please provide your order number?",
+                                "needs_more_info": True,
+                                "is_complete": False,
+                                "profile_id": "customer_support_dialogue",
+                                "profile_name": "Customer Support Dialogue",
+                                "model_used": "gemini-2.5-flash",
+                                "rag_collection_used": "support_knowledge",
+                                "conversation_history": [
+                                    {"role": "user", "content": "I need help with my order", "timestamp": "2024-01-15T10:30:00"},
+                                    {"role": "assistant", "content": "I'd be happy to help! To assist you better, could you please provide your order number?", "timestamp": "2024-01-15T10:30:05"}
+                                ],
+                                "metadata": {
+                                    "temperature": 0.7,
+                                    "max_tokens": 8192,
+                                    "provider": "gemini"
+                                }
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Dialogue profile not found"},
+                500: {"description": "Error starting dialogue conversation"}
+            }
+        )
+        async def start_dialogue(dialogue_id: str, request: DialogueStartRequest) -> DialogueResponse:
+            """
+            **Start Dialogue Conversation**
+            
+            Initiates a new multi-turn dialogue conversation using a dialogue profile.
+            
+            **Execution Process:**
+            1. Loads dialogue profile configuration
+            2. If RAG collection specified: Searches knowledge base for relevant context
+            3. Creates new conversation session with unique conversation_id
+            4. Combines system prompt + RAG context + user message
+            5. Calls LLM with configured provider/model
+            6. Analyzes response to determine if more information is needed
+            7. Returns response with conversation state
+            
+            **Request Parameters:**
+            - `dialogue_id`: Dialogue profile identifier
+            - `initial_message`: User's first message to start the conversation
+            - `n_results`: Number of RAG results to include (1-20, default: 3)
+            - `temperature`: Optional temperature override (0.0-2.0)
+            - `max_tokens`: Optional max tokens override (1-32768)
+            
+            **Response Fields:**
+            - `conversation_id`: Unique ID for this conversation (use for continue endpoint)
+            - `turn_number`: Current turn number (starts at 1)
+            - `max_turns`: Maximum turns allowed for this dialogue
+            - `response`: AI's response text
+            - `needs_more_info`: Whether AI is asking for more information
+            - `is_complete`: Whether dialogue is complete (final answer provided)
+            - `conversation_history`: Full conversation history up to this point
+            
+            **Conversation Flow:**
+            - If `needs_more_info=true`: Use `/continue` endpoint with conversation_id
+            - If `is_complete=true`: Conversation is finished, no further turns needed
+            - Maximum turns enforced: conversation ends at max_turns even if more info needed
+            
+            **Use Cases:**
+            - Start customer support conversations
+            - Begin form-filling dialogues
+            - Initiate consultation sessions
+            - Start any multi-turn AI interaction
+            """
+            try:
+                profile = self.dialogue_manager.get_profile(dialogue_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Dialogue not found")
+
+                # Determine provider/model (same logic as customization)
+                provider_str = (
+                    profile.llm_provider.value
+                    if profile.llm_provider
+                    else settings.default_llm_provider
+                )
+                if provider_str == "gemini":
+                    provider = LLMProviderType.GEMINI
+                    api_key = settings.gemini_api_key
+                    model_name = profile.model_name or settings.gemini_default_model
+                elif provider_str == "qwen":
+                    provider = LLMProviderType.QWEN
+                    api_key = settings.qwen_api_key
+                    model_name = profile.model_name or settings.qwen_default_model
+                elif provider_str == "mistral":
+                    provider = LLMProviderType.MISTRAL
+                    api_key = settings.mistral_api_key
+                    model_name = profile.model_name or settings.mistral_default_model
+                else:
+                    provider = LLMProviderType.GEMINI
+                    api_key = settings.gemini_api_key
+                    model_name = profile.model_name or settings.gemini_default_model
+
+                # Create LLM caller
+                llm_caller = LLMFactory.create_caller(
+                    provider=LLMProvider(provider.value),
+                    api_key=api_key,
+                    model=model_name,
+                    temperature=request.temperature if request.temperature is not None else 0.7,
+                    max_tokens=request.max_tokens if request.max_tokens is not None else 8192,
+                )
+
+                # Wrap in LangChain-compatible wrapper
+                llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+                # Build context from RAG collection if specified
+                context = ""
+                rag_used: Optional[str] = None
+                if profile.rag_collection:
+                    rag_used = profile.rag_collection
+                    results = self.rag_system.query_collection(
+                        profile.rag_collection,
+                        request.initial_message,
+                        request.n_results,
+                    )
+                    if results:
+                        context = "\n\n".join(r["content"] for r in results[: request.n_results])
+
+                # Create conversation
+                conversation_id = self.dialogue_manager._create_conversation(
+                    dialogue_id, request.initial_message, turn_number=1
+                )
+
+                # Build messages for conversation
+                messages = [
+                    {"role": "system", "content": profile.system_prompt},
+                    {"role": "user", "content": request.initial_message}
+                ]
+                if context:
+                    messages.insert(1, {"role": "system", "content": f"Context (from knowledge base '{rag_used}'):\n{context}"})
+
+                # Get AI response
+                response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+
+                # Add AI response to conversation
+                self.dialogue_manager._add_message_to_conversation(
+                    conversation_id, "assistant", response_text
+                )
+
+                # Determine if conversation needs to continue
+                # Check if response contains questions or asking phrases
+                response_lower = response_text.lower()
+                asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
+                needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and self.dialogue_manager.active_conversations[conversation_id]["turn_number"] < profile.max_turns
+                is_complete = not needs_more_info or self.dialogue_manager.active_conversations[conversation_id]["turn_number"] >= profile.max_turns
+
+                conversation = self.dialogue_manager.get_conversation(conversation_id)
+
+                return DialogueResponse(
+                    conversation_id=conversation_id,
+                    turn_number=conversation["turn_number"],
+                    max_turns=profile.max_turns,
+                    response=response_text,
+                    needs_more_info=needs_more_info,
+                    is_complete=is_complete,
+                    profile_id=profile.id,
+                    profile_name=profile.name,
+                    model_used=model_name,
+                    rag_collection_used=rag_used,
+                    conversation_history=conversation["messages"],
+                    metadata={
+                        "temperature": request.temperature if request.temperature is not None else 0.7,
+                        "max_tokens": request.max_tokens if request.max_tokens is not None else 8192,
+                        "provider": provider.value,
+                    },
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error starting dialogue {dialogue_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/dialogues/{dialogue_id}/continue",
+            tags=["Dialogues"],
+            summary="Continue Dialogue Conversation",
+            description="Continue an existing dialogue conversation by providing a user response. The AI processes the response in context of the full conversation history and either asks for more information or provides a final answer. The turn counter increments with each continue call.",
+            response_model=DialogueResponse,
+            response_description="AI response with updated conversation status, incremented turn number, and updated conversation history.",
+            responses={
+                200: {
+                    "description": "Dialogue conversation continued successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+                                "turn_number": 2,
+                                "max_turns": 5,
+                                "response": "Thank you! I found your order. What issue are you experiencing with it?",
+                                "needs_more_info": True,
+                                "is_complete": False,
+                                "profile_id": "customer_support_dialogue",
+                                "profile_name": "Customer Support Dialogue",
+                                "model_used": "gemini-2.5-flash",
+                                "rag_collection_used": "support_knowledge",
+                                "conversation_history": [
+                                    {"role": "user", "content": "I need help with my order", "timestamp": "2024-01-15T10:30:00"},
+                                    {"role": "assistant", "content": "I'd be happy to help! Could you please provide your order number?", "timestamp": "2024-01-15T10:30:05"},
+                                    {"role": "user", "content": "ORD-12345", "timestamp": "2024-01-15T10:30:30"},
+                                    {"role": "assistant", "content": "Thank you! I found your order. What issue are you experiencing with it?", "timestamp": "2024-01-15T10:30:35"}
+                                ],
+                                "metadata": {
+                                    "temperature": 0.7,
+                                    "max_tokens": 8192,
+                                    "provider": "gemini"
+                                }
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Maximum number of turns reached or invalid request"},
+                404: {"description": "Dialogue profile or conversation not found"},
+                500: {"description": "Error continuing dialogue conversation"}
+            }
+        )
+        async def continue_dialogue(dialogue_id: str, request: DialogueContinueRequest) -> DialogueResponse:
+            """
+            **Continue Dialogue Conversation**
+            
+            Continues an existing dialogue conversation by processing a user's response.
+            
+            **Execution Process:**
+            1. Validates conversation exists and belongs to the dialogue profile
+            2. Checks if maximum turns have been reached
+            3. Adds user message to conversation history
+            4. Increments turn counter
+            5. Builds full conversation context (all previous messages)
+            6. Calls LLM with conversation history
+            7. Analyzes response to determine if more information is needed
+            8. Returns updated conversation state
+            
+            **Request Parameters:**
+            - `dialogue_id`: Dialogue profile identifier
+            - `conversation_id`: Conversation ID from previous turn (start or continue)
+            - `user_message`: User's response to continue the dialogue
+            
+            **Response Fields:**
+            - `conversation_id`: Same conversation ID (for next continue call)
+            - `turn_number`: Incremented turn number
+            - `response`: AI's response to the user's message
+            - `needs_more_info`: Whether AI needs more information
+            - `is_complete`: Whether dialogue is complete
+            - `conversation_history`: Updated history with all messages
+            
+            **Turn Management:**
+            - Turn number increments with each continue call
+            - Maximum turns enforced: returns error if max_turns reached
+            - Conversation ends automatically at max_turns even if more info needed
+            
+            **Use Cases:**
+            - Continue customer support conversations
+            - Progress through form-filling dialogues
+            - Continue consultation sessions
+            - Maintain multi-turn AI interactions
+            
+            **Best Practices:**
+            - Always use the conversation_id from the previous response
+            - Check `is_complete` before making another continue call
+            - Monitor `turn_number` to avoid hitting max_turns
+            - Use `needs_more_info` to determine if conversation should continue
+            """
+            try:
+                profile = self.dialogue_manager.get_profile(dialogue_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Dialogue not found")
+
+                conversation = self.dialogue_manager.get_conversation(request.conversation_id)
+                if not conversation or conversation["profile_id"] != dialogue_id:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+
+                # Check if conversation has reached max turns
+                if conversation["turn_number"] >= profile.max_turns:
+                    raise HTTPException(status_code=400, detail="Maximum number of turns reached")
+
+                # Determine provider/model (same as start)
+                provider_str = (
+                    profile.llm_provider.value
+                    if profile.llm_provider
+                    else settings.default_llm_provider
+                )
+                if provider_str == "gemini":
+                    provider = LLMProviderType.GEMINI
+                    api_key = settings.gemini_api_key
+                    model_name = profile.model_name or settings.gemini_default_model
+                elif provider_str == "qwen":
+                    provider = LLMProviderType.QWEN
+                    api_key = settings.qwen_api_key
+                    model_name = profile.model_name or settings.qwen_default_model
+                elif provider_str == "mistral":
+                    provider = LLMProviderType.MISTRAL
+                    api_key = settings.mistral_api_key
+                    model_name = profile.model_name or settings.mistral_default_model
+                else:
+                    provider = LLMProviderType.GEMINI
+                    api_key = settings.gemini_api_key
+                    model_name = profile.model_name or settings.gemini_default_model
+
+                # Create LLM caller
+                llm_caller = LLMFactory.create_caller(
+                    provider=LLMProvider(provider.value),
+                    api_key=api_key,
+                    model=model_name,
+                    temperature=0.7,
+                    max_tokens=8192,
+                )
+
+                # Wrap in LangChain-compatible wrapper
+                llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+                # Add user message to conversation
+                self.dialogue_manager._add_message_to_conversation(
+                    request.conversation_id, "user", request.user_message
+                )
+                self.dialogue_manager._increment_turn(request.conversation_id)
+
+                # Build messages from conversation history
+                messages = [{"role": "system", "content": profile.system_prompt}]
+                for msg in conversation["messages"]:
+                    messages.append({"role": msg.role, "content": msg.content})
+                messages.append({"role": "user", "content": request.user_message})
+
+                # Get AI response
+                response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+
+                # Add AI response to conversation
+                self.dialogue_manager._add_message_to_conversation(
+                    request.conversation_id, "assistant", response_text
+                )
+
+                # Get updated conversation
+                updated_conversation = self.dialogue_manager.get_conversation(request.conversation_id)
+
+                # Determine if conversation needs to continue
+                response_lower = response_text.lower()
+                asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
+                needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and updated_conversation["turn_number"] < profile.max_turns
+                is_complete = not needs_more_info or updated_conversation["turn_number"] >= profile.max_turns
+
+                return DialogueResponse(
+                    conversation_id=request.conversation_id,
+                    turn_number=updated_conversation["turn_number"],
+                    max_turns=profile.max_turns,
+                    response=response_text,
+                    needs_more_info=needs_more_info,
+                    is_complete=is_complete,
+                    profile_id=profile.id,
+                    profile_name=profile.name,
+                    model_used=model_name,
+                    rag_collection_used=profile.rag_collection,
+                    conversation_history=updated_conversation["messages"],
+                    metadata={
+                        "temperature": 0.7,
+                        "max_tokens": 8192,
+                        "provider": provider.value,
+                    },
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error continuing dialogue {dialogue_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Flow Endpoints

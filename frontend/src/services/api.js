@@ -134,6 +134,42 @@ export const queryCustomization = async (profileId, payload) => {
   return response.data;
 };
 
+// Dialogues
+export const getDialogues = async () => {
+  const response = await api.get('/dialogues');
+  return response.data;
+};
+
+export const getDialogue = async (dialogueId) => {
+  const response = await api.get(`/dialogues/${dialogueId}`);
+  return response.data;
+};
+
+export const createDialogue = async (payload) => {
+  const response = await api.post('/dialogues', payload);
+  return response.data;
+};
+
+export const updateDialogue = async (dialogueId, payload) => {
+  const response = await api.put(`/dialogues/${dialogueId}`, payload);
+  return response.data;
+};
+
+export const deleteDialogue = async (dialogueId) => {
+  const response = await api.delete(`/dialogues/${dialogueId}`);
+  return response.data;
+};
+
+export const startDialogue = async (dialogueId, payload) => {
+  const response = await api.post(`/dialogues/${dialogueId}/start`, payload);
+  return response.data;
+};
+
+export const continueDialogue = async (dialogueId, payload) => {
+  const response = await api.post(`/dialogues/${dialogueId}/continue`, payload);
+  return response.data;
+};
+
 // Crawler
 export const crawlWebsite = async (payload) => {
   const response = await api.post('/crawler/crawl', payload);
@@ -228,6 +264,13 @@ const apiService = {
   updateCustomization,
   deleteCustomization,
   queryCustomization,
+  getDialogues,
+  getDialogue,
+  createDialogue,
+  updateDialogue,
+  deleteDialogue,
+  startDialogue,
+  continueDialogue,
   crawlWebsite,
   getDBTools,
   getDBTool,

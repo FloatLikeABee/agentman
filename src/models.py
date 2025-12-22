@@ -48,6 +48,7 @@ class RAGDataValidation(BaseModel):
 class LLMProviderType(str, Enum):
     GEMINI = "gemini"
     QWEN = "qwen"
+    MISTRAL = "mistral"
 
 
 class AgentConfig(BaseModel):
@@ -596,3 +597,107 @@ class FlowExecuteResponse(BaseModel):
     total_execution_time: float = Field(..., description="Total execution time in seconds")
     error: Optional[str] = Field(None, description="Error message if flow failed")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+# Dialogue Models
+class DialogueMessage(BaseModel):
+    """A single message in a dialogue conversation"""
+    role: str = Field(..., description="Message role: 'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
+    timestamp: Optional[str] = Field(None, description="Message timestamp")
+
+
+class DialogueProfile(BaseModel):
+    """Stored dialogue profile: multi-turn conversation with system prompt"""
+    id: str = Field(..., description="Unique dialogue id")
+    name: str = Field(..., description="Display name")
+    description: Optional[str] = Field(None, description="Description / use case")
+    system_prompt: str = Field(..., description="System prompt / instruction for the dialogue")
+    rag_collection: Optional[str] = Field(
+        None,
+        description="Optional RAG collection name to use as context",
+    )
+    llm_provider: Optional[LLMProviderType] = Field(
+        None,
+        description="Optional LLM provider override for this dialogue",
+    )
+    model_name: Optional[str] = Field(
+        None,
+        description="Optional model override for this dialogue",
+    )
+    max_turns: int = Field(default=5, ge=1, le=10, description="Maximum number of conversation turns (default: 5)")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for this dialogue",
+    )
+
+
+class DialogueCreateRequest(BaseModel):
+    """Request to create a new dialogue"""
+    name: str
+    description: Optional[str] = None
+    system_prompt: str
+    rag_collection: Optional[str] = None
+    llm_provider: Optional[LLMProviderType] = None
+    model_name: Optional[str] = None
+    max_turns: int = Field(default=5, ge=1, le=10)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DialogueUpdateRequest(BaseModel):
+    """Request to update an existing dialogue"""
+    name: str
+    description: Optional[str] = None
+    system_prompt: str
+    rag_collection: Optional[str] = None
+    llm_provider: Optional[LLMProviderType] = None
+    model_name: Optional[str] = None
+    max_turns: int = Field(default=5, ge=1, le=10)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DialogueStartRequest(BaseModel):
+    """Request to start a new dialogue conversation"""
+    initial_message: str = Field(..., description="Initial user message to start the dialogue")
+    n_results: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Number of RAG documents to pull if rag_collection is set",
+    )
+    temperature: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=2.0,
+        description="Optional temperature override",
+    )
+    max_tokens: Optional[int] = Field(
+        None,
+        ge=1,
+        le=32768,
+        description="Optional max tokens override",
+    )
+
+
+class DialogueContinueRequest(BaseModel):
+    """Request to continue an existing dialogue conversation"""
+    user_message: str = Field(..., description="User's response to continue the dialogue")
+    conversation_id: str = Field(..., description="Conversation ID from previous turn")
+
+
+class DialogueResponse(BaseModel):
+    """Response from a dialogue turn"""
+    conversation_id: str = Field(..., description="Unique conversation ID for this dialogue session")
+    turn_number: int = Field(..., description="Current turn number (1-based)")
+    max_turns: int = Field(..., description="Maximum turns allowed")
+    response: str = Field(..., description="AI's response")
+    needs_more_info: bool = Field(..., description="Whether AI is asking for more information (conversation continues)")
+    is_complete: bool = Field(..., description="Whether the dialogue is complete (final response provided)")
+    profile_id: str = Field(..., description="Dialogue profile used")
+    profile_name: str = Field(..., description="Dialogue profile name")
+    model_used: str = Field(..., description="Model that was actually used")
+    rag_collection_used: Optional[str] = Field(
+        None, description="RAG collection used (if any)"
+    )
+    conversation_history: List[DialogueMessage] = Field(..., description="Full conversation history up to this point")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")

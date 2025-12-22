@@ -1,12 +1,27 @@
+import os
+import logging
+
+# Disable ChromaDB telemetry BEFORE importing chromadb
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_DISABLED"] = "True"
+
+# Suppress ChromaDB telemetry errors before import
+chromadb_telemetry_logger = logging.getLogger("chromadb.telemetry")
+chromadb_telemetry_logger.setLevel(logging.CRITICAL)
+chromadb_telemetry_logger.disabled = True
+
+# Suppress PostHog telemetry errors
+posthog_logger = logging.getLogger("chromadb.telemetry.product.posthog")
+posthog_logger.setLevel(logging.CRITICAL)
+posthog_logger.disabled = True
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 import pandas as pd
 import json
-import logging
 from typing import List, Dict, Any, Optional
 from .config import settings
 from .models import RAGDataInput, RAGDataValidation, DataFormat
@@ -25,7 +40,8 @@ class RAGSystem:
         self.chroma_client = chromadb.PersistentClient(
             path=settings.chroma_persist_directory,
             settings=ChromaSettings(
-                anonymized_telemetry=False
+                anonymized_telemetry=False,
+                allow_reset=True
             )
         )
         

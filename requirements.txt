@@ -6,6 +6,7 @@ langchain-text-splitters
 langchain-ollama
 langchain-openai
 google-generativeai
+mistralai
 
 # Vector database and embeddings
 chromadb==0.5.23
