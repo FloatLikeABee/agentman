@@ -248,13 +248,17 @@ class RequestToolsManager:
             except ValueError:
                 response_data = response.text
 
+            # Determine success based on status code (2xx = success)
+            is_success = 200 <= response.status_code < 300
+            error_message = None if is_success else f"HTTP {response.status_code}: {response.reason}"
+
             return {
-                "success": True,
+                "success": is_success,
                 "status_code": response.status_code,
                 "response_data": response_data,
                 "response_headers": dict(response.headers),
                 "execution_time": execution_time,
-                "error": None,
+                "error": error_message,
             }
         except requests.exceptions.Timeout:
             execution_time = time.time() - start_time

@@ -223,6 +223,9 @@ const RequestToolsPanel = () => {
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [tabValue, setTabValue] = useState(0);
+  const [openResponseModal, setOpenResponseModal] = useState(false);
+  const [responseData, setResponseData] = useState(null);
+  const [validationError, setValidationError] = useState('');
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -268,8 +271,11 @@ const RequestToolsPanel = () => {
   });
 
   const executeMutation = useMutation(api.executeRequestTool, {
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries('request-tools');
+      // Store response data and open modal
+      setResponseData(data);
+      setOpenResponseModal(true);
     },
   });
 
@@ -291,13 +297,18 @@ const RequestToolsPanel = () => {
   };
 
   const handleCreate = () => {
-    const payload = {
-      ...createForm,
-      headers: parseJsonOrEmpty(headersText),
-      params: parseJsonOrEmpty(paramsText),
-      body: createForm.body ? (tryParseJson(createForm.body) || createForm.body) : null,
-    };
-    createMutation.mutate(payload);
+    try {
+      setValidationError('');
+      const payload = {
+        ...createForm,
+        headers: parseJsonOrEmpty(headersText),
+        params: parseJsonOrEmpty(paramsText),
+        body: createForm.body ? (tryParseJson(createForm.body) || createForm.body) : null,
+      };
+      createMutation.mutate(payload);
+    } catch (e) {
+      setValidationError(e.message);
+    }
   };
 
   const handleEdit = (request) => {
@@ -320,13 +331,18 @@ const RequestToolsPanel = () => {
   };
 
   const handleUpdate = () => {
-    const payload = {
-      ...createForm,
-      headers: parseJsonOrEmpty(headersText),
-      params: parseJsonOrEmpty(paramsText),
-      body: createForm.body ? (tryParseJson(createForm.body) || createForm.body) : null,
-    };
-    updateMutation.mutate({ requestId: editingRequestId, payload });
+    try {
+      setValidationError('');
+      const payload = {
+        ...createForm,
+        headers: parseJsonOrEmpty(headersText),
+        params: parseJsonOrEmpty(paramsText),
+        body: createForm.body ? (tryParseJson(createForm.body) || createForm.body) : null,
+      };
+      updateMutation.mutate({ requestId: editingRequestId, payload });
+    } catch (e) {
+      setValidationError(e.message);
+    }
   };
 
   const handleExecute = (requestId) => {
@@ -336,9 +352,15 @@ const RequestToolsPanel = () => {
   const parseJsonOrEmpty = (text) => {
     if (!text || !text.trim()) return {};
     try {
-      return JSON.parse(text);
-    } catch {
-      return {};
+      const parsed = JSON.parse(text);
+      // Ensure it's an object
+      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Headers and params must be JSON objects, not arrays or primitives');
+      }
+      return parsed;
+    } catch (e) {
+      // Re-throw with more context
+      throw new Error(`Invalid JSON format: ${e.message}. Please check your syntax (e.g., missing commas, colons, or quotes).`);
     }
   };
 
@@ -542,9 +564,17 @@ const RequestToolsPanel = () => {
         </Dialog>
 
         {/* Edit Dialog */}
-        <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)} maxWidth="md" fullWidth>
+        <Dialog open={openEditDialog} onClose={() => {
+          setOpenEditDialog(false);
+          setValidationError('');
+        }} maxWidth="md" fullWidth>
           <DialogTitle>Edit Request Configuration</DialogTitle>
           <DialogContent>
+            {validationError && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setValidationError('')}>
+                {validationError}
+              </Alert>
+            )}
             <RequestForm
               form={createForm}
               setForm={setCreateForm}
@@ -563,6 +593,161 @@ const RequestToolsPanel = () => {
             >
               {updateMutation.isLoading ? 'Updating...' : 'Update'}
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Response Modal */}
+        <Dialog 
+          open={openResponseModal} 
+          onClose={() => setOpenResponseModal(false)} 
+          maxWidth="lg" 
+          fullWidth
+        >
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">Response Details</Typography>
+              {responseData && (
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                  <Chip
+                    label={responseData.success ? 'Success' : 'Failed'}
+                    color={responseData.success ? 'success' : 'error'}
+                    size="small"
+                  />
+                  {responseData.status_code && (
+                    <Chip
+                      label={`Status: ${responseData.status_code}`}
+                      size="small"
+                      variant="outlined"
+                    />
+                  )}
+                </Box>
+              )}
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            {responseData && (
+              <Box>
+                {/* Request Info */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Request Information
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+                    <Typography variant="body2">
+                      <strong>Name:</strong> {responseData.request_name}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>ID:</strong> {responseData.request_id}
+                    </Typography>
+                    {responseData.executed_at && (
+                      <Typography variant="body2">
+                        <strong>Executed:</strong> {new Date(responseData.executed_at).toLocaleString()}
+                      </Typography>
+                    )}
+                    {responseData.execution_time !== undefined && (
+                      <Typography variant="body2">
+                        <strong>Execution Time:</strong> {responseData.execution_time.toFixed(3)}s
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Error Section */}
+                {responseData.error && (
+                  <Alert severity="error" sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" gutterBottom>Error</Typography>
+                    <Typography variant="body2">{responseData.error}</Typography>
+                  </Alert>
+                )}
+
+                {/* Response Headers */}
+                {responseData.response_headers && Object.keys(responseData.response_headers).length > 0 && (
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Response Headers
+                    </Typography>
+                    <Paper sx={{ p: 2, bgcolor: 'grey.50', maxHeight: 200, overflow: 'auto' }}>
+                      <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>
+                        {JSON.stringify(responseData.response_headers, null, 2)}
+                      </pre>
+                    </Paper>
+                  </Box>
+                )}
+
+                {/* Response Body */}
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Response Body
+                    </Typography>
+                    {(() => {
+                      const isJson = responseData.response_data !== null && 
+                                     responseData.response_data !== undefined &&
+                                     (typeof responseData.response_data === 'object' || 
+                                      (typeof responseData.response_data === 'string' && 
+                                       (responseData.response_data.trim().startsWith('{') || 
+                                        responseData.response_data.trim().startsWith('['))));
+                      return (
+                        <Chip
+                          label={isJson ? 'JSON' : 'Plain Text'}
+                          size="small"
+                          color={isJson ? 'primary' : 'default'}
+                          variant="outlined"
+                        />
+                      );
+                    })()}
+                  </Box>
+                  <Paper sx={{ p: 2, bgcolor: 'grey.50', maxHeight: 500, overflow: 'auto' }}>
+                    {(() => {
+                      const data = responseData.response_data;
+                      if (data === null || data === undefined) {
+                        return (
+                          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                            No response body
+                          </Typography>
+                        );
+                      }
+                      
+                      // Check if it's JSON
+                      let displayData = data;
+                      let isJson = false;
+                      
+                      if (typeof data === 'object') {
+                        // Already an object, format as JSON
+                        displayData = JSON.stringify(data, null, 2);
+                        isJson = true;
+                      } else if (typeof data === 'string') {
+                        // Try to parse as JSON
+                        try {
+                          const parsed = JSON.parse(data);
+                          displayData = JSON.stringify(parsed, null, 2);
+                          isJson = true;
+                        } catch {
+                          // Not JSON, display as-is
+                          displayData = data;
+                          isJson = false;
+                        }
+                      }
+                      
+                      return (
+                        <pre style={{ 
+                          margin: 0, 
+                          fontSize: '0.875rem', 
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontFamily: isJson ? 'monospace' : 'inherit'
+                        }}>
+                          {displayData}
+                        </pre>
+                      );
+                    })()}
+                  </Paper>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenResponseModal(false)}>Close</Button>
           </DialogActions>
         </Dialog>
       </CardContent>
