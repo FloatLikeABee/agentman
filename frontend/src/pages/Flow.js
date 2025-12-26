@@ -44,6 +44,7 @@ const Flow = () => {
   const { data: agents = [] } = useQuery('agents', api.getAgents);
   const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools);
   const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools);
+  const { data: dialogues = [] } = useQuery('dialogues', api.getDialogues);
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openExecuteDialog, setOpenExecuteDialog] = useState(false);
@@ -191,6 +192,8 @@ const Flow = () => {
         return requestTools.map((r) => ({ value: r.id, label: r.name }));
       case 'crawler':
         return [{ value: 'crawler', label: 'Crawler Service' }];
+      case 'dialogue':
+        return dialogues.map((d) => ({ value: d.id, label: d.name }));
       default:
         return [];
     }
@@ -389,6 +392,7 @@ const Flow = () => {
                       <MenuItem value="db_tool">DB Tool</MenuItem>
                       <MenuItem value="request">Request</MenuItem>
                       <MenuItem value="crawler">Crawler</MenuItem>
+                      <MenuItem value="dialogue">Dialogue</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>

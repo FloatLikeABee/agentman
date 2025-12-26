@@ -517,6 +517,7 @@ class FlowStepType(str, Enum):
     DB_TOOL = "db_tool"
     REQUEST = "request"
     CRAWLER = "crawler"
+    DIALOGUE = "dialogue"
 
 
 class FlowStepConfig(BaseModel):

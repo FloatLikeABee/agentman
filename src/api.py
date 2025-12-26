@@ -218,6 +218,7 @@ class RAGAPI:
             request_tools_manager=self.request_tools_manager,
             crawler_service=self.crawler_service,
             rag_system=self.rag_system,
+            dialogue_manager=self.dialogue_manager,
         )
         
         # Setup CORS - Allow all origins (configurable)
