@@ -247,4 +247,4 @@ class RAGSystem:
             return True
         except Exception as e:
             self.logger.error(f"Error deleting collection {collection_name}: {e}")
-            return False 
+            return False
