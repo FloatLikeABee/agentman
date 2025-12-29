@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     gemini_default_model: str = "gemini-2.5-flash"
 
     # Qwen settings
-    qwen_api_key: str = "sk-fc88e8c463e94a43bc41f1094a28fa1f"
+    qwen_api_key: str = "sk-206d748313fb42dab3910dc3407f441b"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     qwen_default_model: str = "qwen3-max"
 
