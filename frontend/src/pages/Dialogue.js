@@ -96,6 +96,8 @@ const Dialogue = () => {
           description: '',
           system_prompt: '',
           rag_collection: '',
+          db_tools: [],
+          request_tools: [],
           llm_provider: '',
           model_name: '',
           max_turns: 5,
@@ -501,6 +503,8 @@ const Dialogue = () => {
             description: '',
             system_prompt: '',
             rag_collection: '',
+            db_tools: [],
+            request_tools: [],
             llm_provider: '',
             model_name: '',
             max_turns: 5,
@@ -563,7 +567,7 @@ const Dialogue = () => {
               multiple
               options={dbTools.map((tool) => ({ id: tool.id, label: tool.name }))}
               getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-              value={createForm.db_tools.map(id => {
+              value={(createForm.db_tools || []).map(id => {
                 const tool = dbTools.find(t => t.id === id);
                 return tool ? { id: tool.id, label: tool.name } : null;
               }).filter(Boolean)}
@@ -593,7 +597,7 @@ const Dialogue = () => {
               multiple
               options={requestTools.map((tool) => ({ id: tool.id, label: tool.name }))}
               getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-              value={createForm.request_tools.map(id => {
+              value={(createForm.request_tools || []).map(id => {
                 const tool = requestTools.find(t => t.id === id);
                 return tool ? { id: tool.id, label: tool.name } : null;
               }).filter(Boolean)}
@@ -735,7 +739,7 @@ const Dialogue = () => {
               multiple
               options={dbTools.map((tool) => ({ id: tool.id, label: tool.name }))}
               getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-              value={createForm.db_tools.map(id => {
+              value={(createForm.db_tools || []).map(id => {
                 const tool = dbTools.find(t => t.id === id);
                 return tool ? { id: tool.id, label: tool.name } : null;
               }).filter(Boolean)}
@@ -765,7 +769,7 @@ const Dialogue = () => {
               multiple
               options={requestTools.map((tool) => ({ id: tool.id, label: tool.name }))}
               getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-              value={createForm.request_tools.map(id => {
+              value={(createForm.request_tools || []).map(id => {
                 const tool = requestTools.find(t => t.id === id);
                 return tool ? { id: tool.id, label: tool.name } : null;
               }).filter(Boolean)}

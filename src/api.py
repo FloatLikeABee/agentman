@@ -3387,11 +3387,29 @@ Question: {{input}}
                     # Build tool names list for the prompt
                     tool_names_str = ", ".join([t.name for t in tools])
                     
-                    # Create ReAct prompt template with proper variables
-                    system_instruction = profile.system_prompt or "You are a helpful AI assistant."
-                    system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
-                    
-                    react_template = system_instruction + """
+                    try:
+                        # Escape curly braces in system prompt to prevent LangChain from treating them as template variables
+                        # We need to escape { and } by doubling them, but preserve our actual template variables
+                        system_instruction = profile.system_prompt or "You are a helpful AI assistant."
+                        # Protect our template variables with placeholders
+                        protected_vars = {
+                            "{tools}": "___TEMPLATE_VAR_TOOLS___",
+                            "{tool_names}": "___TEMPLATE_VAR_TOOL_NAMES___",
+                            "{input}": "___TEMPLATE_VAR_INPUT___",
+                            "{agent_scratchpad}": "___TEMPLATE_VAR_SCRATCHPAD___"
+                        }
+                        # Replace protected variables with placeholders
+                        for var, placeholder in protected_vars.items():
+                            system_instruction = system_instruction.replace(var, placeholder)
+                        # Escape all remaining curly braces
+                        system_instruction = system_instruction.replace("{", "{{").replace("}", "}}")
+                        # Restore our template variables
+                        for var, placeholder in protected_vars.items():
+                            system_instruction = system_instruction.replace(placeholder, var)
+                        
+                        system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
+                        
+                        react_template = system_instruction + """
 
 You have access to the following tools:
 
@@ -3420,17 +3438,16 @@ Begin!
 Question: {input}
 {agent_scratchpad}
 """
-                    
-                    prompt = PromptTemplate(
-                        input_variables=["tools", "input", "agent_scratchpad"],
-                        template=react_template,
-                        partial_variables={"tool_names": tool_names_str}
-                    )
-                    
-                    agent = create_react_agent(llm, tools, prompt)
-                    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
-                    
-                    try:
+                        
+                        prompt = PromptTemplate(
+                            input_variables=["tools", "input", "agent_scratchpad"],
+                            template=react_template,
+                            partial_variables={"tool_names": tool_names_str}
+                        )
+                        
+                        agent = create_react_agent(llm, tools, prompt)
+                        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
+                        
                         response = agent_executor.invoke({"input": request.initial_message})
                         response_text = response.get("output", str(response))
                     except Exception as e:
@@ -3695,14 +3712,34 @@ Question: {input}
                     # Build tool names list for the prompt
                     tool_names_str = ", ".join([t.name for t in tools])
                     
-                    # Build conversation history string
-                    conv_history = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation["messages"]])
-                    
-                    # Create ReAct prompt template with proper variables
-                    system_instruction = profile.system_prompt or "You are a helpful AI assistant."
-                    system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
-                    
-                    react_template = system_instruction + f"""
+                    try:
+                        # Build conversation history string
+                        conv_history = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation["messages"]])
+                        
+                        # Escape curly braces in system prompt to prevent LangChain from treating them as template variables
+                        system_instruction = profile.system_prompt or "You are a helpful AI assistant."
+                        # Protect our template variables with placeholders
+                        protected_vars = {
+                            "{tools}": "___TEMPLATE_VAR_TOOLS___",
+                            "{tool_names}": "___TEMPLATE_VAR_TOOL_NAMES___",
+                            "{input}": "___TEMPLATE_VAR_INPUT___",
+                            "{agent_scratchpad}": "___TEMPLATE_VAR_SCRATCHPAD___"
+                        }
+                        # Replace protected variables with placeholders
+                        for var, placeholder in protected_vars.items():
+                            system_instruction = system_instruction.replace(var, placeholder)
+                        # Escape all remaining curly braces
+                        system_instruction = system_instruction.replace("{", "{{").replace("}", "}}")
+                        # Restore our template variables
+                        for var, placeholder in protected_vars.items():
+                            system_instruction = system_instruction.replace(placeholder, var)
+                        
+                        system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
+                        
+                        # Escape curly braces in conversation history as well
+                        conv_history = conv_history.replace("{", "{{").replace("}", "}}")
+                        
+                        react_template = system_instruction + f"""
 
 Previous conversation:
 {conv_history}
@@ -3734,17 +3771,16 @@ Begin!
 Question: {{input}}
 {{agent_scratchpad}}
 """
-                    
-                    prompt = PromptTemplate(
-                        input_variables=["tools", "input", "agent_scratchpad"],
-                        template=react_template,
-                        partial_variables={"tool_names": tool_names_str}
-                    )
-                    
-                    agent = create_react_agent(llm, tools, prompt)
-                    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
-                    
-                    try:
+                        
+                        prompt = PromptTemplate(
+                            input_variables=["tools", "input", "agent_scratchpad"],
+                            template=react_template,
+                            partial_variables={"tool_names": tool_names_str}
+                        )
+                        
+                        agent = create_react_agent(llm, tools, prompt)
+                        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
+                        
                         response = agent_executor.invoke({"input": request.user_message})
                         response_text = response.get("output", str(response))
                     except Exception as e:
