@@ -38,6 +38,8 @@ const Dialogue = () => {
   const { data: models = [] } = useQuery('models', api.getModels, { enabled: true });
   const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true });
   const { data: collections = [] } = useQuery('collections', api.getRAGCollections);
+  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools);
+  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools);
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
@@ -48,6 +50,8 @@ const Dialogue = () => {
     description: '',
     system_prompt: '',
     rag_collection: '',
+    db_tools: [],
+    request_tools: [],
     llm_provider: '',
     model_name: '',
     max_turns: 5,
@@ -71,6 +75,8 @@ const Dialogue = () => {
         description: '',
         system_prompt: '',
         rag_collection: '',
+        db_tools: [],
+        request_tools: [],
         llm_provider: '',
         model_name: '',
         max_turns: 5,
@@ -190,6 +196,8 @@ const Dialogue = () => {
       description: createForm.description,
       system_prompt: createForm.system_prompt,
       rag_collection: createForm.rag_collection || null,
+      db_tools: createForm.db_tools || [],
+      request_tools: createForm.request_tools || [],
       llm_provider: createForm.llm_provider || null,
       model_name: createForm.model_name || null,
       max_turns: createForm.max_turns,
@@ -203,6 +211,8 @@ const Dialogue = () => {
       description: dialogue.description || '',
       system_prompt: dialogue.system_prompt || '',
       rag_collection: dialogue.rag_collection || '',
+      db_tools: dialogue.db_tools || [],
+      request_tools: dialogue.request_tools || [],
       llm_provider: dialogue.llm_provider || '',
       model_name: dialogue.model_name || '',
       max_turns: dialogue.max_turns || 5,
@@ -218,6 +228,8 @@ const Dialogue = () => {
         description: createForm.description,
         system_prompt: createForm.system_prompt,
         rag_collection: createForm.rag_collection || null,
+        db_tools: createForm.db_tools || [],
+        request_tools: createForm.request_tools || [],
         llm_provider: createForm.llm_provider || null,
         model_name: createForm.model_name || null,
         max_turns: createForm.max_turns,
@@ -282,6 +294,12 @@ const Dialogue = () => {
                       <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         {dialogue.rag_collection && (
                           <Chip size="small" label={`RAG: ${dialogue.rag_collection}`} color="primary" variant="outlined" />
+                        )}
+                        {dialogue.db_tools && dialogue.db_tools.length > 0 && (
+                          <Chip size="small" label={`DB Tools: ${dialogue.db_tools.length}`} color="secondary" variant="outlined" />
+                        )}
+                        {dialogue.request_tools && dialogue.request_tools.length > 0 && (
+                          <Chip size="small" label={`Request Tools: ${dialogue.request_tools.length}`} color="info" variant="outlined" />
                         )}
                         {dialogue.llm_provider && (
                           <Chip size="small" label={`Provider: ${dialogue.llm_provider}`} variant="outlined" />
@@ -541,6 +559,66 @@ const Dialogue = () => {
                 />
               )}
             />
+            <Autocomplete
+              multiple
+              options={dbTools.map((tool) => ({ id: tool.id, label: tool.name }))}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+              value={createForm.db_tools.map(id => {
+                const tool = dbTools.find(t => t.id === id);
+                return tool ? { id: tool.id, label: tool.name } : null;
+              }).filter(Boolean)}
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, db_tools: newValue.map(v => v.id) });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Database Tools (optional)"
+                  helperText="Select database tools to use in this dialogue"
+                  sx={{ mb: 2 }}
+                />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    key={option.id}
+                    size="small"
+                  />
+                ))
+              }
+            />
+            <Autocomplete
+              multiple
+              options={requestTools.map((tool) => ({ id: tool.id, label: tool.name }))}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+              value={createForm.request_tools.map(id => {
+                const tool = requestTools.find(t => t.id === id);
+                return tool ? { id: tool.id, label: tool.name } : null;
+              }).filter(Boolean)}
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, request_tools: newValue.map(v => v.id) });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Request Tools (optional)"
+                  helperText="Select request tools to use in this dialogue"
+                  sx={{ mb: 2 }}
+                />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    key={option.id}
+                    size="small"
+                  />
+                ))
+              }
+            />
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>LLM Provider (optional)</InputLabel>
               <Select
@@ -652,6 +730,66 @@ const Dialogue = () => {
                   sx={{ mb: 2 }}
                 />
               )}
+            />
+            <Autocomplete
+              multiple
+              options={dbTools.map((tool) => ({ id: tool.id, label: tool.name }))}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+              value={createForm.db_tools.map(id => {
+                const tool = dbTools.find(t => t.id === id);
+                return tool ? { id: tool.id, label: tool.name } : null;
+              }).filter(Boolean)}
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, db_tools: newValue.map(v => v.id) });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Database Tools (optional)"
+                  helperText="Select database tools to use in this dialogue"
+                  sx={{ mb: 2 }}
+                />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    key={option.id}
+                    size="small"
+                  />
+                ))
+              }
+            />
+            <Autocomplete
+              multiple
+              options={requestTools.map((tool) => ({ id: tool.id, label: tool.name }))}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+              value={createForm.request_tools.map(id => {
+                const tool = requestTools.find(t => t.id === id);
+                return tool ? { id: tool.id, label: tool.name } : null;
+              }).filter(Boolean)}
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, request_tools: newValue.map(v => v.id) });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Request Tools (optional)"
+                  helperText="Select request tools to use in this dialogue"
+                  sx={{ mb: 2 }}
+                />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    key={option.id}
+                    size="small"
+                  />
+                ))
+              }
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>LLM Provider (optional)</InputLabel>

@@ -59,7 +59,7 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
 
 ### Prerequisites
 
-1. **Python 3.8+**
+1. **Python 3.13+**
 2. **Node.js 16+**
 3. **Ollama** (for local AI models)
 4. **Git**
@@ -72,7 +72,12 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
    cd myagent
    ```
 
-2. **Install Python dependencies**
+2. **Install Python 3.13** (if not already installed)
+   - Download from [python.org](https://www.python.org/downloads/)
+   - Or use `pyenv` (recommended): `pyenv install 3.13`
+   - Verify installation: `python --version` (should show 3.13.x)
+
+3. **Install Python dependencies**
    ```bash
    pip install -r requirements.txt
    ```

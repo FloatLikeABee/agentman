@@ -3384,12 +3384,30 @@ Question: {{input}}
                     from langchain.agents import AgentExecutor, create_react_agent
                     from langchain.prompts import PromptTemplate
                     
-                    # Create ReAct agent with tools
-                    react_prompt = PromptTemplate.from_template("""
-You are a helpful AI assistant with access to tools. Use the following format:
+                    # Build tool names list for the prompt
+                    tool_names_str = ", ".join([t.name for t in tools])
+                    
+                    # Create ReAct prompt template with proper variables
+                    system_instruction = profile.system_prompt or "You are a helpful AI assistant."
+                    system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
+                    
+                    react_template = system_instruction + """
+
+You have access to the following tools:
+
+{tools}
+
+IMPORTANT INSTRUCTIONS:
+- ALWAYS use the available tools when they can help answer the question
+- Do NOT say you cannot do something if you have a tool that can do it
+- ONLY use tools that are listed above - do NOT try to use tools that are not in the list
+- Available tool names: {tool_names}
+- Read tool descriptions carefully to understand what each tool can do
+
+Use the following format:
 
 Question: the input question you must answer
-Thought: you should always think about what to do
+Thought: you should always think about what to do and which tool to use
 Action: the action to take, should be one of [{tool_names}]
 Action Input: the input to the action
 Observation: the result of the action
@@ -3397,19 +3415,23 @@ Observation: the result of the action
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-System: {system_prompt}
-
 Begin!
 
 Question: {input}
-Thought: {agent_scratchpad}
-""")
+{agent_scratchpad}
+"""
                     
-                    agent = create_react_agent(llm, tools, react_prompt)
+                    prompt = PromptTemplate(
+                        input_variables=["tools", "input", "agent_scratchpad"],
+                        template=react_template,
+                        partial_variables={"tool_names": tool_names_str}
+                    )
+                    
+                    agent = create_react_agent(llm, tools, prompt)
                     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
                     
                     try:
-                        response = agent_executor.invoke({"input": request.initial_message, "system_prompt": profile.system_prompt})
+                        response = agent_executor.invoke({"input": request.initial_message})
                         response_text = response.get("output", str(response))
                     except Exception as e:
                         self.logger.warning(f"Agent executor failed: {e}, falling back to direct LLM call")
@@ -3670,39 +3692,60 @@ Thought: {agent_scratchpad}
                     from langchain.agents import AgentExecutor, create_react_agent
                     from langchain.prompts import PromptTemplate
                     
-                    react_prompt = PromptTemplate.from_template("""
-You are a helpful AI assistant with access to tools. Use the following format:
+                    # Build tool names list for the prompt
+                    tool_names_str = ", ".join([t.name for t in tools])
+                    
+                    # Build conversation history string
+                    conv_history = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation["messages"]])
+                    
+                    # Create ReAct prompt template with proper variables
+                    system_instruction = profile.system_prompt or "You are a helpful AI assistant."
+                    system_instruction += " IMPORTANT: You have access to tools that can help you. ALWAYS use the available tools when needed."
+                    
+                    react_template = system_instruction + f"""
+
+Previous conversation:
+{conv_history}
+
+You have access to the following tools:
+
+{{tools}}
+
+IMPORTANT INSTRUCTIONS:
+- ALWAYS use the available tools when they can help answer the question
+- Do NOT say you cannot do something if you have a tool that can do it
+- ONLY use tools that are listed above - do NOT try to use tools that are not in the list
+- Available tool names: {{tool_names}}
+- Read tool descriptions carefully to understand what each tool can do
+
+Use the following format:
 
 Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
+Thought: you should always think about what to do and which tool to use
+Action: the action to take, should be one of [{{tool_names}}]
 Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-System: {system_prompt}
+Begin!
 
-Previous conversation:
-{conversation_history}
-
-Current question: {input}
-Thought: {agent_scratchpad}
-""")
+Question: {{input}}
+{{agent_scratchpad}}
+"""
                     
-                    # Build conversation history string
-                    conv_history = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation["messages"]])
+                    prompt = PromptTemplate(
+                        input_variables=["tools", "input", "agent_scratchpad"],
+                        template=react_template,
+                        partial_variables={"tool_names": tool_names_str}
+                    )
                     
-                    agent = create_react_agent(llm, tools, react_prompt)
+                    agent = create_react_agent(llm, tools, prompt)
                     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
                     
                     try:
-                        response = agent_executor.invoke({
-                            "input": request.user_message,
-                            "system_prompt": profile.system_prompt,
-                            "conversation_history": conv_history
-                        })
+                        response = agent_executor.invoke({"input": request.user_message})
                         response_text = response.get("output", str(response))
                     except Exception as e:
                         self.logger.warning(f"Agent executor failed: {e}, falling back to direct LLM call")
