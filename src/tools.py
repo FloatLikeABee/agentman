@@ -102,7 +102,46 @@ class ToolManager:
         financial_tool = Tool(
             name="Financial Data",
             func=self._get_financial_data,
-            description="Get real-time stock prices and financial data using free yfinance API. Input format: 'stock price of SYMBOL' or 'SYMBOL price' where SYMBOL is the stock ticker (e.g., AAPL, MSFT, TSLA). Returns current price, market cap, volume, and other key metrics."
+            description="""Get real-time stock prices and financial data. This is the MOST RELIABLE and RECOMMENDED tool for any stock market queries.
+
+WHEN TO USE:
+- User asks about stock prices, stock quotes, or share prices
+- User wants financial data, market data, or company valuation
+- User asks "what is the price of [STOCK]", "how much is [STOCK] worth", "stock price of [SYMBOL]"
+- User wants market cap, volume, 52-week highs/lows, or price changes
+- User asks about any publicly traded company's stock
+
+HOW TO USE:
+Input format: Extract the stock ticker symbol (1-5 uppercase letters) from the user's query.
+Examples:
+- "stock price of AAPL" → Use: "AAPL" or "stock price of AAPL"
+- "what is MSFT trading at?" → Use: "MSFT" or "MSFT price"
+- "TSLA stock quote" → Use: "TSLA" or "TSLA stock"
+- "price of Apple stock" → Use: "AAPL" (Apple's ticker is AAPL)
+
+The tool automatically extracts the symbol from phrases like "stock price of", "price of", "quote for", etc.
+
+WHAT IT RETURNS:
+- Current stock price (or previous close if market closed)
+- Market capitalization
+- Trading volume
+- Price change and percentage change
+- 52-week high and low
+- Previous close price
+
+WHY IT'S RELIABLE:
+- Uses yfinance library (Yahoo Finance) - industry standard, free, no API key required
+- Multiple fallback methods ensure data retrieval even if one method fails
+- Supports all major stock exchanges (NYSE, NASDAQ, etc.)
+- Handles rate limiting gracefully
+- Works for any valid stock ticker symbol
+
+LIMITATIONS:
+- Free tier has rate limits (wait 10-30 seconds if rate limited)
+- Market data only available during trading hours (shows previous close when closed)
+- Requires valid stock ticker symbol (e.g., AAPL, not "Apple Inc.")
+
+IMPORTANT: Always use this tool for stock price queries. It's the best and most reliable option available."""
         )
         self.register_tool(
             "financial",
@@ -110,7 +149,7 @@ class ToolManager:
             ToolConfig(
                 name="Financial Data",
                 tool_type=ToolType.FINANCIAL,
-                description="Get real-time stock prices and financial data using free yfinance API. No API key required. Supports all major stock exchanges.",
+                description="Get real-time stock prices and financial data using yfinance (Yahoo Finance). Most reliable tool for stock market queries. Free, no API key required. Supports all major exchanges. Returns price, market cap, volume, and key metrics.",
                 config={}
             )
         )

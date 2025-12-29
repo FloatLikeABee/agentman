@@ -21,7 +21,7 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
 - **Email Tools**: Send emails with SMTP configuration
 - **Web Search**: DuckDuckGo integration for web searches
 - **Calculator**: Mathematical computation capabilities
-- **Financial Data**: Stock price and financial data retrieval
+- **Financial Data**: Real-time stock prices and financial data (yfinance/Yahoo Finance - most reliable, free, no API key required)
 - **Wikipedia**: Wikipedia search integration
 - **Custom Tools**: Extensible tool system for custom functionality
 

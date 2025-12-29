@@ -92,7 +92,7 @@ class RAGAPI:
             - **Wikipedia**: Factual information from Wikipedia
             - **Calculator**: Mathematical computations
             - **Email**: SMTP-based email sending
-            - **Financial**: Stock and financial data retrieval
+            - **Financial**: Real-time stock prices and financial data (yfinance/Yahoo Finance - most reliable, free, no API key)
             - **Crawler Service**: Standalone website content extraction with AI organization (available via /crawler endpoint)
             - **Decision Equalizer**: AI-powered decision-making assistance
             - **Custom Tools**: User-defined tool integration
@@ -1417,7 +1417,7 @@ Question: {{input}}
             - **Wikipedia**: Search Wikipedia for factual information
             - **Calculator**: Perform mathematical calculations
             - **Email**: Send emails via SMTP
-            - **Financial**: Get financial data and stock information
+            - **Financial**: Get real-time stock prices and financial data (yfinance - most reliable, free, no API key required)
             - **Crawler**: Crawl websites and extract data
             - **Equalizer**: AI-powered decision making assistance
             - **Custom**: User-defined custom tools

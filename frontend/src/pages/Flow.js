@@ -33,6 +33,7 @@ import {
   Edit as EditIcon,
   ExpandMore as ExpandMoreIcon,
   ArrowForward as ArrowForwardIcon,
+  CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
@@ -58,6 +59,7 @@ const Flow = () => {
     steps: [],
     is_active: true,
   });
+  const [doneSteps, setDoneSteps] = useState(new Set());
   // Use ref to track latest formData for event handlers
   const formDataRef = useRef(formData);
   
@@ -109,6 +111,7 @@ const Flow = () => {
       steps: [],
       is_active: true,
     });
+    setDoneSteps(new Set());
     setCurrentStep({
       step_id: '',
       step_type: 'customization',
@@ -120,7 +123,7 @@ const Flow = () => {
     });
   };
 
-  const handleAddStep = () => {
+  const handleAddStep = (markAsDone = false) => {
     if (!currentStep.step_id || !currentStep.step_name || !currentStep.resource_id) {
       alert('Please fill in step ID, name, and resource ID');
       return;
@@ -128,6 +131,7 @@ const Flow = () => {
     // Use functional update to ensure we have the latest state
     setFormData((prevFormData) => {
       const newSteps = [...prevFormData.steps, { ...currentStep }];
+      const newIndex = newSteps.length - 1;
       console.log('=== ADDING STEP ===');
       console.log('Previous steps count:', prevFormData.steps.length);
       console.log('Previous steps:', prevFormData.steps);
@@ -143,6 +147,12 @@ const Flow = () => {
       formDataRef.current = newFormData;
       console.log('Updated formDataRef.current:', formDataRef.current);
       console.log('=== END ADDING STEP ===');
+      
+      // Mark as done if requested
+      if (markAsDone) {
+        setDoneSteps((prev) => new Set([...prev, newIndex]));
+      }
+      
       return newFormData;
     });
     setCurrentStep({
@@ -159,6 +169,35 @@ const Flow = () => {
   const handleRemoveStep = (index) => {
     const newSteps = formData.steps.filter((_, i) => i !== index);
     setFormData({ ...formData, steps: newSteps });
+    // Remove from done steps if it was done
+    setDoneSteps((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(index);
+      // Adjust indices for steps after the removed one
+      const adjustedSet = new Set();
+      newSet.forEach((idx) => {
+        if (idx < index) {
+          adjustedSet.add(idx);
+        } else if (idx > index) {
+          adjustedSet.add(idx - 1);
+        }
+      });
+      return adjustedSet;
+    });
+  };
+
+  const handleStepDone = (index) => {
+    // Mark step as done and ensure it's in the payload
+    setDoneSteps((prev) => new Set([...prev, index]));
+    // Force update to ensure step is in formData
+    setFormData((prev) => {
+      const updatedSteps = [...prev.steps];
+      if (updatedSteps[index]) {
+        // Step is already in the array, just mark it as done
+        return { ...prev, steps: updatedSteps };
+      }
+      return prev;
+    });
   };
 
   const handleCreateFlow = () => {
@@ -167,6 +206,7 @@ const Flow = () => {
     console.log('Current formDataRef.current:', formDataRef.current);
     console.log('Current formData.steps:', formData.steps);
     console.log('Current formDataRef.current.steps:', formDataRef.current.steps);
+    console.log('Done steps:', Array.from(doneSteps));
     
     // Use ref to get the latest formData state, but also check the actual state
     const latestFormData = formDataRef.current;
@@ -181,11 +221,17 @@ const Flow = () => {
       alert('Please provide a name and at least one step');
       return;
     }
+
+    // Include all steps in the payload
+    // The "Done" button is a visual indicator that the step is finalized
+    // All steps are included regardless of "done" status
+    const stepsToInclude = dataToUse.steps;
+    
     // Ensure we're using the latest formData state
     const payload = {
       name: dataToUse.name,
       description: dataToUse.description,
-      steps: [...dataToUse.steps], // Create a new array to ensure it's not a reference issue
+      steps: [...stepsToInclude], // Create a new array to ensure it's not a reference issue
       is_active: dataToUse.is_active,
     };
     console.log('Final payload:', payload);
@@ -210,6 +256,8 @@ const Flow = () => {
       steps: flowSteps,
       is_active: flow.is_active !== undefined ? flow.is_active : true,
     });
+    // Mark all existing steps as done when editing
+    setDoneSteps(new Set(flowSteps.map((_, idx) => idx)));
     setEditingFlowId(flow.id);
     setOpenCreateDialog(true);
   };
@@ -395,25 +443,60 @@ const Flow = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                       <Chip label={step.step_type} size="small" />
                       <Typography>{step.step_name}</Typography>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveStep(idx);
-                        }}
-                        sx={{ ml: 'auto' }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                      {doneSteps.has(idx) && (
+                        <CheckCircleIcon fontSize="small" color="success" />
+                      )}
+                      <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                        {!doneSteps.has(idx) && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            startIcon={<CheckCircleIcon />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStepDone(idx);
+                            }}
+                            sx={{ minWidth: 'auto', px: 1 }}
+                          >
+                            Done
+                          </Button>
+                        )}
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveStep(idx);
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
                     </Box>
                   </AccordionSummary>
                   <AccordionDetails>
-                    <Typography variant="body2">Resource: {step.resource_id}</Typography>
-                    {step.use_previous_output && (
-                      <Typography variant="body2" color="primary">
-                        Uses previous step output
-                      </Typography>
-                    )}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="body2">Resource: {step.resource_id}</Typography>
+                      {step.use_previous_output && (
+                        <Typography variant="body2" color="primary">
+                          Uses previous step output
+                        </Typography>
+                      )}
+                      {step.input_query && !step.use_previous_output && (
+                        <Typography variant="body2">
+                          Input Query: {step.input_query}
+                        </Typography>
+                      )}
+                      {doneSteps.has(idx) && (
+                        <Chip
+                          label="Done"
+                          size="small"
+                          color="success"
+                          icon={<CheckCircleIcon />}
+                          sx={{ alignSelf: 'flex-start' }}
+                        />
+                      )}
+                    </Box>
                   </AccordionDetails>
                 </Accordion>
               ))}
@@ -510,19 +593,35 @@ const Flow = () => {
                       Total steps in form: {formData.steps.length}
                     </Typography>
                   </Box>
-                  <Button
-                    variant="outlined"
-                    startIcon={<AddIcon />}
-                    onClick={() => {
-                      console.log('Add Step button clicked');
-                      console.log('Current step state:', currentStep);
-                      console.log('Current formData steps:', formData.steps);
-                      handleAddStep();
-                    }}
-                    fullWidth
-                  >
-                    Add Step
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddIcon />}
+                      onClick={() => {
+                        console.log('Add Step button clicked');
+                        console.log('Current step state:', currentStep);
+                        console.log('Current formData steps:', formData.steps);
+                        handleAddStep(false);
+                      }}
+                      sx={{ flex: 1 }}
+                    >
+                      Add Step
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<CheckCircleIcon />}
+                      onClick={() => {
+                        console.log('Done button clicked');
+                        console.log('Current step state:', currentStep);
+                        console.log('Current formData steps:', formData.steps);
+                        handleAddStep(true);
+                      }}
+                      sx={{ flex: 1 }}
+                    >
+                      Done
+                    </Button>
+                  </Box>
                 </Grid>
               </Grid>
             </Grid>
