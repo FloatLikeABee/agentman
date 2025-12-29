@@ -1,5 +1,4 @@
 from langchain.tools import Tool
-from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchTool
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 import smtplib
@@ -12,7 +11,9 @@ from typing import Dict, List, Any, Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote_plus
+import time
+import random
 from .config import settings
 from .models import ToolType, ToolConfig, RAGDataInput, DataFormat, LLMProviderType
 from .llm_factory import LLMFactory, LLMProvider
@@ -28,15 +29,19 @@ class ToolManager:
 
     def _initialize_default_tools(self):
         """Initialize default tools"""
-        # Web Search Tool
-        search_tool = DuckDuckGoSearchTool()
+        # Web Search Tool - Custom implementation with multiple free engines
+        search_tool = Tool(
+            name="Web Search",
+            func=self._web_search,
+            description="Search the internet for current information using multiple free search engines. No API key required, unlimited usage."
+        )
         self.register_tool(
             "web_search",
             search_tool,
             ToolConfig(
                 name="Web Search",
                 tool_type=ToolType.WEB_SEARCH,
-                description="Search the internet for current information",
+                description="Search the internet for current information using multiple free search engines. No API key required, unlimited usage.",
                 config={}
             )
         )
@@ -232,6 +237,173 @@ class ToolManager:
 
         except Exception as e:
             return f"Error sending email: {str(e)}"
+
+    def _web_search(self, query: str) -> str:
+        """Custom web search using multiple free search engines with no limits"""
+        try:
+            results = []
+            query_encoded = quote_plus(query)
+            
+            # Try Tavily API first if API key is available (optional, has free tier)
+            tavily_api_key = getattr(settings, 'tavily_api_key', None)
+            if tavily_api_key:
+                try:
+                    self.logger.info("Trying Tavily API for web search")
+                    tavily_url = "https://api.tavily.com/search"
+                    payload = {
+                        "api_key": tavily_api_key,
+                        "query": query,
+                        "search_depth": "basic",
+                        "max_results": 10
+                    }
+                    response = requests.post(tavily_url, json=payload, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('results'):
+                            for result in data['results']:
+                                results.append({
+                                    'title': result.get('title', 'No title'),
+                                    'url': result.get('url', ''),
+                                    'snippet': result.get('content', 'No description available')
+                                })
+                            if results:
+                                self.logger.info(f"Successfully retrieved {len(results)} results from Tavily")
+                                formatted_results = []
+                                for i, result in enumerate(results[:10], 1):
+                                    formatted_results.append(
+                                        f"{i}. {result['title']}\n   URL: {result['url']}\n   {result['snippet']}"
+                                    )
+                                return "\n\n".join(formatted_results)
+                except Exception as e:
+                    self.logger.debug(f"Tavily API failed: {e}, falling back to free search engines")
+            
+            # Fallback to free search engines (no API key required, unlimited)
+            # Try multiple free search engines as fallbacks
+            search_engines = [
+                {
+                    "name": "Startpage",
+                    "url": f"https://www.startpage.com/sp/search?query={query_encoded}",
+                    "selectors": {
+                        "results": "div.w-gl__result",
+                        "title": "h3 a",
+                        "link": "h3 a",
+                        "snippet": "p.w-gl__description"
+                    }
+                },
+                {
+                    "name": "Qwant",
+                    "url": f"https://www.qwant.com/?q={query_encoded}&t=web",
+                    "selectors": {
+                        "results": "div.web-result",
+                        "title": "a",
+                        "link": "a",
+                        "snippet": "p.web-result-description"
+                    }
+                },
+                {
+                    "name": "Ecosia",
+                    "url": f"https://www.ecosia.org/search?q={query_encoded}",
+                    "selectors": {
+                        "results": "div.result",
+                        "title": "h2 a",
+                        "link": "h2 a",
+                        "snippet": "p.result-snippet"
+                    }
+                }
+            ]
+            
+            # Headers to mimic a real browser
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+            }
+            
+            # Try each search engine until we get results
+            for engine in search_engines:
+                try:
+                    self.logger.info(f"Trying {engine['name']} for query: {query}")
+                    response = requests.get(engine['url'], headers=headers, timeout=10)
+                    response.raise_for_status()
+                    
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    result_elements = soup.select(engine['selectors']['results'])
+                    
+                    if result_elements:
+                        for element in result_elements[:5]:  # Limit to top 5 results per engine
+                            try:
+                                title_elem = element.select_one(engine['selectors']['title'])
+                                link_elem = element.select_one(engine['selectors']['link'])
+                                snippet_elem = element.select_one(engine['selectors']['snippet'])
+                                
+                                if title_elem and link_elem:
+                                    title = title_elem.get_text(strip=True)
+                                    link = link_elem.get('href', '')
+                                    
+                                    # Handle relative URLs
+                                    if link and not link.startswith('http'):
+                                        link = urljoin(engine['url'], link)
+                                    
+                                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else "No description available"
+                                    
+                                    if title and link:  # Only add if we have both
+                                        results.append({
+                                            'title': title,
+                                            'url': link,
+                                            'snippet': snippet
+                                        })
+                            except Exception as e:
+                                self.logger.debug(f"Error parsing result element: {e}")
+                                continue
+                        
+                        if results:
+                            self.logger.info(f"Successfully retrieved {len(results)} results from {engine['name']}")
+                            break  # We got results, no need to try other engines
+                            
+                except requests.exceptions.RequestException as e:
+                    self.logger.warning(f"Failed to search with {engine['name']}: {e}")
+                    continue
+                except Exception as e:
+                    self.logger.warning(f"Error parsing {engine['name']} results: {e}")
+                    continue
+            
+            # If no results from scraping, try DuckDuckGo instant answer API as final fallback
+            if not results:
+                try:
+                    self.logger.info("Trying DuckDuckGo instant answer API as final fallback")
+                    ddg_url = f"https://api.duckduckgo.com/?q={query_encoded}&format=json&no_html=1&skip_disambig=1"
+                    response = requests.get(ddg_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('AbstractText'):
+                            results.append({
+                                'title': data.get('Heading', 'DuckDuckGo Result'),
+                                'url': data.get('AbstractURL', ''),
+                                'snippet': data.get('AbstractText', '')
+                            })
+                except Exception as e:
+                    self.logger.debug(f"DuckDuckGo API fallback failed: {e}")
+            
+            # Format results
+            if results:
+                formatted_results = []
+                for i, result in enumerate(results[:10], 1):  # Limit to top 10 total results
+                    formatted_results.append(
+                        f"{i}. {result['title']}\n   URL: {result['url']}\n   {result['snippet']}"
+                    )
+                return "\n\n".join(formatted_results)
+            else:
+                return f"No search results found for: {query}. Please try rephrasing your query."
+                
+        except Exception as e:
+            self.logger.error(f"Error in web search: {e}")
+            return f"Error performing web search: {str(e)}. Please try again."
 
     def _get_financial_data(self, query: str) -> str:
         """Financial data tool function using free yfinance API (no API key required)"""

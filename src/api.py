@@ -1244,18 +1244,26 @@ class RAGAPI:
                     # Build tool names list
                     tool_names_str = ", ".join([t.name for t in tools])
                     
-                    # Create ReAct prompt template
-                    react_template = (system_prompt + """
+                    # Create ReAct prompt template with tool_names as a variable
+                    react_template = system_prompt + f"""
 
 You have access to the following tools:
 
-{tools}
+{{tools}}
+
+IMPORTANT INSTRUCTIONS:
+- ALWAYS use the available tools when they can help answer the question
+- Do NOT say you cannot do something if you have a tool that can do it
+- ONLY use tools that are listed above - do NOT try to use tools that are not in the list
+- Available tool names: {tool_names_str}
+- Read tool descriptions carefully to understand what each tool can do
+- If a tool is not available, explain that you don't have access to that specific tool
 
 Use the following format:
 
 Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [""" + tool_names_str + """]
+Thought: you should always think about what to do and which tool to use
+Action: the action to take, should be one of [{tool_names_str}]
 Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
@@ -1264,12 +1272,13 @@ Final Answer: the final answer to the original input question
 
 Begin!
 
-Question: {input}
-{agent_scratchpad}""")
+Question: {{input}}
+{{agent_scratchpad}}"""
 
                     prompt = PromptTemplate(
                         input_variables=["tools", "input", "agent_scratchpad"],
-                        template=react_template
+                        template=react_template,
+                        partial_variables={"tool_names": tool_names_str}
                     )
 
                     # Create the agent

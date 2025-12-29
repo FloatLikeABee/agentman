@@ -360,6 +360,7 @@ class FlowService:
             model=model_name,
             temperature=0.7,
             max_tokens=8192,
+            timeout=settings.api_timeout,
         )
 
         # Wrap in LangChain-compatible wrapper
@@ -740,6 +741,7 @@ class FlowService:
             model=model_name,
             temperature=0.7,
             max_tokens=8192,
+            timeout=settings.api_timeout,
         )
 
         # Wrap in LangChain-compatible wrapper
