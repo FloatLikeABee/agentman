@@ -360,6 +360,7 @@ class FlowService:
             model=model_name,
             temperature=0.7,
             max_tokens=8192,
+            timeout=settings.api_timeout,
         )
 
         # Wrap in LangChain-compatible wrapper
@@ -461,10 +462,7 @@ class FlowService:
     async def _execute_request_step(
         self, step: FlowStepConfig, step_input: Optional[Union[str, Dict[str, Any]]]
     ) -> Dict[str, Any]:
-        """Execute a request step.
-        
-        Supports dynamic params and body from previous step in format: {query: {}, body: {}}
-        """
+        """Execute a request step."""
         if not self.request_tools_manager:
             raise ValueError("Request tools manager not available")
 
@@ -472,29 +470,26 @@ class FlowService:
         if not profile:
             raise ValueError(f"Request profile {step.resource_id} not found")
 
-        # Extract dynamic params and body from step_input if provided
-        dynamic_params = None
-        dynamic_body = None
-        
-        if step_input:
-            if isinstance(step_input, dict):
-                # Check if step_input is in the format {query: {}, body: {}}
-                if "query" in step_input or "body" in step_input:
-                    dynamic_params = step_input.get("query")
-                    dynamic_body = step_input.get("body")
+        # If step_input is provided, temporarily update the profile's body
+        original_body = None
+        try:
+            if step_input:
+                # Temporarily update the body
+                original_body = profile.body
+                if isinstance(step_input, dict):
+                    profile.body = step_input
                 else:
-                    # Legacy format: treat entire dict as body
-                    dynamic_body = step_input
-            else:
-                # String input: treat as body
-                dynamic_body = str(step_input)
-        
-        # Execute the request with dynamic params/body
-        result = self.request_tools_manager.execute_request(
-            profile.id,
-            dynamic_params=dynamic_params,
-            dynamic_body=dynamic_body
-        )
+                    profile.body = str(step_input)
+                # Update in manager
+                self.request_tools_manager.requests[profile.id] = profile
+            
+            # Execute the request (takes request_id)
+            result = self.request_tools_manager.execute_request(profile.id)
+        finally:
+            # Restore original body if we modified it
+            if original_body is not None:
+                profile.body = original_body
+                self.request_tools_manager.requests[profile.id] = profile
 
         return result
 
@@ -746,6 +741,7 @@ class FlowService:
             model=model_name,
             temperature=0.7,
             max_tokens=8192,
+            timeout=settings.api_timeout,
         )
 
         # Wrap in LangChain-compatible wrapper

@@ -68,7 +68,21 @@ const Header = () => {
   return (
     <AppBar position="static" sx={{ mb: 2 }}>
       <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+        <Typography 
+          variant="h6" 
+          component="div" 
+          sx={{ 
+            flexGrow: 1,
+            fontWeight: 700,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            background: 'linear-gradient(135deg, #9d4edd 0%, #ff6b35 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            textShadow: '0 0 30px rgba(157, 78, 221, 0.5)',
+          }}
+        >
           Ground Control
         </Typography>
 
@@ -78,6 +92,13 @@ const Header = () => {
               color="inherit"
               onClick={handleMenuOpen}
               edge="end"
+              sx={{
+                color: '#9d4edd',
+                '&:hover': {
+                  color: '#ff6b35',
+                  backgroundColor: 'rgba(157, 78, 221, 0.1)',
+                },
+              }}
             >
               <MenuIcon />
             </IconButton>
@@ -93,12 +114,31 @@ const Header = () => {
                 vertical: 'top',
                 horizontal: 'right',
               }}
+              PaperProps={{
+                sx: {
+                  background: 'linear-gradient(135deg, #0f0519 0%, #1a1a1a 100%)',
+                  border: '1px solid rgba(157, 78, 221, 0.3)',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8), 0 0 20px rgba(157, 78, 221, 0.1)',
+                },
+              }}
             >
               {navItems.map((item) => (
                 <MenuItem
                   key={item.path}
                   onClick={() => handleNavigate(item.path)}
                   selected={location.pathname === item.path}
+                  sx={{
+                    color: location.pathname === item.path ? '#9d4edd' : '#e0e0e0',
+                    '&:hover': {
+                      backgroundColor: 'rgba(157, 78, 221, 0.2)',
+                    },
+                    '&.Mui-selected': {
+                      backgroundColor: 'rgba(157, 78, 221, 0.3)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(157, 78, 221, 0.4)',
+                      },
+                    },
+                  }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {item.icon}
@@ -117,9 +157,27 @@ const Header = () => {
                 startIcon={item.icon}
                 onClick={() => navigate(item.path)}
                 sx={{
-                  backgroundColor: location.pathname === item.path ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  color: location.pathname === item.path ? '#9d4edd' : '#b0b0b0',
+                  backgroundColor: location.pathname === item.path 
+                    ? 'rgba(157, 78, 221, 0.15)' 
+                    : 'transparent',
+                  border: location.pathname === item.path 
+                    ? '1px solid rgba(157, 78, 221, 0.4)' 
+                    : '1px solid transparent',
+                  borderRadius: '8px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  fontWeight: 600,
+                  transition: 'all 0.3s ease',
                   '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.2)',
+                    color: '#9d4edd',
+                    backgroundColor: 'rgba(157, 78, 221, 0.2)',
+                    border: '1px solid rgba(157, 78, 221, 0.5)',
+                    boxShadow: '0 0 15px rgba(157, 78, 221, 0.3)',
+                    transform: 'translateY(-2px)',
+                  },
+                  '& .MuiSvgIcon-root': {
+                    color: location.pathname === item.path ? '#9d4edd' : '#b0b0b0',
                   },
                 }}
               >

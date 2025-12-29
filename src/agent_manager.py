@@ -2,7 +2,6 @@ import asyncio
 from langchain.agents import initialize_agent, AgentExecutor, create_react_agent
 from langchain.agents import AgentType as LangChainAgentType
 from langchain.tools import Tool
-from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchTool
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 import requests
