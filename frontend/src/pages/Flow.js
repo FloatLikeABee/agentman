@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -58,6 +58,14 @@ const Flow = () => {
     steps: [],
     is_active: true,
   });
+  // Use ref to track latest formData for event handlers
+  const formDataRef = useRef(formData);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
   const [currentStep, setCurrentStep] = useState({
     step_id: '',
     step_type: 'customization',
@@ -117,9 +125,25 @@ const Flow = () => {
       alert('Please fill in step ID, name, and resource ID');
       return;
     }
-    setFormData({
-      ...formData,
-      steps: [...formData.steps, { ...currentStep }],
+    // Use functional update to ensure we have the latest state
+    setFormData((prevFormData) => {
+      const newSteps = [...prevFormData.steps, { ...currentStep }];
+      console.log('=== ADDING STEP ===');
+      console.log('Previous steps count:', prevFormData.steps.length);
+      console.log('Previous steps:', prevFormData.steps);
+      console.log('New step to add:', currentStep);
+      console.log('New steps count:', newSteps.length);
+      console.log('All steps after add:', newSteps);
+      const newFormData = {
+        ...prevFormData,
+        steps: newSteps,
+      };
+      console.log('New formData:', newFormData);
+      // Immediately update the ref to ensure it's in sync
+      formDataRef.current = newFormData;
+      console.log('Updated formDataRef.current:', formDataRef.current);
+      console.log('=== END ADDING STEP ===');
+      return newFormData;
     });
     setCurrentStep({
       step_id: '',
@@ -138,22 +162,52 @@ const Flow = () => {
   };
 
   const handleCreateFlow = () => {
-    if (!formData.name || formData.steps.length === 0) {
+    console.log('=== CREATING/UPDATING FLOW ===');
+    console.log('Current formData state:', formData);
+    console.log('Current formDataRef.current:', formDataRef.current);
+    console.log('Current formData.steps:', formData.steps);
+    console.log('Current formDataRef.current.steps:', formDataRef.current.steps);
+    
+    // Use ref to get the latest formData state, but also check the actual state
+    const latestFormData = formDataRef.current;
+    const stateFormData = formData;
+    
+    // Use whichever has more steps (should be the same, but this is a safety check)
+    const dataToUse = latestFormData.steps.length >= stateFormData.steps.length ? latestFormData : stateFormData;
+    
+    console.log('Using formData with', dataToUse.steps.length, 'steps');
+    
+    if (!dataToUse.name || dataToUse.steps.length === 0) {
       alert('Please provide a name and at least one step');
       return;
     }
+    // Ensure we're using the latest formData state
+    const payload = {
+      name: dataToUse.name,
+      description: dataToUse.description,
+      steps: [...dataToUse.steps], // Create a new array to ensure it's not a reference issue
+      is_active: dataToUse.is_active,
+    };
+    console.log('Final payload:', payload);
+    console.log('Payload steps count:', payload.steps.length);
+    console.log('Payload steps:', JSON.stringify(payload.steps, null, 2));
+    console.log('=== END CREATING/UPDATING FLOW ===');
     if (editingFlowId) {
-      updateFlowMutation.mutate({ flowId: editingFlowId, payload: formData });
+      updateFlowMutation.mutate({ flowId: editingFlowId, payload });
     } else {
-      createFlowMutation.mutate(formData);
+      createFlowMutation.mutate(payload);
     }
   };
 
   const handleEditFlow = (flow) => {
+    const flowSteps = flow.steps || [];
+    console.log('Editing flow:', flow);
+    console.log('Flow steps:', flowSteps);
+    console.log('Flow steps count:', flowSteps.length);
     setFormData({
       name: flow.name || '',
       description: flow.description || '',
-      steps: flow.steps || [],
+      steps: flowSteps,
       is_active: flow.is_active !== undefined ? flow.is_active : true,
     });
     setEditingFlowId(flow.id);
@@ -327,7 +381,14 @@ const Flow = () => {
             </Grid>
             <Grid item xs={12}>
               <Divider sx={{ my: 2 }} />
-              <Typography variant="h6" sx={{ mb: 2 }}>Steps</Typography>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Steps ({formData.steps.length})
+              </Typography>
+              {formData.steps.length === 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  No steps added yet. Add steps below.
+                </Typography>
+              )}
               {formData.steps.map((step, idx) => (
                 <Accordion key={idx} sx={{ mb: 1 }}>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -384,7 +445,10 @@ const Flow = () => {
                     <InputLabel>Step Type</InputLabel>
                     <Select
                       value={currentStep.step_type}
-                      onChange={(e) => setCurrentStep({ ...currentStep, step_type: e.target.value, resource_id: '' })}
+                      onChange={(e) => {
+                        console.log('Step type changed to:', e.target.value);
+                        setCurrentStep({ ...currentStep, step_type: e.target.value, resource_id: '' });
+                      }}
                       label="Step Type"
                     >
                       <MenuItem value="customization">Customization</MenuItem>
@@ -438,10 +502,23 @@ const Flow = () => {
                   </Grid>
                 )}
                 <Grid item xs={12}>
+                  <Box sx={{ mb: 2, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
+                    <Typography variant="body2">
+                      Current step: {currentStep.step_id || '(no ID)'} | {currentStep.step_name || '(no name)'} | {currentStep.resource_id || '(no resource)'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Total steps in form: {formData.steps.length}
+                    </Typography>
+                  </Box>
                   <Button
                     variant="outlined"
                     startIcon={<AddIcon />}
-                    onClick={handleAddStep}
+                    onClick={() => {
+                      console.log('Add Step button clicked');
+                      console.log('Current step state:', currentStep);
+                      console.log('Current formData steps:', formData.steps);
+                      handleAddStep();
+                    }}
                     fullWidth
                   >
                     Add Step

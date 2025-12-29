@@ -468,25 +468,47 @@ class FlowService:
         if not profile:
             raise ValueError(f"Request profile {step.resource_id} not found")
 
-        # If step_input is provided, temporarily update the profile's body
+        # If step_input is provided, temporarily update the profile
         original_body = None
+        original_params = None
         try:
             if step_input:
-                # Temporarily update the body
                 original_body = profile.body
+                original_params = profile.params
+                
                 if isinstance(step_input, dict):
-                    profile.body = step_input
+                    # Check if step_input has "query" or "body" keys
+                    if "query" in step_input:
+                        # Use "query" as query parameters
+                        query_data = step_input["query"]
+                        if isinstance(query_data, dict):
+                            profile.params = {**(profile.params or {}), **query_data}
+                        else:
+                            # If query is not a dict, merge with existing params
+                            profile.params = profile.params or {}
+                            profile.params.update({"query": query_data})
+                    elif "body" in step_input:
+                        # Use "body" as request body
+                        profile.body = step_input["body"]
+                    else:
+                        # If no "query" or "body" specified, use the entire dict as query parameters
+                        profile.params = {**(profile.params or {}), **step_input}
                 else:
+                    # If step_input is a string, use it as body
                     profile.body = str(step_input)
+                
                 # Update in manager
                 self.request_tools_manager.requests[profile.id] = profile
             
             # Execute the request (takes request_id)
             result = self.request_tools_manager.execute_request(profile.id)
         finally:
-            # Restore original body if we modified it
+            # Restore original values if we modified them
             if original_body is not None:
                 profile.body = original_body
+            if original_params is not None:
+                profile.params = original_params
+            if original_body is not None or original_params is not None:
                 self.request_tools_manager.requests[profile.id] = profile
 
         return result
