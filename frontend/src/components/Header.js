@@ -73,8 +73,9 @@ const Header = () => {
           component="div" 
           sx={{ 
             flexGrow: 1,
+            fontFamily: '"Orbitron", "Roboto", sans-serif',
             fontWeight: 700,
-            letterSpacing: '0.2em',
+            letterSpacing: '0.1em',
             textTransform: 'uppercase',
             background: 'linear-gradient(135deg, #9d4edd 0%, #ff6b35 100%)',
             WebkitBackgroundClip: 'text',
@@ -165,8 +166,9 @@ const Header = () => {
                     ? '1px solid rgba(157, 78, 221, 0.4)' 
                     : '1px solid transparent',
                   borderRadius: '8px',
+                  fontFamily: '"Orbitron", "Roboto", sans-serif',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
+                  letterSpacing: '0.05em',
                   fontWeight: 600,
                   transition: 'all 0.3s ease',
                   '&:hover': {

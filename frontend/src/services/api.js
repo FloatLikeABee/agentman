@@ -209,6 +209,13 @@ export const previewDBTool = async (toolId, forceRefresh = false) => {
   return response.data;
 };
 
+export const executeDBTool = async (toolId, sqlInput = null) => {
+  const response = await api.post(`/db-tools/${toolId}/execute`, {
+    sql_input: sqlInput
+  });
+  return response.data;
+};
+
 // Request Tools
 export const getRequestTools = async () => {
   const response = await api.get('/request-tools');
@@ -278,6 +285,7 @@ const apiService = {
   updateDBTool,
   deleteDBTool,
   previewDBTool,
+  executeDBTool,
   getRequestTools,
   getRequestTool,
   createRequestTool,

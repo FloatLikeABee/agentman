@@ -428,7 +428,7 @@ class FlowService:
     async def _execute_db_tool_step(
         self, step: FlowStepConfig, step_input: Optional[Union[str, Dict[str, Any]]]
     ) -> Dict[str, Any]:
-        """Execute a database tool step."""
+        """Execute a database tool step with optional dynamic SQL input."""
         if not self.db_tools_manager:
             raise ValueError("Database tools manager not available")
 
@@ -436,26 +436,24 @@ class FlowService:
         if not profile:
             raise ValueError(f"Database tool {step.resource_id} not found")
 
-        # If step_input is provided and it's a string, use it as SQL statement
-        if step_input and isinstance(step_input, str):
-            # Create a temporary profile with the new SQL statement
-            from .models import DatabaseToolProfile, DatabaseConnectionConfig
-
-            temp_profile = DatabaseToolProfile(
-                id=profile.id,
-                name=profile.name,
-                description=profile.description,
-                db_type=profile.db_type,
-                connection_config=profile.connection_config,
-                sql_statement=step_input,  # Use step_input as SQL
-                is_active=profile.is_active,
-                cache_ttl_hours=profile.cache_ttl_hours,
-                metadata=profile.metadata,
-            )
-            result = self.db_tools_manager._execute_query(temp_profile)
-        else:
-            # Use the profile's existing SQL statement
-            result = self.db_tools_manager._execute_query(profile)
+        # Extract SQL input from step_input
+        sql_input = None
+        if step_input:
+            if isinstance(step_input, str):
+                sql_input = step_input
+            elif isinstance(step_input, dict):
+                # If it's a dict, try to extract SQL from common fields
+                sql_input = step_input.get("sql", step_input.get("sql_input", step_input.get("query")))
+                if sql_input and not isinstance(sql_input, str):
+                    # If it's not a string, try to convert it
+                    sql_input = str(sql_input)
+        
+        # Use execute_query method which handles dynamic SQL
+        result = self.db_tools_manager.execute_query(
+            tool_id=step.resource_id,
+            sql_input=sql_input,
+            force_refresh=True  # Always refresh for flow execution
+        )
 
         return result
 

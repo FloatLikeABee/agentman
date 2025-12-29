@@ -25,11 +25,13 @@ from .models import (
 class DialogueManager:
     """Manage dialogue profiles and active conversations"""
 
-    def __init__(self, rag_system=None):
+    def __init__(self, rag_system=None, db_tools_manager=None, request_tools_manager=None):
         self.logger = logging.getLogger(__name__)
         self.dialogues: Dict[str, DialogueProfile] = {}
         self.active_conversations: Dict[str, Dict[str, Any]] = {}  # conversation_id -> conversation state
         self.rag_system = rag_system
+        self.db_tools_manager = db_tools_manager
+        self.request_tools_manager = request_tools_manager
 
         os.makedirs(settings.data_directory, exist_ok=True)
         self.db_path = os.path.join(settings.data_directory, "dialogues.json")
@@ -46,6 +48,11 @@ class DialogueManager:
                 try:
                     dialogue_id = doc.get("id")
                     data = doc.get("profile", {})
+                    # Ensure backward compatibility - add default empty lists for tool fields if missing
+                    if "db_tools" not in data:
+                        data["db_tools"] = []
+                    if "request_tools" not in data:
+                        data["request_tools"] = []
                     profile = DialogueProfile(id=dialogue_id, **data)
                     self.dialogues[dialogue_id] = profile
                 except Exception as e:
@@ -100,6 +107,8 @@ class DialogueManager:
             description=req.description,
             system_prompt=req.system_prompt,
             rag_collection=req.rag_collection,
+            db_tools=req.db_tools or [],
+            request_tools=req.request_tools or [],
             llm_provider=req.llm_provider,
             model_name=req.model_name,
             max_turns=req.max_turns,
@@ -121,6 +130,8 @@ class DialogueManager:
                 description=req.description,
                 system_prompt=req.system_prompt,
                 rag_collection=req.rag_collection,
+                db_tools=req.db_tools or [],
+                request_tools=req.request_tools or [],
                 llm_provider=req.llm_provider,
                 model_name=req.model_name,
                 max_turns=req.max_turns,

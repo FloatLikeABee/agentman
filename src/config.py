@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     # Embedding settings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    hf_ssl_verify: bool = True  # Set to False to disable SSL verification for HuggingFace downloads (development only)
+    hf_download_timeout: int = 300  # Timeout in seconds for HuggingFace model downloads
 
     # API settings
     api_host: str = "0.0.0.0"

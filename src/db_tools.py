@@ -136,9 +136,81 @@ class DatabaseToolsManager:
         except Exception as e:
             self.logger.error(f"Error cleaning up expired cache: {e}")
 
-    def _execute_query(self, profile: DatabaseToolProfile) -> Dict[str, Any]:
-        """Execute database query and return results."""
+    def _combine_sql_statements(self, preset_sql: Optional[str], dynamic_input: str) -> str:
+        """Combine preset SQL statement with dynamic input (WHERE condition or full SQL)."""
+        if not dynamic_input or not dynamic_input.strip():
+            # If no dynamic input, return preset or empty
+            return preset_sql or ""
+        
+        dynamic_input = dynamic_input.strip()
+        
+        # If no preset, use dynamic input as full SQL
+        if not preset_sql or not preset_sql.strip():
+            return dynamic_input
+        
+        preset_sql = preset_sql.strip()
+        
+        # Check if dynamic input looks like a full SQL statement (starts with SELECT, INSERT, UPDATE, DELETE, etc.)
+        sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'WITH']
+        is_full_sql = any(dynamic_input.upper().startswith(keyword) for keyword in sql_keywords)
+        
+        if is_full_sql:
+            # If it's a full SQL statement, use it directly (ignore preset)
+            return dynamic_input
+        else:
+            # Otherwise, treat it as a WHERE condition and append to preset
+            # Check if preset already has WHERE clause
+            preset_upper = preset_sql.upper()
+            if 'WHERE' in preset_upper:
+                # Append with AND
+                return f"{preset_sql} AND {dynamic_input}"
+            else:
+                # Add WHERE clause
+                return f"{preset_sql} WHERE {dynamic_input}"
+
+    def _execute_query(self, profile: DatabaseToolProfile, sql_input: Optional[str] = None) -> Dict[str, Any]:
+        """Execute database query and return results.
+        
+        Args:
+            profile: Database tool profile
+            sql_input: Optional dynamic SQL input. If allow_dynamic_sql is True, this will be combined with preset_sql_statement.
+        """
         try:
+            # Handle dynamic SQL if enabled
+            if profile.allow_dynamic_sql and sql_input:
+                # Create a temporary profile with combined SQL
+                combined_sql = self._combine_sql_statements(profile.preset_sql_statement, sql_input)
+                temp_profile = DatabaseToolProfile(
+                    id=profile.id,
+                    name=profile.name,
+                    description=profile.description,
+                    db_type=profile.db_type,
+                    connection_config=profile.connection_config,
+                    sql_statement=combined_sql,
+                    is_active=profile.is_active,
+                    cache_ttl_hours=profile.cache_ttl_hours,
+                    allow_dynamic_sql=profile.allow_dynamic_sql,
+                    preset_sql_statement=profile.preset_sql_statement,
+                    metadata=profile.metadata,
+                )
+                profile = temp_profile
+            elif profile.allow_dynamic_sql and profile.preset_sql_statement:
+                # Use preset SQL if no dynamic input provided
+                temp_profile = DatabaseToolProfile(
+                    id=profile.id,
+                    name=profile.name,
+                    description=profile.description,
+                    db_type=profile.db_type,
+                    connection_config=profile.connection_config,
+                    sql_statement=profile.preset_sql_statement,
+                    is_active=profile.is_active,
+                    cache_ttl_hours=profile.cache_ttl_hours,
+                    allow_dynamic_sql=profile.allow_dynamic_sql,
+                    preset_sql_statement=profile.preset_sql_statement,
+                    metadata=profile.metadata,
+                )
+                profile = temp_profile
+            
             if profile.db_type == DatabaseType.MONGODB:
                 return self._execute_mongodb_query(profile)
             else:
@@ -190,8 +262,13 @@ class DatabaseToolsManager:
             elif profile.db_type == DatabaseType.SQLSERVER:
                 try:
                     import pyodbc
-                except ImportError:
-                    raise ValueError("SQL Server driver not installed. Install with: pip install pyodbc")
+                except ImportError as e:
+                    self.logger.error(f"Failed to import pyodbc: {e}")
+                    raise ValueError(
+                        "pyodbc package not installed or not available in current Python environment. "
+                        "Install with: pip install pyodbc. "
+                        "If already installed, restart the application to load the package."
+                    )
                 
                 # SQL Server connection
                 # Try different driver options
@@ -345,15 +422,22 @@ class DatabaseToolsManager:
     def create_profile(self, req: DatabaseToolCreateRequest) -> str:
         """Create a new database tool profile."""
         tool_id = self._generate_id(req.name)
+        # If allow_dynamic_sql is True, use preset_sql_statement (can be empty string)
+        # Otherwise, use None
+        preset_sql = req.preset_sql_statement if req.allow_dynamic_sql else None
+        # If preset is provided, sql_statement becomes the default/fallback
+        # If no preset, sql_statement is the main statement
         profile = DatabaseToolProfile(
             id=tool_id,
             name=req.name,
             description=req.description,
             db_type=req.db_type,
             connection_config=req.connection_config,
-            sql_statement=req.sql_statement,
+            sql_statement=req.sql_statement,  # This is the default/fallback SQL
             is_active=req.is_active,
             cache_ttl_hours=req.cache_ttl_hours,
+            allow_dynamic_sql=req.allow_dynamic_sql,
+            preset_sql_statement=preset_sql,
             metadata=req.metadata or {},
         )
         self.db_tools[tool_id] = profile
@@ -399,15 +483,20 @@ class DatabaseToolsManager:
                     additional_params=update_config.additional_params,
                 )
             
+            # If allow_dynamic_sql is True, use preset_sql_statement (can be empty string)
+            # Otherwise, use None
+            preset_sql = req.preset_sql_statement if req.allow_dynamic_sql else None
             profile = DatabaseToolProfile(
                 id=tool_id,
                 name=req.name,
                 description=req.description,
                 db_type=req.db_type,
                 connection_config=connection_config,
-                sql_statement=req.sql_statement,
+                sql_statement=req.sql_statement,  # This is the default/fallback SQL
                 is_active=req.is_active,
                 cache_ttl_hours=req.cache_ttl_hours,
+                allow_dynamic_sql=req.allow_dynamic_sql,
+                preset_sql_statement=preset_sql,
                 metadata=req.metadata or {},
             )
             self.db_tools[tool_id] = profile
@@ -436,6 +525,89 @@ class DatabaseToolsManager:
         except Exception as e:
             self.logger.error(f"Error deleting database tool {tool_id}: {e}")
             return False
+
+    def execute_query(self, tool_id: str, sql_input: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
+        """Execute database query with optional dynamic SQL input.
+        
+        Args:
+            tool_id: Database tool ID
+            sql_input: Optional dynamic SQL input (for WHERE condition or full SQL)
+            force_refresh: Force refresh cache even if valid
+        """
+        profile = self.db_tools.get(tool_id)
+        if not profile:
+            raise ValueError(f"Database tool {tool_id} not found")
+        
+        if not profile.is_active:
+            raise ValueError(f"Database tool {tool_id} is not active")
+        
+        # If dynamic SQL is provided, don't use cache (always execute fresh)
+        if sql_input:
+            force_refresh = True
+        
+        cache_key = self._get_cache_key(tool_id)
+        cached = False
+        
+        # Check cache first (only if no dynamic input)
+        if not force_refresh and not sql_input:
+            with self.cache_lock:
+                cache_entry = self.cache.get(cache_key)
+                if cache_entry and self._is_cache_valid(cache_entry, profile.cache_ttl_hours):
+                    cached = True
+                    data = cache_entry.get("data", {})
+                    expires_at = cache_entry.get("expires_at")
+                    
+                    return {
+                        "tool_id": tool_id,
+                        "tool_name": profile.name,
+                        "columns": data.get("columns", []),
+                        "rows": data.get("rows", []),
+                        "total_rows": data.get("total_rows"),
+                        "cached": True,
+                        "cache_expires_at": expires_at,
+                        "metadata": {}
+                    }
+        
+        # Execute query
+        try:
+            result = self._execute_query(profile, sql_input)
+            
+            # Store in cache (only if no dynamic input, to avoid caching dynamic queries)
+            if not sql_input:
+                expires_at = datetime.now() + timedelta(hours=profile.cache_ttl_hours)
+                cache_entry = {
+                    "data": result,
+                    "expires_at": expires_at.isoformat(),
+                    "created_at": datetime.now().isoformat()
+                }
+                
+                with self.cache_lock:
+                    self.cache[cache_key] = cache_entry
+                    # Also save to cache DB
+                    self.cache_db.upsert(
+                        {
+                            "id": cache_key,
+                            "tool_id": tool_id,
+                            "data": result,
+                            "expires_at": expires_at.isoformat(),
+                            "created_at": datetime.now().isoformat()
+                        },
+                        self.query.id == cache_key
+                    )
+            
+            return {
+                "tool_id": tool_id,
+                "tool_name": profile.name,
+                "columns": result.get("columns", []),
+                "rows": result.get("rows", []),
+                "total_rows": result.get("total_rows"),
+                "cached": False,
+                "cache_expires_at": None if sql_input else (datetime.now() + timedelta(hours=profile.cache_ttl_hours)).isoformat(),
+                "metadata": {}
+            }
+        except Exception as e:
+            self.logger.error(f"Error executing query for {tool_id}: {e}")
+            raise
 
     def preview_data(self, tool_id: str, force_refresh: bool = False) -> Dict[str, Any]:
         """Get preview of first 10 rows of data from database query."""

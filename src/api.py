@@ -30,6 +30,7 @@ from .models import (
     DatabaseToolCreateRequest,
     DatabaseToolUpdateRequest,
     DatabaseToolPreviewResponse,
+    DatabaseToolExecuteRequest,
     DatabaseType,
     RequestProfile,
     RequestCreateRequest,
@@ -204,10 +205,14 @@ class RAGAPI:
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
-        self.dialogue_manager = DialogueManager(rag_system=self.rag_system)
         self.crawler_service = CrawlerService(self.rag_system)
         self.db_tools_manager = DatabaseToolsManager()
         self.request_tools_manager = RequestToolsManager(api_instance=self)
+        self.dialogue_manager = DialogueManager(
+            rag_system=self.rag_system,
+            db_tools_manager=self.db_tools_manager,
+            request_tools_manager=self.request_tools_manager
+        )
         
         # Initialize Flow Service
         from .flow import FlowService
@@ -2532,6 +2537,81 @@ Question: {{input}}
                 self.logger.error(f"Error previewing database tool {tool_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.post(
+            "/db-tools/{tool_id}/execute",
+            tags=["Database Tools"],
+            summary="Execute Database Query with Dynamic SQL",
+            description="Execute database query with optional dynamic SQL input. If allow_dynamic_sql is enabled, the input will be combined with preset_sql_statement (as WHERE condition) or used as full SQL if preset is empty.",
+            response_model=DatabaseToolPreviewResponse,
+            response_description="Query execution result with all rows, columns, and metadata.",
+            responses={
+                200: {
+                    "description": "Query executed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "tool_id": "customer_db_query",
+                                "tool_name": "Customer Database Query",
+                                "columns": ["id", "name", "email"],
+                                "rows": [[1, "John Doe", "john@example.com"]],
+                                "total_rows": 1,
+                                "cached": False,
+                                "cache_expires_at": None,
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Database tool not found"},
+                400: {"description": "Database tool is not active or query execution failed"},
+                500: {"description": "Error executing query"}
+            }
+        )
+        async def execute_db_tool(tool_id: str, request: Optional[DatabaseToolExecuteRequest] = None):
+            """
+            **Execute Database Query with Dynamic SQL**
+            
+            Executes a database query with optional dynamic SQL input.
+            
+            **Dynamic SQL Behavior:**
+            - If `allow_dynamic_sql` is enabled and `sql_input` is provided:
+              - If `preset_sql_statement` exists: `sql_input` is appended as WHERE condition
+              - If `preset_sql_statement` is empty: `sql_input` is used as full SQL statement
+            - If `allow_dynamic_sql` is disabled: Uses the configured `sql_statement`
+            
+            **Request Body:**
+            - `sql_input` (optional): Dynamic SQL input (WHERE condition or full SQL statement)
+            
+            **SQL Combination Examples:**
+            
+            **With Preset SQL:**
+            - Preset: `SELECT id, name, email FROM users`
+            - Input: `active = 1 AND created_at > '2024-01-01'`
+            - Result: `SELECT id, name, email FROM users WHERE active = 1 AND created_at > '2024-01-01'`
+            
+            **Full SQL Input:**
+            - Preset: (empty)
+            - Input: `SELECT * FROM orders WHERE status = 'pending'`
+            - Result: `SELECT * FROM orders WHERE status = 'pending'`
+            
+            **Use Cases:**
+            - Execute queries with dynamic WHERE conditions
+            - Use SQL statements generated from previous flow steps
+            - Build queries programmatically
+            - Test different query variations
+            
+            **Note:** Dynamic queries are not cached to ensure fresh results.
+            """
+            try:
+                sql_input = request.sql_input if request else None
+                result = self.db_tools_manager.execute_query(tool_id, sql_input=sql_input, force_refresh=True)
+                return DatabaseToolPreviewResponse(**result)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error executing database tool {tool_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
         # Request Tools Endpoints
         @self.app.post(
             "/request-tools",
@@ -3224,6 +3304,68 @@ Question: {{input}}
                     if results:
                         context = "\n\n".join(r["content"] for r in results[: request.n_results])
 
+                # Create tools for this dialogue
+                tools = []
+                
+                # Add DB tools
+                if profile.db_tools and self.db_tools_manager:
+                    for tool_id in profile.db_tools:
+                        db_profile = self.db_tools_manager.get_profile(tool_id)
+                        if db_profile and db_profile.is_active:
+                            from langchain.tools import Tool
+                            
+                            def create_db_tool_func(t_id: str):
+                                def db_tool_func(query_input: str) -> str:
+                                    try:
+                                        # If dynamic SQL is enabled, use the input as SQL
+                                        if db_profile.allow_dynamic_sql:
+                                            result = self.db_tools_manager.execute_query(t_id, sql_input=query_input, force_refresh=True)
+                                        else:
+                                            result = self.db_tools_manager.execute_query(t_id, force_refresh=True)
+                                        
+                                        # Format result as string
+                                        if result.get("rows"):
+                                            rows_str = "\n".join([str(row) for row in result["rows"][:10]])  # Limit to 10 rows
+                                            return f"Query executed successfully. Found {result.get('total_rows', len(result.get('rows', [])))} rows.\nColumns: {', '.join(result.get('columns', []))}\nSample rows:\n{rows_str}"
+                                        else:
+                                            return f"Query executed successfully but returned no rows."
+                                    except Exception as e:
+                                        return f"Error executing database query: {str(e)}"
+                                return db_tool_func
+                            
+                            tool = Tool(
+                                name=f"DB_{tool_id}",
+                                func=create_db_tool_func(tool_id),
+                                description=f"{db_profile.description or db_profile.name}. Execute database query: {db_profile.sql_statement[:100]}..."
+                            )
+                            tools.append(tool)
+                
+                # Add Request tools
+                if profile.request_tools and self.request_tools_manager:
+                    for tool_id in profile.request_tools:
+                        req_profile = self.request_tools_manager.get_profile(tool_id)
+                        if req_profile and req_profile.is_active:
+                            from langchain.tools import Tool
+                            
+                            def create_request_tool_func(r_id: str):
+                                def request_tool_func(input_data: str = "") -> str:
+                                    try:
+                                        result = self.request_tools_manager.execute_request(r_id)
+                                        if result.get("success"):
+                                            return f"Request executed successfully. Status: {result.get('status_code')}. Response: {str(result.get('response_data', {}))[:500]}"
+                                        else:
+                                            return f"Request failed: {result.get('error', 'Unknown error')}"
+                                    except Exception as e:
+                                        return f"Error executing request: {str(e)}"
+                                return request_tool_func
+                            
+                            tool = Tool(
+                                name=f"Request_{tool_id}",
+                                func=create_request_tool_func(tool_id),
+                                description=f"{req_profile.description or req_profile.name}. Execute HTTP request: {req_profile.method} {req_profile.url}"
+                            )
+                            tools.append(tool)
+
                 # Create conversation
                 conversation_id = self.dialogue_manager._create_conversation(
                     dialogue_id, request.initial_message, turn_number=1
@@ -3237,8 +3379,44 @@ Question: {{input}}
                 if context:
                     messages.insert(1, {"role": "system", "content": f"Context (from knowledge base '{rag_used}'):\n{context}"})
 
-                # Get AI response
-                response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+                # Get AI response - use agent executor if tools are available, otherwise direct LLM call
+                if tools:
+                    from langchain.agents import AgentExecutor, create_react_agent
+                    from langchain.prompts import PromptTemplate
+                    
+                    # Create ReAct agent with tools
+                    react_prompt = PromptTemplate.from_template("""
+You are a helpful AI assistant with access to tools. Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+System: {system_prompt}
+
+Begin!
+
+Question: {input}
+Thought: {agent_scratchpad}
+""")
+                    
+                    agent = create_react_agent(llm, tools, react_prompt)
+                    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
+                    
+                    try:
+                        response = agent_executor.invoke({"input": request.initial_message, "system_prompt": profile.system_prompt})
+                        response_text = response.get("output", str(response))
+                    except Exception as e:
+                        self.logger.warning(f"Agent executor failed: {e}, falling back to direct LLM call")
+                        response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+                else:
+                    # No tools, use direct LLM call
+                    response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
 
                 # Add AI response to conversation
                 self.dialogue_manager._add_message_to_conversation(
@@ -3421,14 +3599,117 @@ Question: {{input}}
                 )
                 self.dialogue_manager._increment_turn(request.conversation_id)
 
+                # Create tools for this dialogue (same as start)
+                tools = []
+                
+                # Add DB tools
+                if profile.db_tools and self.db_tools_manager:
+                    for tool_id in profile.db_tools:
+                        db_profile = self.db_tools_manager.get_profile(tool_id)
+                        if db_profile and db_profile.is_active:
+                            from langchain.tools import Tool
+                            
+                            def create_db_tool_func(t_id: str):
+                                def db_tool_func(query_input: str) -> str:
+                                    try:
+                                        if db_profile.allow_dynamic_sql:
+                                            result = self.db_tools_manager.execute_query(t_id, sql_input=query_input, force_refresh=True)
+                                        else:
+                                            result = self.db_tools_manager.execute_query(t_id, force_refresh=True)
+                                        
+                                        if result.get("rows"):
+                                            rows_str = "\n".join([str(row) for row in result["rows"][:10]])
+                                            return f"Query executed successfully. Found {result.get('total_rows', len(result.get('rows', [])))} rows.\nColumns: {', '.join(result.get('columns', []))}\nSample rows:\n{rows_str}"
+                                        else:
+                                            return f"Query executed successfully but returned no rows."
+                                    except Exception as e:
+                                        return f"Error executing database query: {str(e)}"
+                                return db_tool_func
+                            
+                            tool = Tool(
+                                name=f"DB_{tool_id}",
+                                func=create_db_tool_func(tool_id),
+                                description=f"{db_profile.description or db_profile.name}. Execute database query: {db_profile.sql_statement[:100]}..."
+                            )
+                            tools.append(tool)
+                
+                # Add Request tools
+                if profile.request_tools and self.request_tools_manager:
+                    for tool_id in profile.request_tools:
+                        req_profile = self.request_tools_manager.get_profile(tool_id)
+                        if req_profile and req_profile.is_active:
+                            from langchain.tools import Tool
+                            
+                            def create_request_tool_func(r_id: str):
+                                def request_tool_func(input_data: str = "") -> str:
+                                    try:
+                                        result = self.request_tools_manager.execute_request(r_id)
+                                        if result.get("success"):
+                                            return f"Request executed successfully. Status: {result.get('status_code')}. Response: {str(result.get('response_data', {}))[:500]}"
+                                        else:
+                                            return f"Request failed: {result.get('error', 'Unknown error')}"
+                                    except Exception as e:
+                                        return f"Error executing request: {str(e)}"
+                                return request_tool_func
+                            
+                            tool = Tool(
+                                name=f"Request_{tool_id}",
+                                func=create_request_tool_func(tool_id),
+                                description=f"{req_profile.description or req_profile.name}. Execute HTTP request: {req_profile.method} {req_profile.url}"
+                            )
+                            tools.append(tool)
+
                 # Build messages from conversation history
                 messages = [{"role": "system", "content": profile.system_prompt}]
                 for msg in conversation["messages"]:
                     messages.append({"role": msg.role, "content": msg.content})
                 messages.append({"role": "user", "content": request.user_message})
 
-                # Get AI response
-                response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+                # Get AI response - use agent executor if tools are available
+                if tools:
+                    from langchain.agents import AgentExecutor, create_react_agent
+                    from langchain.prompts import PromptTemplate
+                    
+                    react_prompt = PromptTemplate.from_template("""
+You are a helpful AI assistant with access to tools. Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+System: {system_prompt}
+
+Previous conversation:
+{conversation_history}
+
+Current question: {input}
+Thought: {agent_scratchpad}
+""")
+                    
+                    # Build conversation history string
+                    conv_history = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation["messages"]])
+                    
+                    agent = create_react_agent(llm, tools, react_prompt)
+                    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
+                    
+                    try:
+                        response = agent_executor.invoke({
+                            "input": request.user_message,
+                            "system_prompt": profile.system_prompt,
+                            "conversation_history": conv_history
+                        })
+                        response_text = response.get("output", str(response))
+                    except Exception as e:
+                        self.logger.warning(f"Agent executor failed: {e}, falling back to direct LLM call")
+                        response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
+                else:
+                    # No tools, use direct LLM call
+                    response_text = await llm.ainvoke("\n\n".join([f"{m['role']}: {m['content']}" for m in messages]))
 
                 # Add AI response to conversation
                 self.dialogue_manager._add_message_to_conversation(

@@ -236,6 +236,8 @@ class DatabaseToolProfile(BaseModel):
     sql_statement: str = Field(..., description="SQL query statement (for SQL databases) or query (for MongoDB)")
     is_active: bool = Field(default=True, description="Whether this database tool is active")
     cache_ttl_hours: float = Field(default=1.0, description="Cache TTL in hours (default: 1 hour)")
+    allow_dynamic_sql: bool = Field(default=False, description="Allow dynamic SQL input at execution time")
+    preset_sql_statement: Optional[str] = Field(None, description="Optional preset/base SQL statement. If provided and allow_dynamic_sql is True, dynamic input will be appended as WHERE condition or used as full SQL if preset is empty.")
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata for this database tool"
@@ -250,6 +252,8 @@ class DatabaseToolCreateRequest(BaseModel):
     sql_statement: str
     is_active: bool = Field(default=True)
     cache_ttl_hours: float = Field(default=1.0, ge=0.1, le=24.0, description="Cache TTL in hours (0.1 to 24 hours)")
+    allow_dynamic_sql: bool = Field(default=False, description="Allow dynamic SQL input at execution time")
+    preset_sql_statement: Optional[str] = Field(None, description="Optional preset/base SQL statement. If provided and allow_dynamic_sql is True, dynamic input will be appended as WHERE condition.")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -262,6 +266,8 @@ class DatabaseToolUpdateRequest(BaseModel):
     sql_statement: str
     is_active: bool = Field(default=True)
     cache_ttl_hours: float = Field(default=1.0, ge=0.1, le=24.0, description="Cache TTL in hours (0.1 to 24 hours)")
+    allow_dynamic_sql: bool = Field(default=False, description="Allow dynamic SQL input at execution time")
+    preset_sql_statement: Optional[str] = Field(None, description="Optional preset/base SQL statement. If provided and allow_dynamic_sql is True, dynamic input will be appended as WHERE condition.")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -275,6 +281,11 @@ class DatabaseToolPreviewResponse(BaseModel):
     cached: bool = Field(..., description="Whether data is from cache")
     cache_expires_at: Optional[str] = Field(None, description="Cache expiration timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class DatabaseToolExecuteRequest(BaseModel):
+    """Request model for executing database query with dynamic SQL"""
+    sql_input: Optional[str] = Field(None, description="Optional dynamic SQL input (WHERE condition or full SQL statement)")
 
 
 class RequestType(str, Enum):
@@ -618,6 +629,14 @@ class DialogueProfile(BaseModel):
         None,
         description="Optional RAG collection name to use as context",
     )
+    db_tools: List[str] = Field(
+        default_factory=list,
+        description="List of database tool IDs to use in this dialogue",
+    )
+    request_tools: List[str] = Field(
+        default_factory=list,
+        description="List of request tool IDs to use in this dialogue",
+    )
     llm_provider: Optional[LLMProviderType] = Field(
         None,
         description="Optional LLM provider override for this dialogue",
@@ -639,6 +658,8 @@ class DialogueCreateRequest(BaseModel):
     description: Optional[str] = None
     system_prompt: str
     rag_collection: Optional[str] = None
+    db_tools: List[str] = Field(default_factory=list, description="List of database tool IDs to use")
+    request_tools: List[str] = Field(default_factory=list, description="List of request tool IDs to use")
     llm_provider: Optional[LLMProviderType] = None
     model_name: Optional[str] = None
     max_turns: int = Field(default=5, ge=1, le=10)
@@ -651,6 +672,8 @@ class DialogueUpdateRequest(BaseModel):
     description: Optional[str] = None
     system_prompt: str
     rag_collection: Optional[str] = None
+    db_tools: List[str] = Field(default_factory=list, description="List of database tool IDs to use")
+    request_tools: List[str] = Field(default_factory=list, description="List of request tool IDs to use")
     llm_provider: Optional[LLMProviderType] = None
     model_name: Optional[str] = None
     max_turns: int = Field(default=5, ge=1, le=10)

@@ -64,8 +64,12 @@ const DBTools = () => {
     sql_statement: '',
     is_active: true,
     cache_ttl_hours: 1.0,
+    allow_dynamic_sql: false,
+    preset_sql_statement: '',
     additional_params: {},
   });
+  const [sqlInput, setSqlInput] = useState('');
+  const [executeLoading, setExecuteLoading] = useState(false);
 
   const createMutation = useMutation(api.createDBTool, {
     onSuccess: () => {
@@ -114,8 +118,11 @@ const DBTools = () => {
       sql_statement: '',
       is_active: true,
       cache_ttl_hours: 1.0,
+      allow_dynamic_sql: false,
+      preset_sql_statement: '',
       additional_params: {},
     });
+    setSqlInput('');
   };
 
   const getDefaultPort = (dbType) => {
@@ -147,6 +154,8 @@ const DBTools = () => {
       sql_statement: createForm.sql_statement,
       is_active: createForm.is_active,
       cache_ttl_hours: createForm.cache_ttl_hours,
+      allow_dynamic_sql: createForm.allow_dynamic_sql,
+      preset_sql_statement: createForm.allow_dynamic_sql ? (createForm.preset_sql_statement || '') : '',
       metadata: {},
     };
     createMutation.mutate(payload);
@@ -166,6 +175,8 @@ const DBTools = () => {
       sql_statement: tool.sql_statement || '',
       is_active: tool.is_active !== undefined ? tool.is_active : true,
       cache_ttl_hours: tool.cache_ttl_hours || 1.0,
+      allow_dynamic_sql: tool.allow_dynamic_sql || false,
+      preset_sql_statement: tool.preset_sql_statement || '',
       additional_params: tool.connection_config?.additional_params || {},
     });
     setOpenEditDialog(true);
@@ -195,6 +206,8 @@ const DBTools = () => {
       sql_statement: createForm.sql_statement,
       is_active: createForm.is_active,
       cache_ttl_hours: createForm.cache_ttl_hours,
+      allow_dynamic_sql: createForm.allow_dynamic_sql,
+      preset_sql_statement: createForm.allow_dynamic_sql ? (createForm.preset_sql_statement || '') : '',
       metadata: {},
     };
     
@@ -227,9 +240,28 @@ const DBTools = () => {
     setSelectedTool(tool);
     setPreviewData(null);
     setPreviewError('');
+    setSqlInput('');
     // Auto-load preview when tool is selected
     if (tool.is_active) {
       handlePreview(tool.id, false);
+    }
+  };
+
+  const handleExecute = async () => {
+    if (!selectedTool || !selectedTool.is_active) return;
+    
+    setExecuteLoading(true);
+    setPreviewError('');
+    try {
+      const result = await api.executeDBTool(selectedTool.id, sqlInput || null);
+      setPreviewData(result);
+      setPreviewError('');
+    } catch (err) {
+      console.error('Execute error:', err);
+      setPreviewError(err.response?.data?.detail || err.message || 'Failed to execute query');
+      setPreviewData(null);
+    } finally {
+      setExecuteLoading(false);
     }
   };
 
@@ -323,6 +355,14 @@ const DBTools = () => {
                           label={`Cache: ${tool.cache_ttl_hours}h`}
                           variant="outlined"
                         />
+                        {tool.allow_dynamic_sql && (
+                          <Chip
+                            size="small"
+                            label="Dynamic SQL"
+                            color="secondary"
+                            variant="outlined"
+                          />
+                        )}
                         <Chip
                           size="small"
                           label={`${tool.connection_config?.host || 'N/A'}:${tool.connection_config?.port || 'N/A'}`}
@@ -385,16 +425,20 @@ const DBTools = () => {
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">Data Preview</Typography>
-                {selectedTool && selectedTool.is_active && (
-                  <Button
-                    size="small"
-                    startIcon={<RefreshIcon />}
-                    onClick={() => handlePreview(selectedTool.id, true)}
-                    disabled={previewLoading}
-                  >
-                    Refresh
-                  </Button>
-                )}
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {selectedTool && selectedTool.is_active && (
+                    <>
+                      <Button
+                        size="small"
+                        startIcon={<RefreshIcon />}
+                        onClick={() => handlePreview(selectedTool.id, true)}
+                        disabled={previewLoading}
+                      >
+                        Refresh
+                      </Button>
+                    </>
+                  )}
+                </Box>
               </Box>
               {selectedTool ? (
                 <>
@@ -408,7 +452,41 @@ const DBTools = () => {
                   )}
                   {selectedTool.is_active && (
                     <>
-                      {previewLoading ? (
+                      {selectedTool.allow_dynamic_sql && (
+                        <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                            Execute with Dynamic SQL
+                          </Typography>
+                          <TextField
+                            fullWidth
+                            label="SQL Input (WHERE condition or full SQL)"
+                            value={sqlInput}
+                            onChange={(e) => setSqlInput(e.target.value)}
+                            multiline
+                            rows={3}
+                            sx={{ mb: 1 }}
+                            placeholder={
+                              selectedTool.preset_sql_statement
+                                ? 'active = 1 AND created_at > \'2024-01-01\''
+                                : 'SELECT * FROM orders WHERE status = \'pending\''
+                            }
+                            helperText={
+                              selectedTool.preset_sql_statement
+                                ? `Will be appended to: ${selectedTool.preset_sql_statement.substring(0, 50)}...`
+                                : 'Enter full SQL statement or WHERE condition'
+                            }
+                          />
+                          <Button
+                            variant="contained"
+                            onClick={handleExecute}
+                            disabled={executeLoading || !sqlInput.trim()}
+                            sx={{ mt: 1 }}
+                          >
+                            {executeLoading ? 'Executing...' : 'Execute Query'}
+                          </Button>
+                        </Box>
+                      )}
+                      {previewLoading || executeLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                           <CircularProgress />
                         </Box>
@@ -601,22 +679,55 @@ const DBTools = () => {
                 />
               </Grid>
             </Grid>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={createForm.allow_dynamic_sql}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, allow_dynamic_sql: e.target.checked })
+                  }
+                />
+              }
+              label="Allow Dynamic SQL"
+              sx={{ mb: 2 }}
+            />
+            {createForm.allow_dynamic_sql && (
+              <TextField
+                fullWidth
+                label="Preset SQL Statement (Optional)"
+                value={createForm.preset_sql_statement}
+                onChange={(e) => setCreateForm({ ...createForm, preset_sql_statement: e.target.value })}
+                multiline
+                rows={4}
+                sx={{ mb: 2 }}
+                placeholder={
+                  createForm.db_type === 'mongodb'
+                    ? '{"collection": "users", "query": {}, "projection": {}, "limit": 1000}'
+                    : 'SELECT id, name, email FROM users'
+                }
+                helperText="Base SQL statement. Dynamic input will be appended as WHERE condition or used as full SQL if this is empty."
+              />
+            )}
             <TextField
               fullWidth
-              label={createForm.db_type === 'mongodb' ? 'MongoDB Query (JSON)' : 'SQL Statement'}
+              label={createForm.allow_dynamic_sql ? 'Default SQL Statement (Fallback)' : (createForm.db_type === 'mongodb' ? 'MongoDB Query (JSON)' : 'SQL Statement')}
               value={createForm.sql_statement}
               onChange={(e) => setCreateForm({ ...createForm, sql_statement: e.target.value })}
               multiline
-              rows={6}
+              rows={createForm.allow_dynamic_sql ? 4 : 6}
               sx={{ mb: 2 }}
               required
               placeholder={
                 createForm.db_type === 'mongodb'
                   ? '{"collection": "users", "query": {}, "projection": {}, "limit": 1000}'
+                  : createForm.allow_dynamic_sql
+                  ? 'SELECT * FROM table_name WHERE condition (used as fallback)'
                   : 'SELECT * FROM table_name WHERE condition'
               }
               helperText={
-                createForm.db_type === 'mongodb'
+                createForm.allow_dynamic_sql
+                  ? 'Default SQL statement used when dynamic SQL is disabled or no input provided'
+                  : createForm.db_type === 'mongodb'
                   ? 'MongoDB query in JSON format'
                   : 'SQL SELECT statement to execute'
               }
@@ -782,22 +893,55 @@ const DBTools = () => {
                 />
               </Grid>
             </Grid>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={createForm.allow_dynamic_sql}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, allow_dynamic_sql: e.target.checked })
+                  }
+                />
+              }
+              label="Allow Dynamic SQL"
+              sx={{ mb: 2 }}
+            />
+            {createForm.allow_dynamic_sql && (
+              <TextField
+                fullWidth
+                label="Preset SQL Statement (Optional)"
+                value={createForm.preset_sql_statement}
+                onChange={(e) => setCreateForm({ ...createForm, preset_sql_statement: e.target.value })}
+                multiline
+                rows={4}
+                sx={{ mb: 2 }}
+                placeholder={
+                  createForm.db_type === 'mongodb'
+                    ? '{"collection": "users", "query": {}, "projection": {}, "limit": 1000}'
+                    : 'SELECT id, name, email FROM users'
+                }
+                helperText="Base SQL statement. Dynamic input will be appended as WHERE condition or used as full SQL if this is empty."
+              />
+            )}
             <TextField
               fullWidth
-              label={createForm.db_type === 'mongodb' ? 'MongoDB Query (JSON)' : 'SQL Statement'}
+              label={createForm.allow_dynamic_sql ? 'Default SQL Statement (Fallback)' : (createForm.db_type === 'mongodb' ? 'MongoDB Query (JSON)' : 'SQL Statement')}
               value={createForm.sql_statement}
               onChange={(e) => setCreateForm({ ...createForm, sql_statement: e.target.value })}
               multiline
-              rows={6}
+              rows={createForm.allow_dynamic_sql ? 4 : 6}
               sx={{ mb: 2 }}
               required
               placeholder={
                 createForm.db_type === 'mongodb'
                   ? '{"collection": "users", "query": {}, "projection": {}, "limit": 1000}'
+                  : createForm.allow_dynamic_sql
+                  ? 'SELECT * FROM table_name WHERE condition (used as fallback)'
                   : 'SELECT * FROM table_name WHERE condition'
               }
               helperText={
-                createForm.db_type === 'mongodb'
+                createForm.allow_dynamic_sql
+                  ? 'Default SQL statement used when dynamic SQL is disabled or no input provided'
+                  : createForm.db_type === 'mongodb'
                   ? 'MongoDB query in JSON format'
                   : 'SQL SELECT statement to execute'
               }

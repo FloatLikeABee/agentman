@@ -1,9 +1,28 @@
 import os
 import logging
+import ssl
+import time
+from functools import wraps
 
 # Disable ChromaDB telemetry BEFORE importing chromadb
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY_DISABLED"] = "True"
+
+# Configure HuggingFace Hub SSL and retry settings
+# Note: Settings will be loaded after imports, so we check both env vars and will update after settings load
+def configure_hf_ssl(ssl_verify: bool = True, timeout: int = 300):
+    """Configure HuggingFace Hub SSL and timeout settings"""
+    if not ssl_verify:
+        os.environ["CURL_CA_BUNDLE"] = ""
+        os.environ["REQUESTS_CA_BUNDLE"] = ""
+        # Create unverified SSL context for HuggingFace Hub
+        ssl._create_default_https_context = ssl._create_unverified_context
+    
+    os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = str(timeout)
+    os.environ["HF_HUB_CACHE"] = os.getenv("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface"))
+
+# Initial configuration (will be updated after settings load)
+configure_hf_ssl()
 
 # Suppress ChromaDB telemetry errors before import
 chromadb_telemetry_logger = logging.getLogger("chromadb.telemetry")
@@ -14,6 +33,15 @@ chromadb_telemetry_logger.disabled = True
 posthog_logger = logging.getLogger("chromadb.telemetry.product.posthog")
 posthog_logger.setLevel(logging.CRITICAL)
 posthog_logger.disabled = True
+
+# Suppress HuggingFace Hub SSL warnings if SSL verification is disabled (will be updated after settings load)
+def suppress_hf_warnings():
+    """Suppress HuggingFace Hub SSL warnings if SSL verification is disabled"""
+    if os.getenv("HF_SSL_VERIFY", "true").lower() == "false":
+        huggingface_logger = logging.getLogger("huggingface_hub.utils._http")
+        huggingface_logger.setLevel(logging.ERROR)
+
+suppress_hf_warnings()
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -28,13 +56,44 @@ from .models import RAGDataInput, RAGDataValidation, DataFormat
 import re
 
 
+def retry_with_backoff(max_retries=3, initial_delay=2, backoff_factor=2):
+    """Decorator to retry function calls with exponential backoff"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        wait_time = delay * (backoff_factor ** attempt)
+                        logging.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        logging.error(f"All {max_retries} attempts failed. Last error: {str(e)}")
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 class RAGSystem:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model,
-            model_kwargs={'device': 'cpu'}
-        )
+        
+        # Configure HuggingFace settings from config
+        ssl_verify = getattr(settings, 'hf_ssl_verify', True)
+        timeout = getattr(settings, 'hf_download_timeout', 300)
+        configure_hf_ssl(ssl_verify=ssl_verify, timeout=timeout)
+        
+        # Suppress HuggingFace Hub SSL warnings if SSL verification is disabled
+        if not ssl_verify:
+            suppress_hf_warnings()
+        
+        # Initialize embeddings with retry logic
+        self.embeddings = self._initialize_embeddings()
         
         # Initialize ChromaDB
         self.chroma_client = chromadb.PersistentClient(
@@ -52,6 +111,35 @@ class RAGSystem:
         )
         
         self.collections = {}
+    
+    @retry_with_backoff(max_retries=5, initial_delay=3, backoff_factor=2)
+    def _initialize_embeddings(self):
+        """Initialize HuggingFace embeddings with retry logic"""
+        try:
+            self.logger.info(f"Initializing embeddings model: {settings.embedding_model}")
+            if not getattr(settings, 'hf_ssl_verify', True):
+                self.logger.warning("SSL verification is disabled for HuggingFace downloads (development mode)")
+            
+            embeddings = HuggingFaceEmbeddings(
+                model_name=settings.embedding_model,
+                model_kwargs={'device': 'cpu'},
+                # Add cache configuration
+                cache_folder=os.getenv("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface"))
+            )
+            self.logger.info("Embeddings model initialized successfully")
+            return embeddings
+        except Exception as e:
+            self.logger.error(f"Failed to initialize embeddings: {e}")
+            # If SSL error, suggest workaround
+            if "SSL" in str(e) or "SSL" in str(type(e)) or "SSLError" in str(type(e)):
+                self.logger.warning(
+                    "SSL error detected. To fix this, you can:\n"
+                    "1. Set environment variable: HF_SSL_VERIFY=false (development only)\n"
+                    "2. Or add to .env file: HF_SSL_VERIFY=false\n"
+                    "3. Check your network/firewall settings\n"
+                    "4. Update SSL certificates on your system"
+                )
+            raise
 
     def validate_data(self, data_input: RAGDataInput) -> RAGDataValidation:
         """Validate RAG data input"""

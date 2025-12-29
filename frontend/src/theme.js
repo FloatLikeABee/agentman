@@ -55,32 +55,52 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Orbitron", "Roboto", "Helvetica", "Arial", sans-serif',
+    // Use readable font for body text
+    fontFamily: '"Roboto", "Inter", "Helvetica", "Arial", sans-serif',
+    // Use Orbitron only for headings to maintain cyberpunk feel
     h1: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 700,
-      letterSpacing: '0.05em',
+      letterSpacing: '0.03em',
       textTransform: 'uppercase',
     },
     h2: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 700,
-      letterSpacing: '0.05em',
+      letterSpacing: '0.03em',
       textTransform: 'uppercase',
     },
     h3: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 600,
-      letterSpacing: '0.03em',
+      letterSpacing: '0.02em',
     },
     h4: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 600,
-      letterSpacing: '0.03em',
+      letterSpacing: '0.02em',
     },
     h5: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 600,
+      letterSpacing: '0.01em',
     },
     h6: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 600,
     },
+    body1: {
+      fontFamily: '"Roboto", "Inter", sans-serif',
+      letterSpacing: '0.01em',
+      lineHeight: 1.6,
+    },
+    body2: {
+      fontFamily: '"Roboto", "Inter", sans-serif',
+      letterSpacing: '0.01em',
+      lineHeight: 1.5,
+    },
     button: {
+      fontFamily: '"Orbitron", "Roboto", sans-serif',
       fontWeight: 600,
       letterSpacing: '0.05em',
       textTransform: 'uppercase',
@@ -326,15 +346,25 @@ const theme = createTheme({
     MuiTab: {
       styleOverrides: {
         root: {
+          fontFamily: '"Orbitron", "Roboto", sans-serif',
           color: colors.textSecondary,
           fontWeight: 600,
           textTransform: 'uppercase',
-          letterSpacing: '0.1em',
+          letterSpacing: '0.05em',
           '&.Mui-selected': {
             color: colors.accent,
           },
           '&:hover': {
             color: colors.accent,
+          },
+        },
+      },
+    },
+    MuiTypography: {
+      styleOverrides: {
+        root: {
+          '&.MuiTypography-body1, &.MuiTypography-body2, &.MuiTypography-caption, &.MuiTypography-overline': {
+            fontFamily: '"Roboto", "Inter", sans-serif',
           },
         },
       },
