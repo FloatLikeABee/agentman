@@ -237,6 +237,8 @@ const RequestToolsPanel = () => {
     params: {},
     body: '',
     timeout: 30,
+    allow_dynamic_params: false,
+    allow_dynamic_body: false,
   });
   const [headersText, setHeadersText] = useState('');
   const [paramsText, setParamsText] = useState('');
@@ -291,6 +293,8 @@ const RequestToolsPanel = () => {
       params: {},
       body: '',
       timeout: 30,
+      allow_dynamic_params: false,
+      allow_dynamic_body: false,
     });
     setHeadersText('');
     setParamsText('');
@@ -324,6 +328,8 @@ const RequestToolsPanel = () => {
       params: request.params || {},
       body: typeof request.body === 'string' ? request.body : JSON.stringify(request.body || {}, null, 2),
       timeout: request.timeout || 30,
+      allow_dynamic_params: request.allow_dynamic_params || false,
+      allow_dynamic_body: request.allow_dynamic_body || false,
     });
     setHeadersText(JSON.stringify(request.headers || {}, null, 2));
     setParamsText(JSON.stringify(request.params || {}, null, 2));
@@ -846,7 +852,19 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         rows={3}
         sx={{ mb: 2 }}
         placeholder='{"param1": "value1", "param2": "value2"}'
-        helperText="JSON object with key-value pairs"
+        helperText={form.allow_dynamic_params 
+          ? "JSON object with key-value pairs. Can be overridden dynamically in flows using {query: {}} format."
+          : "JSON object with key-value pairs"}
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.allow_dynamic_params || false}
+            onChange={(e) => setForm({ ...form, allow_dynamic_params: e.target.checked })}
+          />
+        }
+        label="Allow Dynamic Query Parameters (for use in flows)"
+        sx={{ mb: 2 }}
       />
       <TextField
         fullWidth
@@ -857,6 +875,19 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         rows={4}
         sx={{ mb: 2 }}
         placeholder='{"key": "value"}'
+        helperText={form.allow_dynamic_body 
+          ? "Can be overridden dynamically in flows using {body: {}} format."
+          : ""}
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.allow_dynamic_body || false}
+            onChange={(e) => setForm({ ...form, allow_dynamic_body: e.target.checked })}
+          />
+        }
+        label="Allow Dynamic Body (for use in flows)"
+        sx={{ mb: 2 }}
       />
       <TextField
         fullWidth

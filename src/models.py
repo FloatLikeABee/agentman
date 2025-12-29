@@ -320,6 +320,8 @@ class RequestProfile(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = Field(None, description="Request body (string, JSON object, or array)")
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    allow_dynamic_params: bool = Field(default=False, description="Allow query params to be overridden dynamically (e.g., from flow previous step)")
+    allow_dynamic_body: bool = Field(default=False, description="Allow body to be overridden dynamically (e.g., from flow previous step)")
     last_response: Optional[Dict[str, Any]] = Field(None, description="Last response data")
     last_executed_at: Optional[str] = Field(None, description="Last execution timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
@@ -337,6 +339,8 @@ class RequestCreateRequest(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    allow_dynamic_params: bool = Field(default=False, description="Allow query params to be overridden dynamically (e.g., from flow previous step)")
+    allow_dynamic_body: bool = Field(default=False, description="Allow body to be overridden dynamically (e.g., from flow previous step)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
     
     @field_validator('description', mode='before')
@@ -473,6 +477,8 @@ class RequestUpdateRequest(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    allow_dynamic_params: bool = Field(default=False, description="Allow query params to be overridden dynamically (e.g., from flow previous step)")
+    allow_dynamic_body: bool = Field(default=False, description="Allow body to be overridden dynamically (e.g., from flow previous step)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

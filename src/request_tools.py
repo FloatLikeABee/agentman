@@ -2,7 +2,7 @@ import logging
 import os
 import json
 import time
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 import threading
 
@@ -134,6 +134,8 @@ class RequestToolsManager:
             params=req.params,
             body=req.body,
             timeout=req.timeout,
+            allow_dynamic_params=req.allow_dynamic_params,
+            allow_dynamic_body=req.allow_dynamic_body,
             metadata=req.metadata,
         )
         self.requests[request_id] = profile
@@ -178,6 +180,8 @@ class RequestToolsManager:
                 params=req.params,
                 body=req.body,
                 timeout=req.timeout,
+                allow_dynamic_params=req.allow_dynamic_params,
+                allow_dynamic_body=req.allow_dynamic_body,
                 last_response=last_response,  # Preserve last response
                 last_executed_at=last_executed_at,  # Preserve last execution time
                 metadata=req.metadata,
@@ -341,19 +345,60 @@ class RequestToolsManager:
                 "error": str(e),
             }
 
-    def execute_request(self, request_id: str) -> Dict[str, Any]:
-        """Execute a request and save the response."""
+    def execute_request(
+        self, 
+        request_id: str, 
+        dynamic_params: Optional[Dict[str, Any]] = None,
+        dynamic_body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
+    ) -> Dict[str, Any]:
+        """Execute a request and save the response.
+        
+        Args:
+            request_id: The request profile ID to execute
+            dynamic_params: Optional query parameters to override (if allow_dynamic_params is True)
+            dynamic_body: Optional body to override (if allow_dynamic_body is True)
+        """
         profile = self.requests.get(request_id)
         if not profile:
             raise ValueError(f"Request {request_id} not found")
 
+        # Use dynamic params/body if allowed and provided
+        effective_params = profile.params.copy()
+        effective_body = profile.body
+        
+        if profile.allow_dynamic_params and dynamic_params is not None:
+            effective_params.update(dynamic_params)
+        
+        if profile.allow_dynamic_body and dynamic_body is not None:
+            effective_body = dynamic_body
+
+        # Create a temporary profile with dynamic values for execution
+        temp_profile = RequestProfile(
+            id=profile.id,
+            name=profile.name,
+            description=profile.description,
+            request_type=profile.request_type,
+            method=profile.method,
+            url=profile.url,
+            endpoint=profile.endpoint,
+            headers=profile.headers,
+            params=effective_params,
+            body=effective_body,
+            timeout=profile.timeout,
+            allow_dynamic_params=profile.allow_dynamic_params,
+            allow_dynamic_body=profile.allow_dynamic_body,
+            last_response=profile.last_response,
+            last_executed_at=profile.last_executed_at,
+            metadata=profile.metadata,
+        )
+
         # Execute based on request type
-        if profile.request_type == RequestType.HTTP:
-            result = self._execute_http_request(profile)
-        elif profile.request_type == RequestType.INTERNAL:
-            result = self._execute_internal_request(profile)
+        if temp_profile.request_type == RequestType.HTTP:
+            result = self._execute_http_request(temp_profile)
+        elif temp_profile.request_type == RequestType.INTERNAL:
+            result = self._execute_internal_request(temp_profile)
         else:
-            raise ValueError(f"Unknown request type: {profile.request_type}")
+            raise ValueError(f"Unknown request type: {temp_profile.request_type}")
 
         # Save response to profile
         executed_at = datetime.now().isoformat()
