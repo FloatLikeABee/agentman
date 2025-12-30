@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     hf_ssl_verify: bool = True  # Set to False to disable SSL verification for HuggingFace downloads (development only)
     hf_download_timeout: int = 300  # Timeout in seconds for HuggingFace model downloads
+    hf_proxy: Optional[str] = None  # Proxy URL for HuggingFace downloads (e.g., "http://proxy.example.com:8080" or "https://proxy.example.com:8080")
+    hf_mirror: Optional[str] = None  # Mirror endpoint for HuggingFace (e.g., "https://hf-mirror.com" for China mirror)
 
     # API settings
     api_host: str = "0.0.0.0"

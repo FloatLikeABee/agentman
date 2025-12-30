@@ -184,6 +184,14 @@ class FlowService:
         start_time = time.time()
         step_results: List[FlowStepResult] = request.previous_step_results.copy() if request.previous_step_results else []
         previous_output: Optional[Union[str, Dict[str, Any]]] = None
+
+        # Log step_results when resuming
+        if request.resume_from_step:
+            self.logger.info(
+                f"[FLOW {flow_id}] Resuming from step {request.resume_from_step}. "
+                f"step_results count: {len(step_results)}, "
+                f"step_ids: {[r.step_id for r in step_results]}"
+            )
         
         # If resuming, we need to re-execute the dialogue step to get the final result
         # The dialogue step was paused, but now the conversation is complete
@@ -199,50 +207,238 @@ class FlowService:
                         f"[FLOW {flow_id}] Re-executing dialogue step {resume_step.step_id} to get final result"
                     )
                     try:
-                        # Get conversation_id from context
-                        conversation_id = request.context.get("conversation_id") if request.context else None
-                        if conversation_id:
-                            # Re-execute the dialogue step with the conversation context
-                            # This will return the final result since conversation is complete
-                            dialogue_output = await self._execute_dialogue_step(
-                                resume_step,
-                                "",  # Empty initial message since conversation already started
-                                request.context or {}
-                            )
+                        # Get conversation_id from context or from previous step result
+                        conversation_id = None
+                        if request.context:
+                            conversation_id = request.context.get("conversation_id")
+                        
+                        # Fallback: try to get conversation_id from previous step result
+                        if not conversation_id and step_results:
+                            for result in step_results:
+                                if result.step_id == resume_step.step_id:
+                                    # Check if it's a dialogue result with conversation_id
+                                    if result.metadata and isinstance(result.metadata, dict):
+                                        dialogue_response = result.metadata.get("dialogue_response")
+                                        if dialogue_response and isinstance(dialogue_response, dict):
+                                            conversation_id = dialogue_response.get("conversation_id")
+                                    # Also check the output directly
+                                    if not conversation_id and result.output and isinstance(result.output, dict):
+                                        conversation_id = result.output.get("conversation_id")
+                                    break
+                        
+                        self.logger.info(
+                            f"[FLOW {flow_id}] Resuming dialogue step {resume_step.step_id}. "
+                            f"conversation_id from context: {request.context.get('conversation_id') if request.context else None}, "
+                            f"conversation_id found: {conversation_id}"
+                        )
+                        
+                        if conversation_id and self.dialogue_manager:
+                            # Check if conversation exists and get its data directly
+                            conversation = self.dialogue_manager.get_conversation(conversation_id)
+                            if conversation:
+                                # Build dialogue output from existing conversation
+                                messages = conversation.get("messages", [])
+                                # Get the last assistant response
+                                last_response = ""
+                                for msg in reversed(messages):
+                                    if hasattr(msg, "role") and msg.role == "assistant":
+                                        last_response = getattr(msg, "content", "")
+                                        break
+                                    elif isinstance(msg, dict) and msg.get("role") == "assistant":
+                                        last_response = msg.get("content", "")
+                                        break
+                                
+                                # Get profile info
+                                profile = self.dialogue_manager.get_profile(resume_step.resource_id)
+                                profile_name = profile.name if profile else "Unknown"
+                                
+                                dialogue_output = {
+                                    "conversation_id": conversation_id,
+                                    "turn_number": conversation.get("turn_number", 0),
+                                    "max_turns": conversation.get("max_turns", 999),
+                                    "response": last_response,
+                                    "needs_more_info": False,
+                                    "is_complete": True,
+                                    "profile_id": resume_step.resource_id,
+                                    "profile_name": profile_name,
+                                    "conversation_history": messages,
+                                    "metadata": {}
+                                }
+                            else:
+                                # Conversation not found, try to re-execute
+                                dialogue_output = await self._execute_dialogue_step(
+                                    resume_step,
+                                    "",  # Empty initial message since conversation already started
+                                    request.context or {}
+                                )
+                        else:
+                            # No conversation_id or dialogue_manager
+                            dialogue_output = None
                             
-                            # Update the step result with the final output
-                            if step_results and len(step_results) > 0:
-                                last_result = step_results[-1]
-                                if last_result.step_id == resume_step.step_id:
-                                    # Update the existing step result
-                                    last_result.output = dialogue_output
-                                    last_result.metadata = {
-                                        "dialogue_response": {
-                                            "conversation_id": dialogue_output.get("conversation_id"),
-                                            "conversation_history": dialogue_output.get("conversation_history", []),
-                                            "response": dialogue_output.get("response"),
-                                            "is_complete": dialogue_output.get("is_complete", True),
-                                            "needs_more_info": False,
-                                            "turn_number": dialogue_output.get("turn_number"),
-                                            "max_turns": dialogue_output.get("max_turns"),
-                                            "profile_id": dialogue_output.get("profile_id"),
-                                            "profile_name": dialogue_output.get("profile_name"),
-                                            "metadata": dialogue_output.get("metadata", {}),
-                                        }
+                            if not conversation_id:
+                                self.logger.warning(
+                                    f"[FLOW {flow_id}] No conversation_id found for dialogue step {resume_step.step_id}. "
+                                    f"Cannot retrieve final conversation result. "
+                                    f"Context keys: {list(request.context.keys()) if request.context else 'None'}, "
+                                    f"Step results: {[r.step_id for r in step_results]}"
+                                )
+                                # Try to use the output from the previous step result if available
+                                if step_results:
+                                    for result in step_results:
+                                        if result.step_id == resume_step.step_id and result.output:
+                                            dialogue_output = result.output
+                                            self.logger.info(
+                                                f"[FLOW {flow_id}] Using output from previous step result for dialogue step {resume_step.step_id}"
+                                            )
+                                            break
+                                
+                                # If still no output, create a minimal output
+                                if not dialogue_output:
+                                    self.logger.error(
+                                        f"[FLOW {flow_id}] Cannot retrieve dialogue output for step {resume_step.step_id}. "
+                                        f"Creating minimal output."
+                                    )
+                                    dialogue_output = {
+                                        "conversation_id": None,
+                                        "turn_number": 0,
+                                        "max_turns": 0,
+                                        "response": "",
+                                        "needs_more_info": False,
+                                        "is_complete": True,
+                                        "profile_id": resume_step.resource_id,
+                                        "profile_name": "Unknown",
+                                        "conversation_history": [],
+                                        "metadata": {}
                                     }
-                            
-                            # Set previous_output to the final dialogue result
-                            previous_output = dialogue_output
+                            elif not self.dialogue_manager:
+                                # dialogue_manager is None, try to re-execute
+                                self.logger.warning(
+                                    f"[FLOW {flow_id}] Dialogue manager not available. "
+                                    f"Attempting to re-execute dialogue step {resume_step.step_id}."
+                                )
+                                dialogue_output = await self._execute_dialogue_step(
+                                    resume_step,
+                                    "",  # Empty initial message since conversation already started
+                                    request.context or {}
+                                )
+                            else:
+                                # Both conversation_id and dialogue_manager are None/not available
+                                # Try to re-execute as last resort
+                                self.logger.warning(
+                                    f"[FLOW {flow_id}] Both conversation_id and dialogue_manager unavailable. "
+                                    f"Attempting to re-execute dialogue step {resume_step.step_id}."
+                                )
+                                dialogue_output = await self._execute_dialogue_step(
+                                    resume_step,
+                                    "",  # Empty initial message since conversation already started
+                                    request.context or {}
+                                )
+                        
+                        # Enhance dialogue output for next steps (same as in main execution)
+                        enhanced_output = dialogue_output.copy()
+                        response_text = dialogue_output.get("response", "")
+                        conversation_history = dialogue_output.get("conversation_history", [])
+                        
+                        # Ensure conversation_history is a list of dicts (not Pydantic models)
+                        serialized_history = []
+                        for msg in conversation_history:
+                            if isinstance(msg, dict):
+                                serialized_history.append(msg)
+                            elif hasattr(msg, "model_dump"):
+                                serialized_history.append(msg.model_dump())
+                            elif hasattr(msg, "dict"):
+                                serialized_history.append(msg.dict())
+                            elif hasattr(msg, "role") and hasattr(msg, "content"):
+                                serialized_history.append({
+                                    "role": getattr(msg, "role", "unknown"),
+                                    "content": getattr(msg, "content", ""),
+                                    "timestamp": getattr(msg, "timestamp", None)
+                                })
+                            else:
+                                # Fallback: try to convert to dict
+                                serialized_history.append(str(msg))
+                        
+                        user_messages = []
+                        for msg in serialized_history:
+                            if isinstance(msg, dict) and msg.get("role") == "user":
+                                user_messages.append(msg.get("content", ""))
+                        
+                        enhanced_output["query"] = response_text
+                        enhanced_output["body"] = response_text
+                        if user_messages:
+                            enhanced_output["user_input"] = user_messages[-1]
+                            enhanced_output["all_user_messages"] = user_messages
+                        enhanced_output["conversation_history"] = serialized_history
+                        
+                        # Find and update the dialogue step result in step_results
+                        dialogue_step_result = None
+                        for result in step_results:
+                            if result.step_id == resume_step.step_id:
+                                dialogue_step_result = result
+                                break
+                        
+                        if dialogue_step_result:
+                            # Update the existing step result with enhanced output
+                            dialogue_step_result.output = enhanced_output
+                            dialogue_step_result.metadata = {
+                                "dialogue_response": {
+                                    "conversation_id": dialogue_output.get("conversation_id"),
+                                    "conversation_history": serialized_history,  # Use serialized history
+                                    "response": response_text,
+                                    "is_complete": dialogue_output.get("is_complete", True),
+                                    "needs_more_info": False,
+                                    "turn_number": dialogue_output.get("turn_number"),
+                                    "max_turns": dialogue_output.get("max_turns"),
+                                    "profile_id": dialogue_output.get("profile_id"),
+                                    "profile_name": dialogue_output.get("profile_name"),
+                                    "metadata": dialogue_output.get("metadata", {}),
+                                }
+                            }
+                            dialogue_step_result.success = True
                             self.logger.info(
-                                f"[FLOW {flow_id}] Dialogue step {resume_step.step_id} final result obtained. "
-                                f"Output type: {type(previous_output)}"
+                                f"[FLOW {flow_id}] Updated existing dialogue step result {resume_step.step_id} in step_results"
                             )
                         else:
-                            # No conversation_id, use previous step result
-                            if step_results:
-                                last_result = step_results[-1]
-                                if last_result.success and last_result.output:
-                                    previous_output = last_result.output
+                            # Create a new step result if not found
+                            dialogue_step_result = FlowStepResult(
+                                step_id=resume_step.step_id,
+                                step_name=resume_step.step_name,
+                                step_type=FlowStepType.DIALOGUE,
+                                success=True,
+                                output=enhanced_output,
+                                error=None,
+                                execution_time=0.0,  # We don't have the original execution time
+                                metadata={
+                                    "dialogue_response": {
+                                        "conversation_id": dialogue_output.get("conversation_id"),
+                                        "conversation_history": serialized_history,
+                                        "response": response_text,
+                                        "is_complete": dialogue_output.get("is_complete", True),
+                                        "needs_more_info": False,
+                                        "turn_number": dialogue_output.get("turn_number"),
+                                        "max_turns": dialogue_output.get("max_turns"),
+                                        "profile_id": dialogue_output.get("profile_id"),
+                                        "profile_name": dialogue_output.get("profile_name"),
+                                        "metadata": dialogue_output.get("metadata", {}),
+                                    }
+                                }
+                            )
+                            step_results.append(dialogue_step_result)
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Created new dialogue step result {resume_step.step_id} and added to step_results"
+                            )
+                        
+                        # Set previous_output to the enhanced dialogue result
+                        previous_output = enhanced_output
+                        self.logger.info(
+                            f"[FLOW {flow_id}] Dialogue step {resume_step.step_id} final result obtained and enhanced. "
+                            f"Response: {response_text[:100]}..., User messages: {len(user_messages)}, "
+                            f"History length: {len(serialized_history)}"
+                        )
+                        self.logger.debug(
+                            f"[FLOW {flow_id}] Enhanced output keys: {list(enhanced_output.keys())}, "
+                            f"previous_output type: {type(previous_output)}"
+                        )
                     except Exception as e:
                         self.logger.warning(
                             f"[FLOW {flow_id}] Error re-executing dialogue step: {e}. "
@@ -299,9 +495,17 @@ class FlowService:
                             else:
                                 # Use entire previous output as input
                                 step_input = previous_output
+                                # Log what we're passing to help debug
+                                self.logger.info(
+                                    f"[FLOW {flow_id}] Step {step_index} ({step.step_id}) using previous output. "
+                                    f"Type: {type(previous_output)}, Keys: {list(previous_output.keys()) if isinstance(previous_output, dict) else 'N/A'}"
+                                )
                         else:
                             # Previous output is a string
                             step_input = str(previous_output)
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Step {step_index} ({step.step_id}) using previous output as string: {step_input[:100]}..."
+                            )
                     elif step.input_query:
                         # Use explicit input query
                         step_input = step.input_query
@@ -374,10 +578,29 @@ class FlowService:
                             # Conversation is complete or no waiting needed
                             dialogue_waiting = False
                         
+                        # Ensure conversation_history is serialized for metadata
+                        conv_history = output.get("conversation_history", [])
+                        serialized_conv_history = []
+                        for msg in conv_history:
+                            if isinstance(msg, dict):
+                                serialized_conv_history.append(msg)
+                            elif hasattr(msg, "model_dump"):
+                                serialized_conv_history.append(msg.model_dump())
+                            elif hasattr(msg, "dict"):
+                                serialized_conv_history.append(msg.dict())
+                            elif hasattr(msg, "role") and hasattr(msg, "content"):
+                                serialized_conv_history.append({
+                                    "role": getattr(msg, "role", "unknown"),
+                                    "content": getattr(msg, "content", ""),
+                                    "timestamp": getattr(msg, "timestamp", None)
+                                })
+                            else:
+                                serialized_conv_history.append(str(msg))
+                        
                         metadata = {
                             "dialogue_response": {
                                 "conversation_id": conversation_id,
-                                "conversation_history": output.get("conversation_history", []),
+                                "conversation_history": serialized_conv_history,  # Use serialized history
                                 "response": output.get("response"),
                                 "is_complete": is_complete,
                                 "needs_more_info": needs_more_info,
@@ -399,6 +622,70 @@ class FlowService:
                                 f"[FLOW {flow_id}] Dialogue step {step.step_id} is complete or ready to proceed. "
                                 f"is_complete={is_complete}, conversation_id={conversation_id}"
                             )
+                    
+                    # For dialogue steps, enhance the output to make it more usable for next steps
+                    if step.step_type == FlowStepType.DIALOGUE and isinstance(output, dict):
+                        # Create an enhanced output that includes both the full dialogue data
+                        # and extracted fields that next steps can easily use
+                        enhanced_output = output.copy()
+                        
+                        # Extract the final response text
+                        response_text = output.get("response", "")
+                        
+                        # Extract user messages from conversation history for query parameters
+                        conversation_history = output.get("conversation_history", [])
+                        
+                        # Ensure conversation_history is a list of dicts (not Pydantic models)
+                        serialized_history = []
+                        for msg in conversation_history:
+                            if isinstance(msg, dict):
+                                serialized_history.append(msg)
+                            elif hasattr(msg, "model_dump"):
+                                serialized_history.append(msg.model_dump())
+                            elif hasattr(msg, "dict"):
+                                serialized_history.append(msg.dict())
+                            elif hasattr(msg, "role") and hasattr(msg, "content"):
+                                serialized_history.append({
+                                    "role": getattr(msg, "role", "unknown"),
+                                    "content": getattr(msg, "content", ""),
+                                    "timestamp": getattr(msg, "timestamp", None)
+                                })
+                            else:
+                                # Fallback: try to convert to dict
+                                serialized_history.append(str(msg))
+                        
+                        user_messages = []
+                        for msg in serialized_history:
+                            if isinstance(msg, dict) and msg.get("role") == "user":
+                                user_messages.append(msg.get("content", ""))
+                        
+                        # Add helper fields for next steps to use
+                        # These fields make it easier for request steps to extract data
+                        enhanced_output["query"] = response_text  # Use response as query by default
+                        enhanced_output["body"] = response_text  # Also available as body
+                        
+                        # Add extracted user input (last user message or all user messages)
+                        if user_messages:
+                            enhanced_output["user_input"] = user_messages[-1]  # Last user message
+                            enhanced_output["all_user_messages"] = user_messages  # All user messages
+                        
+                        # Keep conversation_history accessible (use serialized version)
+                        enhanced_output["conversation_history"] = serialized_history
+                        
+                        # Log what we're passing to next step
+                        self.logger.info(
+                            f"[FLOW {flow_id}] Dialogue step {step.step_id} output enhanced for next step. "
+                            f"Response: {response_text[:100]}..., User messages: {len(user_messages)}, "
+                            f"History length: {len(serialized_history)}"
+                        )
+                        self.logger.debug(
+                            f"[FLOW {flow_id}] Enhanced output for step {step.step_id}: "
+                            f"keys={list(enhanced_output.keys())}, "
+                            f"has_query={('query' in enhanced_output)}, "
+                            f"has_user_input={('user_input' in enhanced_output)}"
+                        )
+                        
+                        output = enhanced_output
                     
                     step_result = FlowStepResult(
                         step_id=step.step_id,
@@ -651,13 +938,87 @@ class FlowService:
         sql_input = None
         if step_input:
             if isinstance(step_input, str):
-                sql_input = step_input
+                # Check if it looks like JSON (starts with { or [)
+                step_input_stripped = step_input.strip()
+                if step_input_stripped.startswith(("{", "[")):
+                    self.logger.warning(
+                        f"[DB TOOL STEP {step.step_id}] Received JSON string instead of SQL. "
+                        f"First 100 chars: {step_input[:100]}"
+                    )
+                    # Don't use JSON as SQL - this would cause SQL syntax errors
+                    sql_input = None
+                else:
+                    sql_input = step_input
             elif isinstance(step_input, dict):
-                # If it's a dict, try to extract SQL from common fields
-                sql_input = step_input.get("sql", step_input.get("sql_input", step_input.get("query")))
-                if sql_input and not isinstance(sql_input, str):
-                    # If it's not a string, try to convert it
-                    sql_input = str(sql_input)
+                # Check if this is dialogue output (has conversation_history)
+                if "conversation_history" in step_input:
+                    # For dialogue output, ONLY use the "response" field if it looks like SQL
+                    if "response" in step_input:
+                        response_text = step_input["response"]
+                        self.logger.info(
+                            f"[DB TOOL STEP {step.step_id}] Detected dialogue output. "
+                            f"Response type: {type(response_text)}, "
+                            f"First 100 chars: {str(response_text)[:100] if response_text else 'None'}"
+                        )
+                        # Check if response looks like SQL (not JSON)
+                        if isinstance(response_text, str):
+                            response_stripped = response_text.strip()
+                            if response_stripped.startswith(("{", "[")):
+                                # Looks like JSON, not SQL - log warning and don't use it
+                                self.logger.warning(
+                                    f"[DB TOOL STEP {step.step_id}] Dialogue response appears to be JSON, not SQL. "
+                                    f"Not using as SQL input. Response: {response_text[:200]}"
+                                )
+                                sql_input = None
+                            else:
+                                # Looks like SQL, use it
+                                sql_input = response_text
+                        elif isinstance(response_text, (dict, list)):
+                            # Response is JSON data, not SQL
+                            self.logger.warning(
+                                f"[DB TOOL STEP {step.step_id}] Dialogue response is JSON data (dict/list), not SQL. "
+                                f"Not using as SQL input."
+                            )
+                            sql_input = None
+                        else:
+                            # Convert to string and check
+                            response_str = str(response_text)
+                            if response_str.strip().startswith(("{", "[")):
+                                self.logger.warning(
+                                    f"[DB TOOL STEP {step.step_id}] Dialogue response appears to be JSON when converted to string. "
+                                    f"Not using as SQL input."
+                                )
+                                sql_input = None
+                            else:
+                                sql_input = response_str
+                    else:
+                        self.logger.warning(
+                            f"[DB TOOL STEP {step.step_id}] Dialogue output has no 'response' field. "
+                            f"Available keys: {list(step_input.keys())}"
+                        )
+                        sql_input = None
+                else:
+                    # Not dialogue output, try to extract SQL from common fields
+                    sql_input = step_input.get("sql", step_input.get("sql_input", step_input.get("query")))
+                    if sql_input and not isinstance(sql_input, str):
+                        # If it's not a string, check if it's JSON
+                        if isinstance(sql_input, (dict, list)):
+                            self.logger.warning(
+                                f"[DB TOOL STEP {step.step_id}] Extracted SQL input is JSON data (dict/list), not SQL string. "
+                                f"Not using as SQL input."
+                            )
+                            sql_input = None
+                        else:
+                            # Convert to string and check
+                            sql_str = str(sql_input)
+                            if sql_str.strip().startswith(("{", "[")):
+                                self.logger.warning(
+                                    f"[DB TOOL STEP {step.step_id}] Extracted SQL input appears to be JSON when converted to string. "
+                                    f"Not using as SQL input."
+                                )
+                                sql_input = None
+                            else:
+                                sql_input = sql_str
         
         # Use execute_query method which handles dynamic SQL
         # Wrap in asyncio.to_thread to ensure proper sequential execution
@@ -681,6 +1042,13 @@ class FlowService:
         if not profile:
             raise ValueError(f"Request profile {step.resource_id} not found")
 
+        # Log what we received
+        self.logger.info(
+            f"[REQUEST STEP {step.step_id}] Received step_input. "
+            f"Type: {type(step_input)}, "
+            f"Keys: {list(step_input.keys()) if isinstance(step_input, dict) else 'N/A'}"
+        )
+
         # If step_input is provided, temporarily update the profile
         original_body = None
         original_params = None
@@ -690,8 +1058,48 @@ class FlowService:
                 original_params = profile.params
                 
                 if isinstance(step_input, dict):
+                    # Check if this is dialogue output (has conversation_history)
+                    if "conversation_history" in step_input:
+                        self.logger.info(
+                            f"[REQUEST STEP {step.step_id}] Detected dialogue output. "
+                            f"Available keys: {list(step_input.keys())}"
+                        )
+                        # For dialogue output, ONLY use the "response" field
+                        if "response" in step_input:
+                            response_text = step_input["response"]
+                            self.logger.info(
+                                f"[REQUEST STEP {step.step_id}] Using response from dialogue: {response_text[:100] if isinstance(response_text, str) else response_text}"
+                            )
+                            # Parse response_text as JSON and use it as params (replace existing params)
+                            try:
+                                import json
+                                if isinstance(response_text, str):
+                                    # Try to parse as JSON
+                                    parsed_params = json.loads(response_text)
+                                    if isinstance(parsed_params, dict):
+                                        # Use the parsed JSON dict as params (replace existing)
+                                        profile.params = parsed_params
+                                    else:
+                                        # If parsed but not a dict, wrap in query key
+                                        profile.params = {"query": parsed_params}
+                                elif isinstance(response_text, dict):
+                                    # Already a dict, use it directly as params (replace existing)
+                                    profile.params = response_text
+                                else:
+                                    # Not a string or dict, convert to string and wrap in query
+                                    profile.params = {"query": str(response_text)}
+                            except json.JSONDecodeError:
+                                # Not valid JSON, use as string in query key
+                                profile.params = {"query": str(response_text)}
+                        else:
+                            # If no response field, log warning and use empty params
+                            self.logger.warning(
+                                f"[REQUEST STEP {step.step_id}] Dialogue output has no 'response' field. "
+                                f"Available keys: {list(step_input.keys())}"
+                            )
+                            profile.params = {}
                     # Check if step_input has "query" or "body" keys
-                    if "query" in step_input:
+                    elif "query" in step_input:
                         # Use "query" as query parameters
                         query_data = step_input["query"]
                         if isinstance(query_data, dict):
@@ -712,12 +1120,23 @@ class FlowService:
                 
                 # Update in manager
                 self.request_tools_manager.requests[profile.id] = profile
+                
+                # Log final params and body being used
+                self.logger.info(
+                    f"[REQUEST STEP {step.step_id}] Final profile params: {profile.params}, "
+                    f"body: {profile.body[:100] if profile.body and isinstance(profile.body, str) else profile.body}"
+                )
             
             # Execute the request (takes request_id)
             # Wrap in asyncio.to_thread to ensure proper sequential execution
             result = await asyncio.to_thread(
                 self.request_tools_manager.execute_request,
                 profile.id
+            )
+            
+            self.logger.info(
+                f"[REQUEST STEP {step.step_id}] Request executed. Success: {result.get('success')}, "
+                f"Status: {result.get('status_code')}"
             )
         finally:
             # Restore original values if we modified them
@@ -813,7 +1232,32 @@ class FlowService:
             }
 
         # Check if we're continuing an existing conversation or starting new
-        conversation_id = context.get("conversation_id")
+        # IMPORTANT: Only use conversation_id from context if it belongs to THIS dialogue profile
+        # This prevents different dialogue steps from reusing each other's conversations
+        conversation_id = None
+        context_conversation_id = context.get("conversation_id")
+        
+        if context_conversation_id and self.dialogue_manager:
+            # Verify that the conversation belongs to this dialogue profile
+            conversation = self.dialogue_manager.get_conversation(context_conversation_id)
+            if conversation:
+                # Check if the conversation's profile_id matches this step's resource_id
+                conversation_profile_id = conversation.get("profile_id")
+                if conversation_profile_id == step.resource_id:
+                    # This conversation belongs to this dialogue profile - we can use it
+                    conversation_id = context_conversation_id
+                    self.logger.info(
+                        f"[DIALOGUE STEP {step.step_id}] Using existing conversation {conversation_id} "
+                        f"for dialogue profile {step.resource_id}"
+                    )
+                else:
+                    # Conversation belongs to a different dialogue profile - start new conversation
+                    self.logger.info(
+                        f"[DIALOGUE STEP {step.step_id}] Context has conversation_id {context_conversation_id} "
+                        f"but it belongs to profile {conversation_profile_id}, not {step.resource_id}. "
+                        f"Starting new conversation."
+                    )
+                    conversation_id = None
         
         if conversation_id:
             # Check if conversation is already complete

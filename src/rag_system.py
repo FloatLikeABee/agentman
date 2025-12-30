@@ -3,15 +3,16 @@ import logging
 import ssl
 import time
 from functools import wraps
+from typing import Optional
 
 # Disable ChromaDB telemetry BEFORE importing chromadb
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY_DISABLED"] = "True"
 
-# Configure HuggingFace Hub SSL and retry settings
+# Configure HuggingFace Hub SSL, proxy, mirror and retry settings
 # Note: Settings will be loaded after imports, so we check both env vars and will update after settings load
-def configure_hf_ssl(ssl_verify: bool = True, timeout: int = 300):
-    """Configure HuggingFace Hub SSL and timeout settings"""
+def configure_hf_ssl(ssl_verify: bool = True, timeout: int = 300, proxy: Optional[str] = None, mirror: Optional[str] = None):
+    """Configure HuggingFace Hub SSL, proxy, mirror and timeout settings"""
     if not ssl_verify:
         os.environ["CURL_CA_BUNDLE"] = ""
         os.environ["REQUESTS_CA_BUNDLE"] = ""
@@ -20,6 +21,22 @@ def configure_hf_ssl(ssl_verify: bool = True, timeout: int = 300):
     
     os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = str(timeout)
     os.environ["HF_HUB_CACHE"] = os.getenv("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface"))
+    
+    # Configure proxy if provided
+    if proxy:
+        # HuggingFace Hub uses standard HTTP_PROXY and HTTPS_PROXY environment variables
+        os.environ["HTTP_PROXY"] = proxy
+        os.environ["HTTPS_PROXY"] = proxy
+        # Also set for requests library
+        os.environ["http_proxy"] = proxy
+        os.environ["https_proxy"] = proxy
+        logging.info(f"HuggingFace proxy configured: {proxy}")
+    
+    # Configure mirror if provided (useful for China users)
+    if mirror:
+        # HF_ENDPOINT is used by huggingface_hub to set a custom endpoint
+        os.environ["HF_ENDPOINT"] = mirror
+        logging.info(f"HuggingFace mirror configured: {mirror}")
 
 # Initial configuration (will be updated after settings load)
 configure_hf_ssl()
@@ -86,7 +103,14 @@ class RAGSystem:
         # Configure HuggingFace settings from config
         ssl_verify = getattr(settings, 'hf_ssl_verify', True)
         timeout = getattr(settings, 'hf_download_timeout', 300)
-        configure_hf_ssl(ssl_verify=ssl_verify, timeout=timeout)
+        proxy = getattr(settings, 'hf_proxy', None)
+        mirror = getattr(settings, 'hf_mirror', None)
+        configure_hf_ssl(ssl_verify=ssl_verify, timeout=timeout, proxy=proxy, mirror=mirror)
+        
+        if proxy:
+            self.logger.info(f"Using HuggingFace proxy: {proxy}")
+        if mirror:
+            self.logger.info(f"Using HuggingFace mirror: {mirror}")
         
         # Suppress HuggingFace Hub SSL warnings if SSL verification is disabled
         if not ssl_verify:
@@ -130,8 +154,23 @@ class RAGSystem:
             return embeddings
         except Exception as e:
             self.logger.error(f"Failed to initialize embeddings: {e}")
-            # If SSL error, suggest workaround
-            if "SSL" in str(e) or "SSL" in str(type(e)) or "SSLError" in str(type(e)):
+            # Provide helpful suggestions based on error type
+            error_str = str(e).lower()
+            if "timeout" in error_str or "connection" in error_str or "maxretry" in error_str:
+                self.logger.warning(
+                    "Connection timeout/error detected. To fix this, you can:\n"
+                    "1. Use a HuggingFace mirror (recommended for China users):\n"
+                    "   - Add to .env: HF_MIRROR=https://hf-mirror.com\n"
+                    "   - Or set environment variable: HF_MIRROR=https://hf-mirror.com\n"
+                    "2. Use a proxy server:\n"
+                    "   - Add to .env: HF_PROXY=http://your-proxy:port\n"
+                    "   - Or set environment variable: HF_PROXY=http://your-proxy:port\n"
+                    "3. Increase timeout:\n"
+                    "   - Add to .env: HF_DOWNLOAD_TIMEOUT=600\n"
+                    "4. Check your network/firewall settings\n"
+                    "5. Try downloading the model manually and placing it in the cache folder"
+                )
+            elif "SSL" in str(e) or "SSL" in str(type(e)) or "SSLError" in str(type(e)):
                 self.logger.warning(
                     "SSL error detected. To fix this, you can:\n"
                     "1. Set environment variable: HF_SSL_VERIFY=false (development only)\n"

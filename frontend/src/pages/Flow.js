@@ -424,9 +424,70 @@ const Flow = () => {
       // If dialogue is complete, automatically resume the flow
       if (result.is_complete && pausedFlowState) {
         setOpenDialogueDialog(false);
-        // Wait a moment for dialog to close, then resume flow
+        // Update pausedFlowState with the latest conversation_id before resuming
+        const updatedPausedState = {
+          ...pausedFlowState,
+          dialogueConversationId: result.conversation_id || pausedFlowState.dialogueConversationId,
+        };
+        setPausedFlowState(updatedPausedState);
+        // Wait a moment for dialog to close, then resume flow with updated state
         setTimeout(async () => {
-          await handleResumeFlow();
+          if (!updatedPausedState || !selectedFlow) return;
+          
+          setExecuteLoading(true);
+          try {
+            // Resume flow from the paused step with updated conversation_id
+            const resumeResult = await api.executeFlow(updatedPausedState.flowId, {
+              initial_input: '',
+              context: {
+                conversation_id: updatedPausedState.dialogueConversationId,
+              },
+              resume_from_step: updatedPausedState.pausedAtStep + 1,
+              previous_step_results: updatedPausedState.stepResults,
+            });
+            
+            setExecuteResult(resumeResult);
+            setPausedFlowState(null);
+            
+            // Check if flow completed or paused again
+            if (resumeResult.metadata?.paused && resumeResult.metadata?.waiting_for_dialogue) {
+              // Flow paused again at another dialogue step
+              const dialogueStep = resumeResult.step_results?.find(
+                step => step.step_type === 'dialogue' && step.success && step.metadata?.dialogue_response
+              );
+              if (dialogueStep) {
+                const dialogueData = dialogueStep.metadata.dialogue_response;
+                setDialogueConversation({
+                  stepId: dialogueStep.step_id,
+                  stepName: dialogueStep.step_name,
+                  dialogueId: dialogueData.profile_id,
+                  conversationId: dialogueData.conversation_id,
+                  conversationHistory: dialogueData.conversation_history || [],
+                  isComplete: dialogueData.is_complete,
+                  needsMoreInfo: dialogueData.needs_more_info,
+                  turnNumber: dialogueData.turn_number,
+                  maxTurns: dialogueData.max_turns,
+                  waitingForInitial: false,
+                });
+                setPausedFlowState({
+                  flowId: resumeResult.flow_id,
+                  pausedAtStep: resumeResult.metadata.paused_at_step,
+                  pausedStepId: resumeResult.metadata.paused_step_id,
+                  stepResults: resumeResult.step_results,
+                  dialogueConversationId: resumeResult.metadata.dialogue_conversation_id,
+                  dialogueProfileId: resumeResult.metadata.dialogue_profile_id,
+                });
+                setOpenDialogueDialog(true);
+              }
+            }
+          } catch (error) {
+            setExecuteResult({
+              success: false,
+              error: error.response?.data?.detail || error.message,
+            });
+          } finally {
+            setExecuteLoading(false);
+          }
         }, 500);
       }
     } catch (error) {
