@@ -2,6 +2,10 @@
 Gemini LLM Caller
 Integrates with Google's Gemini API
 """
+import warnings
+# Suppress deprecation warning for google.generativeai
+# TODO: Migrate to google-genai package in the future
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*google.generativeai.*")
 import google.generativeai as genai
 from typing import Dict, Any, List, Iterator
 from src.llm_factory import BaseLLMCaller, LLMFactory, LLMProvider

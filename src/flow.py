@@ -4,6 +4,7 @@ Flow Service - Orchestrates workflows combining Customization, Agents, DBTools, 
 import logging
 import os
 import time
+import asyncio
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
@@ -164,7 +165,15 @@ class FlowService:
     async def execute_flow(
         self, flow_id: str, request: FlowExecuteRequest
     ) -> FlowExecuteResponse:
-        """Execute a flow and return results from all steps."""
+        """
+        Execute a flow and return results from all steps.
+        
+        Args:
+            flow_id: Flow ID to execute
+            request: Execution request with initial input and context
+            resume_from_step: Optional step index (1-based) to resume from (for paused flows)
+            previous_step_results: Optional previous step results when resuming
+        """
         if flow_id not in self.flows:
             raise ValueError(f"Flow {flow_id} not found")
 
@@ -173,14 +182,106 @@ class FlowService:
             raise ValueError(f"Flow {flow_id} is not active")
 
         start_time = time.time()
-        step_results: List[FlowStepResult] = []
+        step_results: List[FlowStepResult] = request.previous_step_results.copy() if request.previous_step_results else []
         previous_output: Optional[Union[str, Dict[str, Any]]] = None
+        
+        # If resuming, we need to re-execute the dialogue step to get the final result
+        # The dialogue step was paused, but now the conversation is complete
+        if request.resume_from_step and step_results:
+            # Get the step we're resuming from (the step before resume_from_step)
+            resume_step_index = request.resume_from_step - 1
+            if resume_step_index > 0 and resume_step_index <= len(flow.steps):
+                resume_step = flow.steps[resume_step_index - 1]  # Convert to 0-based index
+                
+                # If the previous step was a dialogue step, re-execute it to get final result
+                if resume_step.step_type == FlowStepType.DIALOGUE:
+                    self.logger.info(
+                        f"[FLOW {flow_id}] Re-executing dialogue step {resume_step.step_id} to get final result"
+                    )
+                    try:
+                        # Get conversation_id from context
+                        conversation_id = request.context.get("conversation_id") if request.context else None
+                        if conversation_id:
+                            # Re-execute the dialogue step with the conversation context
+                            # This will return the final result since conversation is complete
+                            dialogue_output = await self._execute_dialogue_step(
+                                resume_step,
+                                "",  # Empty initial message since conversation already started
+                                request.context or {}
+                            )
+                            
+                            # Update the step result with the final output
+                            if step_results and len(step_results) > 0:
+                                last_result = step_results[-1]
+                                if last_result.step_id == resume_step.step_id:
+                                    # Update the existing step result
+                                    last_result.output = dialogue_output
+                                    last_result.metadata = {
+                                        "dialogue_response": {
+                                            "conversation_id": dialogue_output.get("conversation_id"),
+                                            "conversation_history": dialogue_output.get("conversation_history", []),
+                                            "response": dialogue_output.get("response"),
+                                            "is_complete": dialogue_output.get("is_complete", True),
+                                            "needs_more_info": False,
+                                            "turn_number": dialogue_output.get("turn_number"),
+                                            "max_turns": dialogue_output.get("max_turns"),
+                                            "profile_id": dialogue_output.get("profile_id"),
+                                            "profile_name": dialogue_output.get("profile_name"),
+                                            "metadata": dialogue_output.get("metadata", {}),
+                                        }
+                                    }
+                            
+                            # Set previous_output to the final dialogue result
+                            previous_output = dialogue_output
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Dialogue step {resume_step.step_id} final result obtained. "
+                                f"Output type: {type(previous_output)}"
+                            )
+                        else:
+                            # No conversation_id, use previous step result
+                            if step_results:
+                                last_result = step_results[-1]
+                                if last_result.success and last_result.output:
+                                    previous_output = last_result.output
+                    except Exception as e:
+                        self.logger.warning(
+                            f"[FLOW {flow_id}] Error re-executing dialogue step: {e}. "
+                            f"Using previous step result output."
+                        )
+                        # Fallback to using the previous step result
+                        if step_results:
+                            last_result = step_results[-1]
+                            if last_result.success and last_result.output:
+                                previous_output = last_result.output
+                    except Exception as e:
+                        self.logger.error(f"Error processing dialogue step on resume: {e}")
+                        # Fallback to using the previous step result
+                        if step_results:
+                            last_result = step_results[-1]
+                            if last_result.success and last_result.output:
+                                previous_output = last_result.output
+                else:
+                    # Not a dialogue step, just use the previous output
+                    last_result = step_results[-1]
+                    if last_result.success and last_result.output:
+                        previous_output = last_result.output
+            else:
+                # Fallback: use last result output
+                if step_results:
+                    last_result = step_results[-1]
+                    if last_result.success and last_result.output:
+                        previous_output = last_result.output
 
         try:
-            for step in flow.steps:
+            # Start from resume step if provided, otherwise start from beginning
+            start_index = request.resume_from_step if request.resume_from_step else 1
+            for step_index, step in enumerate(flow.steps, 1):
+                # Skip steps before resume point
+                if step_index < start_index:
+                    continue
                 step_start = time.time()
                 self.logger.info(
-                    f"Executing step {step.step_id} ({step.step_type}) in flow {flow_id}"
+                    f"[FLOW {flow_id}] Starting step {step_index}/{len(flow.steps)}: {step.step_id} ({step.step_type})"
                 )
 
                 try:
@@ -210,12 +311,95 @@ class FlowService:
                     else:
                         step_input = None
 
-                    # Execute step based on type
+                    # Execute step based on type - ensure sequential execution
+                    self.logger.info(
+                        f"[FLOW {flow_id}] Executing step {step_index}/{len(flow.steps)}: {step.step_id} - waiting for completion..."
+                    )
                     output = await self._execute_step(
                         step, step_input, request.context or {}
                     )
+                    # Ensure step is fully complete before proceeding
+                    self.logger.info(
+                        f"[FLOW {flow_id}] Step {step_index}/{len(flow.steps)}: {step.step_id} completed successfully"
+                    )
 
                     execution_time = time.time() - step_start
+                    
+                    # For dialogue steps, include dialogue response data in metadata
+                    metadata = {}
+                    dialogue_waiting = False
+                    if step.step_type == FlowStepType.DIALOGUE and isinstance(output, dict):
+                        # Include dialogue response information for frontend to display conversation UI
+                        # Also include the metadata from the output if it exists (e.g., waiting_for_initial_message)
+                        dialogue_metadata = output.get("metadata", {})
+                        is_complete = output.get("is_complete", False)
+                        waiting_for_initial = dialogue_metadata.get("waiting_for_initial_message", False)
+                        needs_more_info = output.get("needs_more_info", False)
+                        conversation_id = output.get("conversation_id")
+                        
+                        # Only block if waiting for initial message (no conversation started yet)
+                        # OR if conversation exists but is not complete AND we need more info
+                        # But if conversation is complete, don't block
+                        if waiting_for_initial:
+                            # No conversation started yet - definitely block
+                            dialogue_waiting = True
+                        elif conversation_id and not is_complete and needs_more_info:
+                            # Conversation exists but not complete and needs more info
+                            # Check actual conversation state from dialogue manager
+                            if self.dialogue_manager:
+                                try:
+                                    conversation = self.dialogue_manager.get_conversation(conversation_id)
+                                    if conversation:
+                                        # Check if conversation is actually complete
+                                        actual_is_complete = (
+                                            conversation.get("turn_number", 0) >= conversation.get("max_turns", 999)
+                                        )
+                                        if not actual_is_complete:
+                                            # Still waiting for more input
+                                            dialogue_waiting = True
+                                        else:
+                                            # Conversation reached max turns, consider it complete
+                                            dialogue_waiting = False
+                                    else:
+                                        # Conversation not found, don't block
+                                        dialogue_waiting = False
+                                except Exception as e:
+                                    self.logger.warning(f"Error checking conversation state: {e}")
+                                    # If we can't check, don't block to avoid infinite blocking
+                                    dialogue_waiting = False
+                            else:
+                                # Can't check, don't block
+                                dialogue_waiting = False
+                        else:
+                            # Conversation is complete or no waiting needed
+                            dialogue_waiting = False
+                        
+                        metadata = {
+                            "dialogue_response": {
+                                "conversation_id": conversation_id,
+                                "conversation_history": output.get("conversation_history", []),
+                                "response": output.get("response"),
+                                "is_complete": is_complete,
+                                "needs_more_info": needs_more_info,
+                                "turn_number": output.get("turn_number"),
+                                "max_turns": output.get("max_turns"),
+                                "profile_id": output.get("profile_id"),
+                                "profile_name": output.get("profile_name"),
+                                "metadata": dialogue_metadata,  # Include nested metadata
+                            }
+                        }
+                        
+                        if dialogue_waiting:
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Dialogue step {step.step_id} is waiting for user input. "
+                                f"Flow execution paused at step {step_index}/{len(flow.steps)}."
+                            )
+                        else:
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Dialogue step {step.step_id} is complete or ready to proceed. "
+                                f"is_complete={is_complete}, conversation_id={conversation_id}"
+                            )
+                    
                     step_result = FlowStepResult(
                         step_id=step.step_id,
                         step_name=step.step_name,
@@ -224,10 +408,37 @@ class FlowService:
                         output=output,
                         error=None,
                         execution_time=execution_time,
-                        metadata={},
+                        metadata=metadata,
                     )
                     step_results.append(step_result)
                     previous_output = output
+                    
+                    # If dialogue step is waiting for user input, return immediately to avoid blocking UI
+                    # The frontend will handle the dialogue interaction and can resume the flow when complete
+                    if dialogue_waiting:
+                        self.logger.info(
+                            f"[FLOW {flow_id}] Flow execution paused - dialogue step {step.step_id} waiting for user input. "
+                            f"Returning control to frontend."
+                        )
+                        total_time = time.time() - start_time
+                        return FlowExecuteResponse(
+                            flow_id=flow_id,
+                            flow_name=flow.name,
+                            success=False,  # Not fully successful yet
+                            step_results=step_results,
+                            final_output=previous_output,
+                            total_execution_time=total_time,
+                            error=f"Flow paused at step {step_index} ({step.step_id}): Dialogue waiting for user input",
+                            metadata={
+                                "paused": True,
+                                "paused_at_step": step_index,
+                                "paused_step_id": step.step_id,
+                                "waiting_for_dialogue": True,
+                                "dialogue_conversation_id": conversation_id,
+                                "dialogue_profile_id": output.get("profile_id"),
+                                "can_resume": True,  # Indicates flow can be resumed
+                            },
+                        )
 
                 except Exception as e:
                     execution_time = time.time() - step_start
@@ -449,7 +660,9 @@ class FlowService:
                     sql_input = str(sql_input)
         
         # Use execute_query method which handles dynamic SQL
-        result = self.db_tools_manager.execute_query(
+        # Wrap in asyncio.to_thread to ensure proper sequential execution
+        result = await asyncio.to_thread(
+            self.db_tools_manager.execute_query,
             tool_id=step.resource_id,
             sql_input=sql_input,
             force_refresh=True  # Always refresh for flow execution
@@ -501,7 +714,11 @@ class FlowService:
                 self.request_tools_manager.requests[profile.id] = profile
             
             # Execute the request (takes request_id)
-            result = self.request_tools_manager.execute_request(profile.id)
+            # Wrap in asyncio.to_thread to ensure proper sequential execution
+            result = await asyncio.to_thread(
+                self.request_tools_manager.execute_request,
+                profile.id
+            )
         finally:
             # Restore original values if we modified them
             if original_body is not None:
@@ -536,7 +753,9 @@ class FlowService:
         collection_name = step.metadata.get("collection_name")
         collection_description = step.metadata.get("collection_description")
 
-        result = self.crawler_service.crawl_and_save(
+        # Wrap in asyncio.to_thread to ensure proper sequential execution
+        result = await asyncio.to_thread(
+            self.crawler_service.crawl_and_save,
             url=url,
             use_js=use_js,
             llm_provider=llm_provider,
@@ -562,20 +781,88 @@ class FlowService:
             raise ValueError(f"Dialogue profile {step.resource_id} not found")
 
         # Convert step_input to initial message string
-        initial_message = ""
+        # Try step_input first, then fall back to step.input_query
+        initial_message = None
         if isinstance(step_input, dict):
             # Extract message from dict
             initial_message = step_input.get("response", step_input.get("output", step_input.get("message", str(step_input))))
         elif step_input:
             initial_message = str(step_input)
-        else:
-            raise ValueError("Dialogue step requires an initial message in step_input")
+        elif step.input_query:
+            # Fall back to step's input_query field if step_input is not provided
+            initial_message = step.input_query
+        
+        # If no initial message is provided, return a special result indicating conversation window should open
+        # The user will provide the first message through the UI
+        if not initial_message or not initial_message.strip():
+            return {
+                "conversation_id": None,
+                "turn_number": 0,
+                "max_turns": profile.max_turns,
+                "response": "",
+                "needs_more_info": True,
+                "is_complete": False,
+                "profile_id": profile.id,
+                "profile_name": profile.name,
+                "model_used": profile.model_name or "unknown",
+                "rag_collection_used": profile.rag_collection,
+                "conversation_history": [],
+                "metadata": {
+                    "waiting_for_initial_message": True
+                }
+            }
 
         # Check if we're continuing an existing conversation or starting new
         conversation_id = context.get("conversation_id")
         
         if conversation_id:
-            # Continue existing conversation
+            # Check if conversation is already complete
+            if self.dialogue_manager:
+                conversation = self.dialogue_manager.get_conversation(conversation_id)
+                if conversation:
+                    turn_number = conversation.get("turn_number", 0)
+                    max_turns = conversation.get("max_turns", 999)
+                    messages = conversation.get("messages", [])
+                    
+                    # If conversation reached max turns, return the final result
+                    if turn_number >= max_turns:
+                        profile = self.dialogue_manager.get_profile(step.resource_id)
+                        if profile:
+                            # Get the last assistant message as the final response
+                            last_assistant_msg = None
+                            for msg in reversed(messages):
+                                if hasattr(msg, 'role') and msg.role == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                                elif isinstance(msg, dict) and msg.get('role') == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                            
+                            final_response = (
+                                last_assistant_msg.content if hasattr(last_assistant_msg, 'content')
+                                else last_assistant_msg.get('content', '') if last_assistant_msg
+                                else "Dialogue completed"
+                            )
+                            
+                            return {
+                                "conversation_id": conversation_id,
+                                "turn_number": turn_number,
+                                "max_turns": max_turns,
+                                "response": final_response,
+                                "needs_more_info": False,
+                                "is_complete": True,
+                                "profile_id": step.resource_id,
+                                "profile_name": profile.name,
+                                "model_used": profile.model_name or "unknown",
+                                "rag_collection_used": profile.rag_collection,
+                                "conversation_history": [
+                                    msg.model_dump() if hasattr(msg, 'model_dump') else msg 
+                                    for msg in messages
+                                ],
+                                "metadata": {}
+                            }
+            
+            # Continue existing conversation (not complete yet)
             from .models import DialogueContinueRequest
             request = DialogueContinueRequest(
                 user_message=initial_message,
@@ -594,6 +881,8 @@ class FlowService:
             if result and "conversation_id" in result:
                 context["conversation_id"] = result["conversation_id"]
 
+        # Include dialogue response data in the result for frontend to display conversation UI
+        # The result is a DialogueResponse, which contains conversation_id, conversation_history, etc.
         return result
 
     async def _start_dialogue_internal(
@@ -844,4 +1133,173 @@ class FlowService:
             "rag_collection_used": rag_used,
             "conversation_history": [msg.model_dump() if hasattr(msg, 'model_dump') else msg for msg in conversation_history],
         }
+
+    async def _wait_for_dialogue_completion(
+        self,
+        conversation_id: Optional[str],
+        dialogue_id: str,
+        timeout_seconds: int = 3600,
+        flow_id: str = "",
+        step_id: str = ""
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Wait for a dialogue conversation to complete by polling the dialogue manager.
+        Returns the final dialogue result when complete, or None if timeout.
+        
+        Args:
+            conversation_id: The conversation ID to wait for (None if waiting for initial message)
+            dialogue_id: The dialogue profile ID
+            timeout_seconds: Maximum time to wait (default: 1 hour)
+            flow_id: Flow ID for logging
+            step_id: Step ID for logging
+            
+        Returns:
+            Final dialogue result dict if conversation completes, None if timeout
+        """
+        if not self.dialogue_manager:
+            self.logger.warning(f"[FLOW {flow_id}] Dialogue manager not available, cannot wait for completion")
+            return None
+        
+        start_time = time.time()
+        poll_interval = 2.0  # Poll every 2 seconds
+        last_log_time = start_time
+        log_interval = 30.0  # Log status every 30 seconds
+        
+        self.logger.info(
+            f"[FLOW {flow_id}] Waiting for dialogue {dialogue_id} to complete "
+            f"(conversation_id={conversation_id}, timeout={timeout_seconds}s)"
+        )
+        
+        while True:
+            elapsed = time.time() - start_time
+            
+            # Check timeout
+            if elapsed >= timeout_seconds:
+                self.logger.warning(
+                    f"[FLOW {flow_id}] Dialogue step {step_id} timed out after {timeout_seconds}s. Proceeding anyway."
+                )
+                # Try to get the current conversation state even if not complete
+                if conversation_id:
+                    try:
+                        conversation = self.dialogue_manager.get_conversation(conversation_id)
+                        if conversation:
+                            profile = self.dialogue_manager.get_profile(dialogue_id)
+                            return {
+                                "conversation_id": conversation_id,
+                                "turn_number": conversation.get("turn_number", 0),
+                                "max_turns": conversation.get("max_turns", 5),
+                                "response": "Dialogue timed out - proceeding with flow",
+                                "needs_more_info": False,
+                                "is_complete": True,  # Mark as complete to proceed
+                                "profile_id": dialogue_id,
+                                "profile_name": profile.name if profile else dialogue_id,
+                                "model_used": "unknown",
+                                "rag_collection_used": None,
+                                "conversation_history": [
+                                    msg.model_dump() if hasattr(msg, 'model_dump') else msg 
+                                    for msg in conversation.get("messages", [])
+                                ],
+                                "metadata": {"timeout": True, "elapsed_seconds": elapsed}
+                            }
+                    except Exception as e:
+                        self.logger.error(f"Error getting conversation state on timeout: {e}")
+                return None
+            
+            # Check if conversation exists and is complete
+            if conversation_id:
+                try:
+                    conversation = self.dialogue_manager.get_conversation(conversation_id)
+                    if conversation:
+                        turn_number = conversation.get("turn_number", 0)
+                        max_turns = conversation.get("max_turns", 999)
+                        messages = conversation.get("messages", [])
+                        
+                        # Check if conversation reached max turns or has a final response
+                        is_complete = turn_number >= max_turns
+                        
+                        # If complete, get the final dialogue result
+                        if is_complete:
+                            profile = self.dialogue_manager.get_profile(dialogue_id)
+                            if not profile:
+                                self.logger.warning(f"Dialogue profile {dialogue_id} not found")
+                                return None
+                            
+                            # Get the last assistant message as the final response
+                            last_assistant_msg = None
+                            for msg in reversed(messages):
+                                if hasattr(msg, 'role') and msg.role == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                                elif isinstance(msg, dict) and msg.get('role') == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                            
+                            final_response = (
+                                last_assistant_msg.content if hasattr(last_assistant_msg, 'content')
+                                else last_assistant_msg.get('content', '') if last_assistant_msg
+                                else "Dialogue completed"
+                            )
+                            
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Dialogue step {step_id} completed after {elapsed:.1f}s "
+                                f"(turn {turn_number}/{max_turns})"
+                            )
+                            
+                            return {
+                                "conversation_id": conversation_id,
+                                "turn_number": turn_number,
+                                "max_turns": max_turns,
+                                "response": final_response,
+                                "needs_more_info": False,
+                                "is_complete": True,
+                                "profile_id": dialogue_id,
+                                "profile_name": profile.name,
+                                "model_used": profile.model_name or "unknown",
+                                "rag_collection_used": profile.rag_collection,
+                                "conversation_history": [
+                                    msg.model_dump() if hasattr(msg, 'model_dump') else msg 
+                                    for msg in messages
+                                ],
+                                "metadata": {"elapsed_seconds": elapsed}
+                            }
+                    else:
+                        # Conversation not found - might have been deleted or never created
+                        # If we've waited a bit, assume it's not coming and proceed
+                        if elapsed > 60:  # Wait at least 1 minute before giving up
+                            self.logger.warning(
+                                f"[FLOW {flow_id}] Conversation {conversation_id} not found after {elapsed:.1f}s. Proceeding."
+                            )
+                            return None
+                except Exception as e:
+                    self.logger.error(f"Error checking conversation state: {e}")
+            else:
+                # No conversation_id yet - waiting for initial message
+                # Check if a conversation was created for this dialogue_id
+                # We need to find any active conversation for this dialogue profile
+                try:
+                    # Get all active conversations and find one for this dialogue_id
+                    # Note: This is a workaround since we don't have a direct way to list conversations by dialogue_id
+                    # We'll check if any conversation exists and matches
+                    if hasattr(self.dialogue_manager, 'active_conversations'):
+                        for conv_id, conv in self.dialogue_manager.active_conversations.items():
+                            if conv.get("profile_id") == dialogue_id:
+                                # Found a conversation for this dialogue - update conversation_id and continue checking
+                                conversation_id = conv_id
+                                self.logger.info(
+                                    f"[FLOW {flow_id}] Found conversation {conversation_id} for dialogue {dialogue_id}"
+                                )
+                                break
+                except Exception as e:
+                    self.logger.debug(f"Error checking for new conversations: {e}")
+            
+            # Log status periodically
+            if time.time() - last_log_time >= log_interval:
+                self.logger.info(
+                    f"[FLOW {flow_id}] Still waiting for dialogue step {step_id} "
+                    f"(elapsed: {elapsed:.0f}s / {timeout_seconds}s)"
+                )
+                last_log_time = time.time()
+            
+            # Wait before next poll
+            await asyncio.sleep(poll_interval)
 

@@ -34,6 +34,8 @@ import {
   ExpandMore as ExpandMoreIcon,
   ArrowForward as ArrowForwardIcon,
   CheckCircle as CheckCircleIcon,
+  Send as SendIcon,
+  Chat as ChatIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
@@ -53,6 +55,13 @@ const Flow = () => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const [executeResult, setExecuteResult] = useState(null);
   const [executeLoading, setExecuteLoading] = useState(false);
+  // Dialogue conversation state for flow execution
+  const [dialogueConversation, setDialogueConversation] = useState(null);
+  const [dialogueMessage, setDialogueMessage] = useState('');
+  const [dialogueLoading, setDialogueLoading] = useState(false);
+  const [openDialogueDialog, setOpenDialogueDialog] = useState(false);
+  // Store paused flow state for resuming
+  const [pausedFlowState, setPausedFlowState] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -266,12 +275,51 @@ const Flow = () => {
     if (!selectedFlow) return;
     setExecuteLoading(true);
     setExecuteResult(null);
+    setDialogueConversation(null);
     try {
       const result = await api.executeFlow(selectedFlow.id, {
         initial_input: '',
         context: {},
       });
       setExecuteResult(result);
+      
+      // Check if flow is paused waiting for dialogue
+      if (result.metadata?.paused && result.metadata?.waiting_for_dialogue) {
+        // Store paused state for resuming
+        setPausedFlowState({
+          flowId: result.flow_id,
+          pausedAtStep: result.metadata.paused_at_step,
+          pausedStepId: result.metadata.paused_step_id,
+          stepResults: result.step_results,
+          dialogueConversationId: result.metadata.dialogue_conversation_id,
+          dialogueProfileId: result.metadata.dialogue_profile_id,
+        });
+        
+        // Find the dialogue step
+        const dialogueStep = result.step_results?.find(
+          step => step.step_type === 'dialogue' && step.success && step.metadata?.dialogue_response
+        );
+        if (dialogueStep) {
+          const dialogueData = dialogueStep.metadata.dialogue_response;
+          const waitingForInitial = dialogueData.metadata?.waiting_for_initial_message;
+          setDialogueConversation({
+            stepId: dialogueStep.step_id,
+            stepName: dialogueStep.step_name,
+            dialogueId: dialogueData.profile_id,
+            conversationId: dialogueData.conversation_id,
+            conversationHistory: dialogueData.conversation_history || [],
+            isComplete: dialogueData.is_complete,
+            needsMoreInfo: dialogueData.needs_more_info || waitingForInitial,
+            turnNumber: dialogueData.turn_number,
+            maxTurns: dialogueData.max_turns,
+            waitingForInitial: waitingForInitial,
+          });
+          setOpenDialogueDialog(true);
+        }
+      } else {
+        // Flow completed normally, clear paused state
+        setPausedFlowState(null);
+      }
     } catch (error) {
       setExecuteResult({
         success: false,
@@ -279,6 +327,112 @@ const Flow = () => {
       });
     } finally {
       setExecuteLoading(false);
+    }
+  };
+
+  const handleResumeFlow = async () => {
+    if (!pausedFlowState || !selectedFlow) return;
+    
+    setExecuteLoading(true);
+    try {
+      // Resume flow from the paused step
+      const result = await api.executeFlow(pausedFlowState.flowId, {
+        initial_input: '',
+        context: {
+          conversation_id: pausedFlowState.dialogueConversationId,
+        },
+        resume_from_step: pausedFlowState.pausedAtStep + 1, // Resume from next step
+        previous_step_results: pausedFlowState.stepResults,
+      });
+      
+      setExecuteResult(result);
+      setPausedFlowState(null);
+      
+      // Check if flow completed or paused again
+      if (result.metadata?.paused && result.metadata?.waiting_for_dialogue) {
+        // Flow paused again at another dialogue step
+        const dialogueStep = result.step_results?.find(
+          step => step.step_type === 'dialogue' && step.success && step.metadata?.dialogue_response
+        );
+        if (dialogueStep) {
+          const dialogueData = dialogueStep.metadata.dialogue_response;
+          setDialogueConversation({
+            stepId: dialogueStep.step_id,
+            stepName: dialogueStep.step_name,
+            dialogueId: dialogueData.profile_id,
+            conversationId: dialogueData.conversation_id,
+            conversationHistory: dialogueData.conversation_history || [],
+            isComplete: dialogueData.is_complete,
+            needsMoreInfo: dialogueData.needs_more_info,
+            turnNumber: dialogueData.turn_number,
+            maxTurns: dialogueData.max_turns,
+            waitingForInitial: false,
+          });
+          setPausedFlowState({
+            flowId: result.flow_id,
+            pausedAtStep: result.metadata.paused_at_step,
+            pausedStepId: result.metadata.paused_step_id,
+            stepResults: result.step_results,
+            dialogueConversationId: result.metadata.dialogue_conversation_id,
+            dialogueProfileId: result.metadata.dialogue_profile_id,
+          });
+          setOpenDialogueDialog(true);
+        }
+      }
+    } catch (error) {
+      setExecuteResult({
+        success: false,
+        error: error.response?.data?.detail || error.message,
+      });
+    } finally {
+      setExecuteLoading(false);
+    }
+  };
+
+  const handleContinueDialogue = async () => {
+    if (!dialogueConversation || !dialogueMessage.trim()) return;
+    
+    setDialogueLoading(true);
+    try {
+      let result;
+      
+      // If waiting for initial message or no conversation_id, start the dialogue
+      if (dialogueConversation.waitingForInitial || !dialogueConversation.conversationId) {
+        result = await api.startDialogue(dialogueConversation.dialogueId, {
+          initial_message: dialogueMessage,
+        });
+      } else {
+        // Continue existing conversation
+        result = await api.continueDialogue(dialogueConversation.dialogueId, {
+          conversation_id: dialogueConversation.conversationId,
+          user_message: dialogueMessage,
+        });
+      }
+      
+      // Update conversation state
+      setDialogueConversation({
+        ...dialogueConversation,
+        conversationId: result.conversation_id,
+        conversationHistory: result.conversation_history || [],
+        isComplete: result.is_complete,
+        needsMoreInfo: result.needs_more_info,
+        turnNumber: result.turn_number,
+        waitingForInitial: false,  // No longer waiting after first message
+      });
+      setDialogueMessage('');
+      
+      // If dialogue is complete, automatically resume the flow
+      if (result.is_complete && pausedFlowState) {
+        setOpenDialogueDialog(false);
+        // Wait a moment for dialog to close, then resume flow
+        setTimeout(async () => {
+          await handleResumeFlow();
+        }, 500);
+      }
+    } catch (error) {
+      alert(error.response?.data?.detail || error.message || 'Failed to continue dialogue');
+    } finally {
+      setDialogueLoading(false);
     }
   };
 
@@ -673,24 +827,109 @@ const Flow = () => {
                   <AccordionDetails>
                     {step.success ? (
                       <Box>
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          <strong>Output:</strong>
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            p: 1,
-                            bgcolor: 'grey.100',
-                            borderRadius: 1,
-                            whiteSpace: 'pre-wrap',
-                            maxHeight: 200,
-                            overflow: 'auto',
-                          }}
-                        >
-                          {typeof step.output === 'object'
-                            ? JSON.stringify(step.output, null, 2)
-                            : step.output}
-                        </Typography>
+                        {step.step_type === 'dialogue' && step.metadata?.dialogue_response ? (
+                          <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                              <ChatIcon color="primary" />
+                              <Typography variant="subtitle2">
+                                Dialogue Conversation
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={`Turn: ${step.metadata.dialogue_response.turn_number}/${step.metadata.dialogue_response.max_turns}`}
+                                sx={{ ml: 'auto' }}
+                              />
+                            </Box>
+                            <Box
+                              sx={{
+                                p: 2,
+                                bgcolor: 'grey.50',
+                                borderRadius: 1,
+                                maxHeight: 300,
+                                overflow: 'auto',
+                                mb: 2,
+                              }}
+                            >
+                              {step.metadata.dialogue_response.conversation_history?.map((msg, idx) => (
+                                <Box
+                                  key={idx}
+                                  sx={{
+                                    mb: 2,
+                                    display: 'flex',
+                                    justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      p: 1.5,
+                                      borderRadius: 2,
+                                      maxWidth: '80%',
+                                      bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                                      color: msg.role === 'user' ? 'white' : 'text.primary',
+                                    }}
+                                  >
+                                    <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                                      {msg.role === 'user' ? 'You' : 'Assistant'}
+                                    </Typography>
+                                    <Typography variant="body2">{msg.content}</Typography>
+                                  </Box>
+                                </Box>
+                              ))}
+                            </Box>
+                            <Alert severity="info" sx={{ mb: 1 }}>
+                              {step.metadata.dialogue_response.is_complete
+                                ? 'Dialogue completed'
+                                : step.metadata.dialogue_response.needs_more_info
+                                ? 'Dialogue needs more information'
+                                : 'Dialogue in progress'}
+                            </Alert>
+                            <Button
+                              variant="outlined"
+                              startIcon={<ChatIcon />}
+                              onClick={() => {
+                                const dialogueData = step.metadata.dialogue_response;
+                                const waitingForInitial = dialogueData.metadata?.waiting_for_initial_message;
+                                setDialogueConversation({
+                                  stepId: step.step_id,
+                                  stepName: step.step_name,
+                                  dialogueId: dialogueData.profile_id,
+                                  conversationId: dialogueData.conversation_id,
+                                  conversationHistory: dialogueData.conversation_history || [],
+                                  isComplete: dialogueData.is_complete,
+                                  needsMoreInfo: dialogueData.needs_more_info || waitingForInitial,
+                                  turnNumber: dialogueData.turn_number,
+                                  maxTurns: dialogueData.max_turns,
+                                  waitingForInitial: waitingForInitial,
+                                });
+                                setOpenDialogueDialog(true);
+                              }}
+                              fullWidth
+                            >
+                              Open Conversation Window
+                            </Button>
+                          </Box>
+                        ) : (
+                          <>
+                            <Typography variant="body2" sx={{ mb: 1 }}>
+                              <strong>Output:</strong>
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                p: 1,
+                                bgcolor: 'grey.100',
+                                borderRadius: 1,
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: 200,
+                                overflow: 'auto',
+                              }}
+                            >
+                              {typeof step.output === 'object'
+                                ? JSON.stringify(step.output, null, 2)
+                                : step.output}
+                            </Typography>
+                          </>
+                        )}
                       </Box>
                     ) : (
                       <Alert severity="error">{step.error}</Alert>
@@ -731,6 +970,127 @@ const Flow = () => {
           >
             {executeLoading ? 'Executing...' : 'Execute Flow'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue Conversation Dialog */}
+      <Dialog
+        open={openDialogueDialog}
+        onClose={() => !dialogueLoading && setOpenDialogueDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ChatIcon color="primary" />
+            <Typography>
+              {dialogueConversation?.stepName || 'Dialogue Conversation'}
+            </Typography>
+            {dialogueConversation && (
+              <Chip
+                size="small"
+                label={`Turn: ${dialogueConversation.turnNumber}/${dialogueConversation.maxTurns}`}
+                sx={{ ml: 'auto' }}
+              />
+            )}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {dialogueLoading && <LinearProgress sx={{ mb: 2 }} />}
+          {dialogueConversation && (
+            <Box>
+              {/* Conversation History */}
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: 'grey.50',
+                  borderRadius: 1,
+                  maxHeight: 400,
+                  overflow: 'auto',
+                  mb: 2,
+                }}
+              >
+                {dialogueConversation.conversationHistory.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                    Start a conversation by typing a message below
+                  </Typography>
+                ) : (
+                  dialogueConversation.conversationHistory.map((msg, idx) => (
+                    <Box
+                      key={idx}
+                      sx={{
+                        mb: 2,
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          maxWidth: '80%',
+                          bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                          color: msg.role === 'user' ? 'white' : 'text.primary',
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                          {msg.role === 'user' ? 'You' : 'Assistant'}
+                        </Typography>
+                        <Typography variant="body2">{msg.content}</Typography>
+                      </Box>
+                    </Box>
+                  ))
+                )}
+              </Box>
+
+              {/* Status Messages */}
+              {dialogueConversation.isComplete && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Conversation complete. You can close this window.
+                </Alert>
+              )}
+              {dialogueConversation.needsMoreInfo && !dialogueConversation.isComplete && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  The assistant needs more information. Please respond below.
+                </Alert>
+              )}
+
+              {/* Message Input */}
+              {!dialogueConversation.isComplete && (
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  label={dialogueConversation.waitingForInitial ? "Start conversation" : "Your message"}
+                  value={dialogueMessage}
+                  onChange={(e) => setDialogueMessage(e.target.value)}
+                  disabled={dialogueLoading}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleContinueDialogue();
+                    }
+                  }}
+                  sx={{ mb: 2 }}
+                />
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDialogueDialog(false)} disabled={dialogueLoading}>
+            Close
+          </Button>
+          {dialogueConversation && !dialogueConversation.isComplete && (
+            <Button
+              onClick={handleContinueDialogue}
+              variant="contained"
+              disabled={dialogueLoading || !dialogueMessage.trim()}
+              startIcon={<SendIcon />}
+            >
+              {dialogueLoading ? 'Sending...' : 'Send'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

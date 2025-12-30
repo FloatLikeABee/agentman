@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi import status
+from contextlib import asynccontextmanager
 import logging
 from typing import List, Dict, Any, Optional
 import asyncio
@@ -61,8 +62,34 @@ from .request_tools import RequestToolsManager
 
 class RAGAPI:
     def __init__(self):
+        # Setup logging first
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        
+        # Define lifespan handler for graceful startup and shutdown
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            # Startup
+            logger.info("Starting Ground Control API...")
+            yield
+            # Shutdown - handle graceful shutdown
+            logger.info("Shutting down Ground Control API...")
+            try:
+                # Cancel any running tasks (except the current one)
+                tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+                for task in tasks:
+                    task.cancel()
+                # Wait for tasks to complete cancellation, ignoring CancelledError
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info("Shutdown complete")
+            except Exception as e:
+                # Log but don't raise - shutdown should be graceful
+                logger.warning(f"Error during shutdown: {e}")
+        
         self.app = FastAPI(
             title="Ground Control API",
+            lifespan=lifespan,
             description="""
             # Ground Control API
             
@@ -239,9 +266,8 @@ class RAGAPI:
             expose_headers=["*"],
         )
         
-        # Setup logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
+        # Logger already set up above
+        self.logger = logger
         
         # Add exception handler for validation errors to log details
         @self.app.exception_handler(RequestValidationError)

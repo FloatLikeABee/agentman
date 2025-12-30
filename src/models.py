@@ -585,6 +585,8 @@ class FlowExecuteRequest(BaseModel):
     """Request to execute a flow"""
     initial_input: Optional[str] = Field(None, description="Initial input for the first step (if needed)")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context for flow execution")
+    resume_from_step: Optional[int] = Field(None, description="Step index (1-based) to resume from (for paused flows)")
+    previous_step_results: Optional[List["FlowStepResult"]] = Field(None, description="Previous step results when resuming")
 
 
 class FlowStepResult(BaseModel):
