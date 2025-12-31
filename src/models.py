@@ -51,6 +51,28 @@ class LLMProviderType(str, Enum):
     MISTRAL = "mistral"
 
 
+class SmartImportRequest(BaseModel):
+    """Request for Smart Import functionality"""
+    file_content: str = Field(..., description="File content as string (CSV or JSON)")
+    file_format: str = Field(..., description="File format: 'csv' or 'json'")
+    llm_provider: Optional[LLMProviderType] = Field(None, description="LLM provider to use for processing (default: system default)")
+    model_name: Optional[str] = Field(None, description="Model name to use (default: provider default)")
+    processing_instructions: Optional[str] = Field(None, description="Optional custom instructions for AI processing")
+    auto_name: bool = Field(default=True, description="Automatically generate collection name using AI")
+
+
+class SmartImportResponse(BaseModel):
+    """Response from Smart Import"""
+    success: bool = Field(..., description="Whether import was successful")
+    collection_name: str = Field(..., description="Name of the created/used RAG collection")
+    collection_description: str = Field(..., description="Description of the collection")
+    processed_data: Optional[str] = Field(None, description="Processed/cleaned data in RAG format")
+    original_record_count: Optional[int] = Field(None, description="Number of records in original file")
+    processed_record_count: Optional[int] = Field(None, description="Number of records after processing")
+    message: str = Field(..., description="Status message")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
 class AgentConfig(BaseModel):
     name: str = Field(..., description="Agent name")
     description: Optional[str] = Field(None, description="Agent description")
@@ -727,3 +749,126 @@ class DialogueResponse(BaseModel):
     )
     conversation_history: List[DialogueMessage] = Field(..., description="Full conversation history up to this point")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
+
+
+# Special Flow 1 Models
+class InitialDataSourceConfig(BaseModel):
+    """Configuration for initial data source"""
+    type: str = Field(..., description="Type: 'db_tool' or 'request_tool'")
+    resource_id: str = Field(..., description="ID of the DB tool or Request tool")
+    sql_input: Optional[str] = Field(None, description="Optional SQL input for DB tool")
+
+
+class DialogueConfig(BaseModel):
+    """Configuration for dialogue phase"""
+    system_prompt: str = Field(..., description="System prompt for the dialogue")
+    max_turns_phase1: int = Field(default=5, ge=1, le=20, description="Maximum turns before data fetch")
+    use_initial_data: bool = Field(default=True, description="Inject initial data into dialogue context")
+    llm_provider: Optional[LLMProviderType] = Field(None, description="LLM provider override")
+    model_name: Optional[str] = Field(None, description="Model name override")
+
+
+class DataFetchTrigger(BaseModel):
+    """Configuration for when to trigger mid-dialogue data fetch"""
+    type: str = Field(..., description="Trigger type: 'turn_count', 'keyword', 'user_trigger', 'ai_detected'")
+    value: Optional[Union[int, str]] = Field(None, description="Turn count (int) or keyword (str) depending on type")
+
+
+class MidDialogueRequestConfig(BaseModel):
+    """Configuration for mid-dialogue request"""
+    request_tool_id: str = Field(..., description="Request tool ID to use")
+    param_mapping: Optional[Dict[str, str]] = Field(
+        None,
+        description="Mapping of request params from dialogue context. Use {{dialogue.user_input}}, {{dialogue.conversation_history}}, etc."
+    )
+
+
+class DialoguePhase2Config(BaseModel):
+    """Configuration for dialogue phase 2 (after data fetch)"""
+    continue_same_conversation: bool = Field(default=True, description="Continue same conversation or start new")
+    inject_fetched_data: bool = Field(default=True, description="Inject fetched data into dialogue context")
+    max_turns_phase2: int = Field(default=5, ge=1, le=20, description="Maximum turns in phase 2")
+
+
+class FinalProcessingConfig(BaseModel):
+    """Configuration for final processing step"""
+    system_prompt: str = Field(..., description="System prompt for final processing")
+    input_template: str = Field(
+        default="{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}",
+        description="Template for combining all data. Use {{initial_data}}, {{dialogue_summary}}, {{fetched_data}}"
+    )
+    llm_provider: Optional[LLMProviderType] = Field(None, description="LLM provider override")
+    model_name: Optional[str] = Field(None, description="Model name override")
+
+
+class FinalAPICallConfig(BaseModel):
+    """Configuration for final API call"""
+    request_tool_id: str = Field(..., description="Request tool ID for final API call")
+    body_mapping: str = Field(
+        default="{{final_outcome}}",
+        description="How to format final outcome for API. Use {{final_outcome}} or JSON template"
+    )
+
+
+class SpecialFlow1Config(BaseModel):
+    """Configuration for Special Flow 1"""
+    initial_data_source: InitialDataSourceConfig = Field(..., description="Initial data source configuration")
+    dialogue_config: DialogueConfig = Field(..., description="Dialogue phase 1 configuration")
+    data_fetch_trigger: DataFetchTrigger = Field(..., description="When to trigger data fetch")
+    mid_dialogue_request: MidDialogueRequestConfig = Field(..., description="Mid-dialogue request configuration")
+    dialogue_phase2: DialoguePhase2Config = Field(..., description="Dialogue phase 2 configuration")
+    final_processing: FinalProcessingConfig = Field(..., description="Final processing configuration")
+    final_api_call: FinalAPICallConfig = Field(..., description="Final API call configuration")
+
+
+class SpecialFlow1Profile(BaseModel):
+    """Stored Special Flow 1 profile"""
+    id: str = Field(..., description="Unique flow ID")
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = Field(None, description="Flow description")
+    config: SpecialFlow1Config = Field(..., description="Flow configuration")
+    is_active: bool = Field(default=True, description="Whether flow is active")
+    created_at: Optional[str] = Field(None, description="Creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class SpecialFlow1CreateRequest(BaseModel):
+    """Request to create a new Special Flow 1"""
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = None
+    config: SpecialFlow1Config = Field(..., description="Flow configuration")
+    is_active: bool = Field(default=True)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SpecialFlow1UpdateRequest(BaseModel):
+    """Request to update an existing Special Flow 1"""
+    name: str = Field(..., description="Flow name")
+    description: Optional[str] = None
+    config: SpecialFlow1Config = Field(..., description="Flow configuration")
+    is_active: bool = Field(default=True)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SpecialFlow1ExecuteRequest(BaseModel):
+    """Request to execute a Special Flow 1"""
+    initial_input: Optional[str] = Field(None, description="Optional initial input (for DB tool SQL or request params)")
+    context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+
+
+class SpecialFlow1ExecuteResponse(BaseModel):
+    """Response from executing a Special Flow 1"""
+    flow_id: str = Field(..., description="Flow ID")
+    flow_name: str = Field(..., description="Flow name")
+    success: bool = Field(..., description="Whether flow completed successfully")
+    phase: str = Field(..., description="Current phase: 'initial_data', 'dialogue_phase1', 'data_fetch', 'dialogue_phase2', 'final_processing', 'api_call', 'complete'")
+    initial_data: Optional[Dict[str, Any]] = Field(None, description="Initial data fetched")
+    dialogue_phase1: Optional[Dict[str, Any]] = Field(None, description="Dialogue phase 1 result")
+    fetched_data: Optional[Dict[str, Any]] = Field(None, description="Mid-dialogue fetched data")
+    dialogue_phase2: Optional[Dict[str, Any]] = Field(None, description="Dialogue phase 2 result")
+    final_outcome: Optional[str] = Field(None, description="Final processing outcome")
+    api_call_result: Optional[Dict[str, Any]] = Field(None, description="Final API call result")
+    total_execution_time: float = Field(..., description="Total execution time in seconds")
+    error: Optional[str] = Field(None, description="Error message if flow failed")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")

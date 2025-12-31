@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import asyncio
+import json
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
@@ -1746,4 +1747,565 @@ class FlowService:
             
             # Wait before next poll
             await asyncio.sleep(poll_interval)
+
+
+class SpecialFlow1Service:
+    """Service for managing and executing Special Flow 1"""
+
+    def __init__(
+        self,
+        db_tools_manager=None,
+        request_tools_manager=None,
+        dialogue_manager=None,
+        rag_system=None,
+    ):
+        self.logger = logging.getLogger(__name__)
+        self.flows: Dict[str, "SpecialFlow1Profile"] = {}
+        self.db_tools_manager = db_tools_manager
+        self.request_tools_manager = request_tools_manager
+        self.dialogue_manager = dialogue_manager
+        self.rag_system = rag_system
+
+        os.makedirs(settings.data_directory, exist_ok=True)
+        self.db_path = os.path.join(settings.data_directory, "special_flows_1.json")
+        self.db = TinyDB(self.db_path)
+        self.query = Query()
+
+        self._load_flows()
+
+    def _load_flows(self) -> None:
+        """Load flow profiles from TinyDB."""
+        try:
+            docs = self.db.all()
+            for doc in docs:
+                try:
+                    flow_id = doc.get("id")
+                    data = doc.get("profile", {})
+                    from .models import SpecialFlow1Profile, SpecialFlow1Config
+                    profile = SpecialFlow1Profile(id=flow_id, **data)
+                    self.flows[flow_id] = profile
+                except Exception as e:
+                    self.logger.error(f"Failed to load flow {doc.get('id')}: {e}")
+            self.logger.info(f"Loaded {len(self.flows)} special flow 1 profiles")
+        except Exception as e:
+            self.logger.error(f"Error loading flows: {e}")
+
+    def _save_flows(self) -> None:
+        """Persist all flow profiles to TinyDB."""
+        try:
+            self.db.truncate()
+            for flow_id, profile in self.flows.items():
+                self.db.insert(
+                    {
+                        "id": flow_id,
+                        "profile": profile.model_dump(exclude={"id"}),
+                    }
+                )
+            self.logger.info(f"Saved {len(self.flows)} special flow 1 profiles")
+        except Exception as e:
+            self.logger.error(f"Error saving flows: {e}")
+
+    def _generate_id(self, name: str) -> str:
+        """Generate a stable, URL-friendly id from the flow name."""
+        base_id = name.strip().lower().replace(" ", "_")
+        base_id = "".join(c for c in base_id if c.isalnum() or c in ("_", "-"))
+        if not base_id:
+            base_id = "special_flow_1"
+
+        candidate = base_id
+        counter = 1
+        while candidate in self.flows:
+            candidate = f"{base_id}_{counter}"
+            counter += 1
+        return candidate
+
+    def list_flows(self) -> List["SpecialFlow1Profile"]:
+        """List all flow profiles."""
+        return list(self.flows.values())
+
+    def get_flow(self, flow_id: str) -> Optional["SpecialFlow1Profile"]:
+        """Get a flow profile by ID."""
+        return self.flows.get(flow_id)
+
+    def create_flow(self, req: "SpecialFlow1CreateRequest") -> str:
+        """Create a new flow profile."""
+        from .models import SpecialFlow1Profile
+        flow_id = self._generate_id(req.name)
+        now = datetime.now().isoformat()
+        profile = SpecialFlow1Profile(
+            id=flow_id,
+            name=req.name,
+            description=req.description,
+            config=req.config,
+            is_active=req.is_active,
+            created_at=now,
+            updated_at=now,
+            metadata=req.metadata or {},
+        )
+        self.flows[flow_id] = profile
+        self._save_flows()
+        self.logger.info(f"Created special flow 1 profile: {flow_id}")
+        return flow_id
+
+    def update_flow(self, flow_id: str, req: "SpecialFlow1UpdateRequest") -> bool:
+        """Update an existing flow profile."""
+        if flow_id not in self.flows:
+            return False
+        try:
+            from .models import SpecialFlow1Profile
+            existing = self.flows[flow_id]
+            profile = SpecialFlow1Profile(
+                id=flow_id,
+                name=req.name,
+                description=req.description,
+                config=req.config,
+                is_active=req.is_active,
+                created_at=existing.created_at,
+                updated_at=datetime.now().isoformat(),
+                metadata=req.metadata or {},
+            )
+            self.flows[flow_id] = profile
+            self._save_flows()
+            self.logger.info(f"Updated special flow 1 profile: {flow_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error updating flow {flow_id}: {e}")
+            return False
+
+    def delete_flow(self, flow_id: str) -> bool:
+        """Delete a flow profile."""
+        if flow_id not in self.flows:
+            return False
+        try:
+            del self.flows[flow_id]
+            self.db.remove(self.query.id == flow_id)
+            self.logger.info(f"Deleted special flow 1 profile: {flow_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error deleting flow {flow_id}: {e}")
+            return False
+
+    async def execute_flow(
+        self, flow_id: str, request: "SpecialFlow1ExecuteRequest"
+    ) -> "SpecialFlow1ExecuteResponse":
+        """
+        Execute a Special Flow 1.
+        
+        Steps:
+        1. Fetch initial data (DB tool or Request tool)
+        2. Start dialogue phase 1 with initial data
+        3. Wait for dialogue to reach trigger condition
+        4. Fetch mid-dialogue data (Request tool)
+        5. Continue dialogue phase 2 with fetched data
+        6. Final processing with all data
+        7. Call final API
+        """
+        from .models import (
+            SpecialFlow1ExecuteResponse,
+            SpecialFlow1Profile,
+        )
+        
+        if flow_id not in self.flows:
+            raise ValueError(f"Flow {flow_id} not found")
+
+        flow: SpecialFlow1Profile = self.flows[flow_id]
+        if not flow.is_active:
+            raise ValueError(f"Flow {flow_id} is not active")
+
+        start_time = time.time()
+        config = flow.config
+
+        try:
+            # Step 1: Fetch initial data
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 1: Fetching initial data")
+            initial_data = None
+            if config.initial_data_source.type == "db_tool":
+                if not self.db_tools_manager:
+                    raise ValueError("Database tools manager not available")
+                sql_input = request.initial_input if request.initial_input else config.initial_data_source.sql_input
+                initial_data = await asyncio.to_thread(
+                    self.db_tools_manager.execute_query,
+                    tool_id=config.initial_data_source.resource_id,
+                    sql_input=sql_input,
+                    force_refresh=True,
+                )
+            elif config.initial_data_source.type == "request_tool":
+                if not self.request_tools_manager:
+                    raise ValueError("Request tools manager not available")
+                # If initial_input provided, use it to update request params
+                if request.initial_input:
+                    profile = self.request_tools_manager.get_profile(config.initial_data_source.resource_id)
+                    if profile:
+                        try:
+                            import json
+                            parsed = json.loads(request.initial_input) if isinstance(request.initial_input, str) else request.initial_input
+                            if isinstance(parsed, dict):
+                                profile.params = {**(profile.params or {}), **parsed}
+                                self.request_tools_manager.requests[profile.id] = profile
+                        except:
+                            pass
+                initial_data = await asyncio.to_thread(
+                    self.request_tools_manager.execute_request,
+                    config.initial_data_source.resource_id
+                )
+
+            # Step 2: Start dialogue phase 1
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 2: Starting dialogue phase 1")
+            dialogue_phase1_result = await self._start_dialogue_phase1(
+                flow_id, config, initial_data, request.context or {}
+            )
+
+            # Check if we need to pause for user interaction
+            if dialogue_phase1_result.get("needs_user_input"):
+                return SpecialFlow1ExecuteResponse(
+                    flow_id=flow_id,
+                    flow_name=flow.name,
+                    success=False,
+                    phase="dialogue_phase1",
+                    initial_data=initial_data,
+                    dialogue_phase1=dialogue_phase1_result,
+                    fetched_data=None,
+                    dialogue_phase2=None,
+                    final_outcome=None,
+                    api_call_result=None,
+                    total_execution_time=time.time() - start_time,
+                    error="Flow paused - waiting for user input in dialogue phase 1",
+                    metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": dialogue_phase1_result.get("conversation_id")},
+                )
+
+            # Step 3: Check trigger condition and fetch mid-dialogue data
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 3: Checking trigger condition")
+            should_fetch = self._check_trigger_condition(
+                config.data_fetch_trigger,
+                dialogue_phase1_result
+            )
+
+            fetched_data = None
+            if should_fetch:
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 4: Fetching mid-dialogue data")
+                fetched_data = await self._fetch_mid_dialogue_data(
+                    config.mid_dialogue_request,
+                    dialogue_phase1_result
+                )
+
+            # Step 5: Continue dialogue phase 2
+            dialogue_phase2_result = None
+            if fetched_data and config.dialogue_phase2.continue_same_conversation:
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 5: Continuing dialogue phase 2")
+                dialogue_phase2_result = await self._continue_dialogue_phase2(
+                    flow_id, config, dialogue_phase1_result, fetched_data, request.context or {}
+                )
+
+                # Check if we need to pause for user interaction
+                if dialogue_phase2_result.get("needs_user_input"):
+                    return SpecialFlow1ExecuteResponse(
+                        flow_id=flow_id,
+                        flow_name=flow.name,
+                        success=False,
+                        phase="dialogue_phase2",
+                        initial_data=initial_data,
+                        dialogue_phase1=dialogue_phase1_result,
+                        fetched_data=fetched_data,
+                        dialogue_phase2=dialogue_phase2_result,
+                        final_outcome=None,
+                        api_call_result=None,
+                        total_execution_time=time.time() - start_time,
+                        error="Flow paused - waiting for user input in dialogue phase 2",
+                        metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": dialogue_phase2_result.get("conversation_id")},
+                    )
+
+            # Step 6: Final processing
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 6: Final processing")
+            final_outcome = await self._final_processing(
+                config.final_processing,
+                initial_data,
+                dialogue_phase1_result,
+                fetched_data,
+                dialogue_phase2_result
+            )
+
+            # Step 7: Final API call
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 7: Final API call")
+            api_call_result = await self._final_api_call(
+                config.final_api_call,
+                final_outcome
+            )
+
+            total_time = time.time() - start_time
+            return SpecialFlow1ExecuteResponse(
+                flow_id=flow_id,
+                flow_name=flow.name,
+                success=True,
+                phase="complete",
+                initial_data=initial_data,
+                dialogue_phase1=dialogue_phase1_result,
+                fetched_data=fetched_data,
+                dialogue_phase2=dialogue_phase2_result,
+                final_outcome=final_outcome,
+                api_call_result=api_call_result,
+                total_execution_time=total_time,
+                error=None,
+                metadata={},
+            )
+
+        except Exception as e:
+            total_time = time.time() - start_time
+            error_msg = str(e)
+            self.logger.error(f"Error executing special flow 1 {flow_id}: {error_msg}", exc_info=True)
+            return SpecialFlow1ExecuteResponse(
+                flow_id=flow_id,
+                flow_name=flow.name,
+                success=False,
+                phase="error",
+                initial_data=None,
+                dialogue_phase1=None,
+                fetched_data=None,
+                dialogue_phase2=None,
+                final_outcome=None,
+                api_call_result=None,
+                total_execution_time=total_time,
+                error=error_msg,
+                metadata={},
+            )
+
+    async def _start_dialogue_phase1(
+        self,
+        flow_id: str,
+        config: "SpecialFlow1Config",
+        initial_data: Optional[Dict[str, Any]],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Start dialogue phase 1 with initial data."""
+        from .config import settings
+        from .llm_factory import LLMFactory, LLMProvider
+        from .llm_langchain_wrapper import LangChainLLMWrapper
+        from .models import LLMProviderType
+
+        if not self.dialogue_manager:
+            raise ValueError("Dialogue manager not available")
+
+        # Create a temporary dialogue profile for this flow
+        dialogue_id = f"flow_{flow_id}_dialogue"
+        
+        # Build system prompt with initial data if needed
+        system_prompt = config.dialogue_config.system_prompt
+        if config.dialogue_config.use_initial_data and initial_data:
+            initial_data_str = json.dumps(initial_data, indent=2) if isinstance(initial_data, dict) else str(initial_data)
+            system_prompt = f"{system_prompt}\n\nInitial Data:\n{initial_data_str}"
+
+        # Determine provider/model
+        provider = config.dialogue_config.llm_provider or LLMProviderType.GEMINI
+        if provider == LLMProviderType.GEMINI:
+            api_key = settings.gemini_api_key
+            model_name = config.dialogue_config.model_name or settings.gemini_default_model
+        elif provider == LLMProviderType.QWEN:
+            api_key = settings.qwen_api_key
+            model_name = config.dialogue_config.model_name or settings.qwen_default_model
+        else:
+            provider = LLMProviderType.GEMINI
+            api_key = settings.gemini_api_key
+            model_name = settings.gemini_default_model
+
+        # Create LLM caller
+        llm_caller = LLMFactory.create_caller(
+            provider=LLMProvider(provider.value),
+            api_key=api_key,
+            model=model_name,
+            temperature=0.7,
+            max_tokens=8192,
+            timeout=settings.api_timeout,
+        )
+        llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+        # Create conversation
+        conversation_id = self.dialogue_manager._create_conversation(
+            dialogue_id,
+            "",  # No initial message - waiting for user
+            turn_number=0
+        )
+
+        # Return result indicating we need user input
+        return {
+            "conversation_id": conversation_id,
+            "dialogue_id": dialogue_id,
+            "system_prompt": system_prompt,
+            "turn_number": 0,
+            "max_turns": config.dialogue_config.max_turns_phase1,
+            "response": "",
+            "needs_more_info": True,
+            "is_complete": False,
+            "needs_user_input": True,
+            "conversation_history": [],
+            "llm_provider": provider.value,
+            "model_name": model_name,
+        }
+
+    def _check_trigger_condition(
+        self,
+        trigger: "DataFetchTrigger",
+        dialogue_result: Dict[str, Any],
+    ) -> bool:
+        """Check if trigger condition is met."""
+        if trigger.type == "turn_count":
+            turn_number = dialogue_result.get("turn_number", 0)
+            return turn_number >= (trigger.value or 0)
+        elif trigger.type == "keyword":
+            # Check if keyword appears in conversation
+            history = dialogue_result.get("conversation_history", [])
+            keyword = str(trigger.value or "").lower()
+            for msg in history:
+                content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+                if keyword in content.lower():
+                    return True
+            return False
+        elif trigger.type == "user_trigger":
+            # User manually triggers - this would be handled by frontend
+            return dialogue_result.get("user_triggered_fetch", False)
+        elif trigger.type == "ai_detected":
+            # AI detects need - check if response suggests need for data
+            response = dialogue_result.get("response", "").lower()
+            keywords = ["need", "require", "fetch", "get data", "retrieve"]
+            return any(kw in response for kw in keywords)
+        return False
+
+    async def _fetch_mid_dialogue_data(
+        self,
+        request_config: "MidDialogueRequestConfig",
+        dialogue_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Fetch data using request tool based on dialogue context."""
+        if not self.request_tools_manager:
+            raise ValueError("Request tools manager not available")
+
+        profile = self.request_tools_manager.get_profile(request_config.request_tool_id)
+        if not profile:
+            raise ValueError(f"Request tool {request_config.request_tool_id} not found")
+
+        # Map dialogue context to request params if param_mapping provided
+        if request_config.param_mapping:
+            import json
+            for param_key, template in request_config.param_mapping.items():
+                # Simple template replacement
+                value = template
+                value = value.replace("{{dialogue.user_input}}", dialogue_result.get("user_input", ""))
+                value = value.replace("{{dialogue.response}}", dialogue_result.get("response", ""))
+                # Try to parse as JSON if it looks like JSON
+                try:
+                    value = json.loads(value)
+                except:
+                    pass
+                profile.params[param_key] = value
+
+        result = await asyncio.to_thread(
+            self.request_tools_manager.execute_request,
+            request_config.request_tool_id
+        )
+        return result
+
+    async def _continue_dialogue_phase2(
+        self,
+        flow_id: str,
+        config: "SpecialFlow1Config",
+        dialogue_phase1_result: Dict[str, Any],
+        fetched_data: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Continue dialogue phase 2 with fetched data."""
+        # This would continue the existing conversation with fetched data injected
+        # For now, return a placeholder - actual implementation would use dialogue_manager
+        return {
+            "conversation_id": dialogue_phase1_result.get("conversation_id"),
+            "turn_number": dialogue_phase1_result.get("turn_number", 0) + 1,
+            "max_turns": config.dialogue_phase2.max_turns_phase2,
+            "response": "Dialogue phase 2 - implementation needed",
+            "needs_more_info": False,
+            "is_complete": True,
+            "needs_user_input": False,
+        }
+
+    async def _final_processing(
+        self,
+        processing_config: "FinalProcessingConfig",
+        initial_data: Optional[Dict[str, Any]],
+        dialogue_phase1_result: Optional[Dict[str, Any]],
+        fetched_data: Optional[Dict[str, Any]],
+        dialogue_phase2_result: Optional[Dict[str, Any]],
+    ) -> str:
+        """Perform final processing with all data."""
+        from .config import settings
+        from .llm_factory import LLMFactory, LLMProvider
+        from .llm_langchain_wrapper import LangChainLLMWrapper
+        from .models import LLMProviderType
+
+        # Build input from template
+        dialogue_summary = ""
+        if dialogue_phase1_result:
+            history = dialogue_phase1_result.get("conversation_history", [])
+            dialogue_summary = "\n".join([
+                f"{msg.get('role', 'unknown')}: {msg.get('content', '')}" 
+                for msg in history
+            ])
+
+        input_text = processing_config.input_template
+        input_text = input_text.replace("{{initial_data}}", json.dumps(initial_data, indent=2) if initial_data else "None")
+        input_text = input_text.replace("{{dialogue_summary}}", dialogue_summary)
+        input_text = input_text.replace("{{fetched_data}}", json.dumps(fetched_data, indent=2) if fetched_data else "None")
+
+        # Determine provider/model
+        provider = processing_config.llm_provider or LLMProviderType.GEMINI
+        if provider == LLMProviderType.GEMINI:
+            api_key = settings.gemini_api_key
+            model_name = processing_config.model_name or settings.gemini_default_model
+        elif provider == LLMProviderType.QWEN:
+            api_key = settings.qwen_api_key
+            model_name = processing_config.model_name or settings.qwen_default_model
+        else:
+            provider = LLMProviderType.GEMINI
+            api_key = settings.gemini_api_key
+            model_name = settings.gemini_default_model
+
+        # Create LLM caller
+        llm_caller = LLMFactory.create_caller(
+            provider=LLMProvider(provider.value),
+            api_key=api_key,
+            model=model_name,
+            temperature=0.7,
+            max_tokens=8192,
+            timeout=settings.api_timeout,
+        )
+        llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+        # Build full prompt
+        full_prompt = f"{processing_config.system_prompt}\n\n{input_text}"
+
+        # Call LLM
+        response = await llm.ainvoke(full_prompt)
+        return response
+
+    async def _final_api_call(
+        self,
+        api_config: "FinalAPICallConfig",
+        final_outcome: str,
+    ) -> Dict[str, Any]:
+        """Make final API call with outcome."""
+        if not self.request_tools_manager:
+            raise ValueError("Request tools manager not available")
+
+        profile = self.request_tools_manager.get_profile(api_config.request_tool_id)
+        if not profile:
+            raise ValueError(f"Request tool {api_config.request_tool_id} not found")
+
+        # Map final outcome to request body
+        body_mapping = api_config.body_mapping.replace("{{final_outcome}}", final_outcome)
+        try:
+            import json
+            profile.body = json.loads(body_mapping)
+        except:
+            profile.body = body_mapping
+
+        result = await asyncio.to_thread(
+            self.request_tools_manager.execute_request,
+            api_config.request_tool_id
+        )
+        return result
 

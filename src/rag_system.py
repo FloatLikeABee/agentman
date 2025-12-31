@@ -375,3 +375,232 @@ class RAGSystem:
         except Exception as e:
             self.logger.error(f"Error deleting collection {collection_name}: {e}")
             return False
+
+    async def smart_import(
+        self,
+        file_content: str,
+        file_format: str,
+        llm_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+        processing_instructions: Optional[str] = None,
+        auto_name: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Smart Import: Import CSV/JSON file, process with AI, auto-name, and save to RAG.
+        
+        Steps:
+        1. Parse the file (CSV or JSON)
+        2. Use AI to clean/abstract/transform the data
+        3. Generate a good collection name (if auto_name=True)
+        4. Convert to RAG format
+        5. Save to RAG system
+        
+        Returns:
+            Dict with collection_name, description, processed_data, and metadata
+        """
+        from .config import settings
+        from .llm_factory import LLMFactory, LLMProvider
+        from .llm_langchain_wrapper import LangChainLLMWrapper
+        from .models import LLMProviderType
+        
+        try:
+            # Step 1: Parse the file
+            self.logger.info(f"[Smart Import] Parsing {file_format} file...")
+            if file_format.lower() == "csv":
+                df = pd.read_csv(pd.StringIO(file_content))
+                original_data = df.to_dict('records')
+                original_count = len(original_data)
+                # Convert to JSON string for AI processing
+                raw_data_str = json.dumps(original_data, indent=2, default=str)
+            elif file_format.lower() == "json":
+                original_data = json.loads(file_content)
+                if isinstance(original_data, list):
+                    original_count = len(original_data)
+                    raw_data_str = json.dumps(original_data, indent=2, default=str)
+                elif isinstance(original_data, dict):
+                    original_count = 1
+                    raw_data_str = json.dumps(original_data, indent=2, default=str)
+                else:
+                    raise ValueError("JSON must be an object or array")
+            else:
+                raise ValueError(f"Unsupported file format: {file_format}. Supported: csv, json")
+            
+            # Step 2: Use AI to process the data
+            self.logger.info(f"[Smart Import] Processing data with AI...")
+            
+            # Determine LLM provider
+            if llm_provider:
+                provider_type = LLMProviderType(llm_provider.lower())
+            else:
+                provider_type = LLMProviderType(settings.default_llm_provider.lower())
+            
+            if provider_type == LLMProviderType.GEMINI:
+                api_key = settings.gemini_api_key
+                model = model_name or settings.gemini_default_model
+            elif provider_type == LLMProviderType.QWEN:
+                api_key = settings.qwen_api_key
+                model = model_name or settings.qwen_default_model
+            elif provider_type == LLMProviderType.MISTRAL:
+                api_key = getattr(settings, 'mistral_api_key', '')
+                model = model_name or settings.mistral_default_model
+            else:
+                provider_type = LLMProviderType.GEMINI
+                api_key = settings.gemini_api_key
+                model = settings.gemini_default_model
+            
+            # Create LLM caller
+            llm_caller = LLMFactory.create_caller(
+                provider=LLMProvider(provider_type.value),
+                api_key=api_key,
+                model=model,
+                temperature=0.3,  # Lower temperature for more consistent processing
+                max_tokens=8192,
+                timeout=settings.api_timeout,
+            )
+            llm = LangChainLLMWrapper(llm_caller=llm_caller)
+            
+            # Build processing prompt
+            base_instructions = """You are a data processing assistant. Your task is to clean, abstract, and transform the provided data into a well-structured format suitable for RAG (Retrieval-Augmented Generation) systems.
+
+Requirements:
+1. Clean the data: Remove duplicates, fix inconsistencies, standardize formats
+2. Abstract the data: Extract key information and create meaningful summaries
+3. Structure for RAG: Format as JSON array where each item is a self-contained, searchable document
+4. Preserve important information: Don't lose critical data points
+5. Make it searchable: Ensure each document has clear, descriptive content
+
+Output format: Return ONLY valid JSON array, no additional text or markdown."""
+            
+            processing_prompt = f"""{base_instructions}
+
+{processing_instructions or ''}
+
+Original Data:
+{raw_data_str[:50000]}  # Limit to avoid token limits
+
+Process and return the cleaned, abstracted data as a JSON array."""
+            
+            # Call AI for processing
+            processed_data_str = await llm.ainvoke(processing_prompt)
+            
+            # Extract JSON from response (handle markdown code blocks)
+            processed_data_str = processed_data_str.strip()
+            if '```json' in processed_data_str:
+                processed_data_str = processed_data_str.split('```json')[1].split('```')[0].strip()
+            elif '```' in processed_data_str:
+                processed_data_str = processed_data_str.split('```')[1].split('```')[0].strip()
+            
+            # Parse processed data
+            try:
+                processed_data = json.loads(processed_data_str)
+                if not isinstance(processed_data, list):
+                    processed_data = [processed_data]
+                processed_count = len(processed_data)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"[Smart Import] Failed to parse AI-processed data: {e}")
+                # Fallback: use original data
+                processed_data = original_data if isinstance(original_data, list) else [original_data]
+                processed_count = len(processed_data)
+            
+            # Step 3: Generate collection name (if auto_name)
+            collection_name = None
+            collection_description = None
+            
+            if auto_name:
+                self.logger.info(f"[Smart Import] Generating collection name with AI...")
+                name_prompt = f"""Based on the following data, generate a short, descriptive name (2-4 words, lowercase with underscores) and a brief description (1-2 sentences) for a RAG knowledge base collection.
+
+Data sample (first 3 items):
+{json.dumps(processed_data[:3], indent=2, default=str)[:2000]}
+
+Return JSON format:
+{{
+    "name": "descriptive_collection_name",
+    "description": "Brief description of what this collection contains"
+}}"""
+                
+                name_response = await llm.ainvoke(name_prompt)
+                name_response = name_response.strip()
+                if '```json' in name_response:
+                    name_response = name_response.split('```json')[1].split('```')[0].strip()
+                elif '```' in name_response:
+                    name_response = name_response.split('```')[1].split('```')[0].strip()
+                
+                try:
+                    name_data = json.loads(name_response)
+                    collection_name = name_data.get("name", "imported_data")
+                    collection_description = name_data.get("description", "Imported and processed data")
+                except:
+                    # Fallback name generation
+                    collection_name = f"imported_{file_format}_{int(time.time())}"
+                    collection_description = f"Imported {file_format} data processed with AI"
+            else:
+                collection_name = f"imported_{file_format}_{int(time.time())}"
+                collection_description = f"Imported {file_format} data"
+            
+            # Ensure collection name is valid (lowercase, underscores, no spaces)
+            collection_name = collection_name.lower().replace(" ", "_").replace("-", "_")
+            collection_name = re.sub(r'[^a-z0-9_]', '', collection_name)
+            if not collection_name:
+                collection_name = f"imported_{int(time.time())}"
+            
+            # Step 4: Save to RAG system
+            self.logger.info(f"[Smart Import] Saving to RAG collection: {collection_name}")
+            
+            rag_input = RAGDataInput(
+                name=f"smart_import_{int(time.time())}",
+                description=collection_description,
+                format=DataFormat.JSON,
+                content=json.dumps(processed_data, indent=2, default=str),
+                tags=["smart_import", file_format, "ai_processed"],
+                metadata={
+                    "original_format": file_format,
+                    "original_count": original_count,
+                    "processed_count": processed_count,
+                    "llm_provider": provider_type.value,
+                    "model_used": model,
+                    "imported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            )
+            
+            success = self.add_data_to_collection(collection_name, rag_input)
+            
+            if success:
+                return {
+                    "success": True,
+                    "collection_name": collection_name,
+                    "collection_description": collection_description,
+                    "processed_data": json.dumps(processed_data, indent=2, default=str),
+                    "original_record_count": original_count,
+                    "processed_record_count": processed_count,
+                    "message": f"Successfully imported and processed {original_count} records into collection '{collection_name}'",
+                    "metadata": {
+                        "llm_provider": provider_type.value,
+                        "model_used": model,
+                        "processing_instructions": processing_instructions,
+                    }
+                }
+            else:
+                return {
+                    "success": False,
+                    "collection_name": collection_name,
+                    "collection_description": collection_description,
+                    "processed_data": None,
+                    "original_record_count": original_count,
+                    "processed_record_count": processed_count,
+                    "message": "Failed to save processed data to RAG collection",
+                    "metadata": {}
+                }
+                
+        except Exception as e:
+            self.logger.error(f"[Smart Import] Error: {e}", exc_info=True)
+            return {
+                "success": False,
+                "collection_name": "",
+                "collection_description": "",
+                "processed_data": None,
+                "original_record_count": None,
+                "processed_record_count": None,
+                "message": f"Error during smart import: {str(e)}",
+                "metadata": {}
+            }

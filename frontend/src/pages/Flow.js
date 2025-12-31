@@ -36,13 +36,17 @@ import {
   CheckCircle as CheckCircleIcon,
   Send as SendIcon,
   Chat as ChatIcon,
+  DataObject as DataObjectIcon,
 } from '@mui/icons-material';
+import { Tabs, Tab } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
 
 const Flow = () => {
   const queryClient = useQueryClient();
+  const [tabValue, setTabValue] = useState(0);
   const { data: flows = [], isLoading } = useQuery('flows', api.getFlows);
+  const { data: specialFlows1 = [], isLoading: isLoadingSpecial } = useQuery('special-flows-1', api.getSpecialFlows1);
   const { data: customizations = [] } = useQuery('customizations', api.getCustomizations);
   const { data: agents = [] } = useQuery('agents', api.getAgents);
   const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools);
@@ -69,6 +73,7 @@ const Flow = () => {
     is_active: true,
   });
   const [doneSteps, setDoneSteps] = useState(new Set());
+  const [dialogueWarning, setDialogueWarning] = useState('');
   // Use ref to track latest formData for event handlers
   const formDataRef = useRef(formData);
   
@@ -121,6 +126,7 @@ const Flow = () => {
       is_active: true,
     });
     setDoneSteps(new Set());
+    setDialogueWarning('');
     setCurrentStep({
       step_id: '',
       step_type: 'customization',
@@ -137,6 +143,16 @@ const Flow = () => {
       alert('Please fill in step ID, name, and resource ID');
       return;
     }
+    
+    // Validate: Dialogue steps can only be the first step
+    if (currentStep.step_type === 'dialogue' && formData.steps.length > 0) {
+      alert('Dialogue steps can only be added as the first step in a flow. Please remove existing steps or add the dialogue step first.');
+      setDialogueWarning('Dialogue steps must be the first step in a flow.');
+      return;
+    }
+    
+    // Clear warning if validation passes
+    setDialogueWarning('');
     // Use functional update to ensure we have the latest state
     setFormData((prevFormData) => {
       const newSteps = [...prevFormData.steps, { ...currentStep }];
@@ -259,6 +275,15 @@ const Flow = () => {
     console.log('Editing flow:', flow);
     console.log('Flow steps:', flowSteps);
     console.log('Flow steps count:', flowSteps.length);
+    
+    // Check if there's a dialogue step that's not first
+    const dialogueStepIndex = flowSteps.findIndex(step => step.step_type === 'dialogue');
+    if (dialogueStepIndex > 0) {
+      setDialogueWarning('Warning: This flow has a dialogue step that is not the first step. Dialogue steps should only be the first step. Consider reordering the steps.');
+    } else {
+      setDialogueWarning('');
+    }
+    
     setFormData({
       name: flow.name || '',
       description: flow.description || '',
@@ -516,7 +541,7 @@ const Flow = () => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isLoadingSpecial) {
     return <LinearProgress />;
   }
 
@@ -524,18 +549,28 @@ const Flow = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Flow Manager</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            resetForm();
-            setEditingFlowId(null);
-            setOpenCreateDialog(true);
-          }}
-        >
-          Create Flow
-        </Button>
       </Box>
+
+      <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 3 }}>
+        <Tab label="Regular Flows" icon={<ArrowForwardIcon />} />
+        <Tab label="Special Flow 1" icon={<DataObjectIcon />} />
+      </Tabs>
+
+      {tabValue === 0 && (
+        <Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                resetForm();
+                setEditingFlowId(null);
+                setOpenCreateDialog(true);
+              }}
+            >
+              Create Flow
+            </Button>
+          </Box>
 
       {/* Flows List */}
       <Grid container spacing={3}>
@@ -745,7 +780,16 @@ const Flow = () => {
                       value={currentStep.step_type}
                       onChange={(e) => {
                         console.log('Step type changed to:', e.target.value);
-                        setCurrentStep({ ...currentStep, step_type: e.target.value, resource_id: '' });
+                        const newStepType = e.target.value;
+                        
+                        // Check if trying to select dialogue when there are already steps
+                        if (newStepType === 'dialogue' && formData.steps.length > 0) {
+                          setDialogueWarning('Dialogue steps can only be the first step in a flow. Please remove existing steps first.');
+                          return; // Don't change the step type
+                        }
+                        
+                        setDialogueWarning(''); // Clear warning if valid
+                        setCurrentStep({ ...currentStep, step_type: newStepType, resource_id: '' });
                       }}
                       label="Step Type"
                     >
@@ -754,7 +798,12 @@ const Flow = () => {
                       <MenuItem value="db_tool">DB Tool</MenuItem>
                       <MenuItem value="request">Request</MenuItem>
                       <MenuItem value="crawler">Crawler</MenuItem>
-                      <MenuItem value="dialogue">Dialogue</MenuItem>
+                      <MenuItem 
+                        value="dialogue"
+                        disabled={formData.steps.length > 0}
+                      >
+                        Dialogue {formData.steps.length > 0 ? '(must be first step)' : ''}
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
@@ -800,6 +849,11 @@ const Flow = () => {
                   </Grid>
                 )}
                 <Grid item xs={12}>
+                  {dialogueWarning && (
+                    <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setDialogueWarning('')}>
+                      {dialogueWarning}
+                    </Alert>
+                  )}
                   <Box sx={{ mb: 2, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
                     <Typography variant="body2">
                       Current step: {currentStep.step_id || '(no ID)'} | {currentStep.step_name || '(no name)'} | {currentStep.resource_id || '(no resource)'}
@@ -807,6 +861,11 @@ const Flow = () => {
                     <Typography variant="body2" color="text.secondary">
                       Total steps in form: {formData.steps.length}
                     </Typography>
+                    {currentStep.step_type === 'dialogue' && formData.steps.length > 0 && (
+                      <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                        ⚠️ Dialogue steps must be the first step. Remove existing steps first.
+                      </Typography>
+                    )}
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
@@ -1152,6 +1211,738 @@ const Flow = () => {
               {dialogueLoading ? 'Sending...' : 'Send'}
             </Button>
           )}
+        </DialogActions>
+          </Dialog>
+        </Box>
+      )}
+
+      {tabValue === 1 && (
+        <SpecialFlows1Section
+          flows={specialFlows1}
+          dbTools={dbTools}
+          requestTools={requestTools}
+        />
+      )}
+    </Box>
+  );
+};
+
+// Special Flow 1 Section Component
+const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
+  const queryClient = useQueryClient();
+  const [openCreateDialog, setOpenCreateDialog] = useState(false);
+  const [openExecuteDialog, setOpenExecuteDialog] = useState(false);
+  const [editingFlowId, setEditingFlowId] = useState(null);
+  const [selectedFlow, setSelectedFlow] = useState(null);
+  const [executeResult, setExecuteResult] = useState(null);
+  const [executeLoading, setExecuteLoading] = useState(false);
+  const [configEditorMode, setConfigEditorMode] = useState('form'); // 'form' or 'json'
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    is_active: true,
+    config: {
+      initial_data_source: { type: 'db_tool', resource_id: '', sql_input: '' },
+      dialogue_config: { system_prompt: '', max_turns_phase1: 5, use_initial_data: true, llm_provider: null, model_name: '' },
+      data_fetch_trigger: { type: 'turn_count', value: 3 },
+      mid_dialogue_request: { request_tool_id: '', param_mapping: {} },
+      dialogue_phase2: { continue_same_conversation: true, inject_fetched_data: true, max_turns_phase2: 5 },
+      final_processing: { system_prompt: '', input_template: '{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}', llm_provider: null, model_name: '' },
+      final_api_call: { request_tool_id: '', body_mapping: '{{final_outcome}}' },
+    },
+  });
+
+  const createFlowMutation = useMutation(api.createSpecialFlow1, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('special-flows-1');
+      setOpenCreateDialog(false);
+      resetForm();
+    },
+  });
+
+  const updateFlowMutation = useMutation(
+    ({ flowId, payload }) => api.updateSpecialFlow1(flowId, payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('special-flows-1');
+        setOpenCreateDialog(false);
+        setEditingFlowId(null);
+        resetForm();
+      },
+    }
+  );
+
+  const deleteFlowMutation = useMutation(api.deleteSpecialFlow1, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('special-flows-1');
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      description: '',
+      is_active: true,
+      config: {
+        initial_data_source: { type: 'db_tool', resource_id: '', sql_input: '' },
+        dialogue_config: { system_prompt: '', max_turns_phase1: 5, use_initial_data: true, llm_provider: null, model_name: '' },
+        data_fetch_trigger: { type: 'turn_count', value: 3 },
+        mid_dialogue_request: { request_tool_id: '', param_mapping: {} },
+        dialogue_phase2: { continue_same_conversation: true, inject_fetched_data: true, max_turns_phase2: 5 },
+        final_processing: { system_prompt: '', input_template: '{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}', llm_provider: null, model_name: '' },
+        final_api_call: { request_tool_id: '', body_mapping: '{{final_outcome}}' },
+      },
+    });
+    setConfigEditorMode('form');
+  };
+
+  const updateConfig = (path, value) => {
+    setFormData(prev => {
+      const newConfig = { ...prev.config };
+      const keys = path.split('.');
+      let current = newConfig;
+      for (let i = 0; i < keys.length - 1; i++) {
+        current[keys[i]] = { ...current[keys[i]] };
+        current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+      return { ...prev, config: newConfig };
+    });
+  };
+
+  const handleJsonChange = (jsonString) => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      setFormData(prev => ({ ...prev, config: parsed }));
+    } catch (err) {
+      // Invalid JSON, ignore
+    }
+  };
+
+  const handleCreateFlow = () => {
+    if (!formData.name) {
+      alert('Please provide a name');
+      return;
+    }
+    if (editingFlowId) {
+      updateFlowMutation.mutate({ flowId: editingFlowId, payload: formData });
+    } else {
+      createFlowMutation.mutate(formData);
+    }
+  };
+
+  const handleEditFlow = (flow) => {
+    setFormData({
+      name: flow.name || '',
+      description: flow.description || '',
+      is_active: flow.is_active !== undefined ? flow.is_active : true,
+      config: flow.config || formData.config,
+    });
+    setEditingFlowId(flow.id);
+    setOpenCreateDialog(true);
+  };
+
+  const handleExecuteFlow = async () => {
+    if (!selectedFlow) return;
+    setExecuteLoading(true);
+    setExecuteResult(null);
+    try {
+      const result = await api.executeSpecialFlow1(selectedFlow.id, {
+        initial_input: '',
+        context: {},
+      });
+      setExecuteResult(result);
+    } catch (error) {
+      setExecuteResult({
+        success: false,
+        error: error.response?.data?.detail || error.message,
+      });
+    } finally {
+      setExecuteLoading(false);
+    }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            resetForm();
+            setEditingFlowId(null);
+            setOpenCreateDialog(true);
+          }}
+        >
+          Create Special Flow 1
+        </Button>
+      </Box>
+
+      {/* Flows List */}
+      <Grid container spacing={3}>
+        {flows.map((flow) => (
+          <Grid item xs={12} md={6} lg={4} key={flow.id}>
+            <Card sx={{ boxShadow: 2, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="h6" sx={{ mb: 1 }}>{flow.name}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      {flow.description}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                      <Chip
+                        label={flow.is_active ? 'Active' : 'Inactive'}
+                        size="small"
+                        color={flow.is_active ? 'success' : 'default'}
+                      />
+                      <Chip
+                        label={flow.config?.initial_data_source?.type || 'N/A'}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => {
+                        setSelectedFlow(flow);
+                        setOpenExecuteDialog(true);
+                      }}
+                      title="Execute Flow"
+                    >
+                      <RunIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="secondary"
+                      onClick={() => handleEditFlow(flow)}
+                      title="Edit Flow"
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => deleteFlowMutation.mutate(flow.id)}
+                      title="Delete Flow"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>{editingFlowId ? 'Edit Special Flow 1' : 'Create Special Flow 1'}</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Flow Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                multiline
+                rows={2}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  />
+                }
+                label="Active"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Configuration</Typography>
+                <Box>
+                  <Button
+                    size="small"
+                    variant={configEditorMode === 'form' ? 'contained' : 'outlined'}
+                    onClick={() => setConfigEditorMode('form')}
+                    sx={{ mr: 1 }}
+                  >
+                    Form Editor
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={configEditorMode === 'json' ? 'contained' : 'outlined'}
+                    onClick={() => setConfigEditorMode('json')}
+                  >
+                    JSON Editor
+                  </Button>
+                </Box>
+              </Box>
+
+              {configEditorMode === 'form' ? (
+                <Box>
+                  {/* Initial Data Source */}
+                  <Accordion defaultExpanded>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">1. Initial Data Source</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <FormControl fullWidth>
+                            <InputLabel>Data Source Type</InputLabel>
+                            <Select
+                              value={formData.config.initial_data_source.type}
+                              onChange={(e) => updateConfig('initial_data_source.type', e.target.value)}
+                              label="Data Source Type"
+                            >
+                              <MenuItem value="db_tool">DB Tool</MenuItem>
+                              <MenuItem value="request_tool">Request Tool</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <FormControl fullWidth>
+                            <InputLabel>Resource</InputLabel>
+                            <Select
+                              value={formData.config.initial_data_source.resource_id}
+                              onChange={(e) => updateConfig('initial_data_source.resource_id', e.target.value)}
+                              label="Resource"
+                            >
+                              {formData.config.initial_data_source.type === 'db_tool'
+                                ? dbTools.map((tool) => (
+                                    <MenuItem key={tool.id} value={tool.id}>
+                                      {tool.name}
+                                    </MenuItem>
+                                  ))
+                                : requestTools.map((tool) => (
+                                    <MenuItem key={tool.id} value={tool.id}>
+                                      {tool.name}
+                                    </MenuItem>
+                                  ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        {formData.config.initial_data_source.type === 'db_tool' && (
+                          <Grid item xs={12}>
+                            <TextField
+                              fullWidth
+                              label="SQL Input (Optional)"
+                              value={formData.config.initial_data_source.sql_input || ''}
+                              onChange={(e) => updateConfig('initial_data_source.sql_input', e.target.value)}
+                              multiline
+                              rows={3}
+                              placeholder="Leave empty to use preset SQL from DB tool"
+                            />
+                          </Grid>
+                        )}
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Dialogue Config */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">2. Dialogue Phase 1 Configuration</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="System Prompt"
+                            value={formData.config.dialogue_config.system_prompt}
+                            onChange={(e) => updateConfig('dialogue_config.system_prompt', e.target.value)}
+                            multiline
+                            rows={4}
+                            required
+                            placeholder="Enter the system prompt for the dialogue..."
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            fullWidth
+                            type="number"
+                            label="Max Turns Phase 1"
+                            value={formData.config.dialogue_config.max_turns_phase1}
+                            onChange={(e) => updateConfig('dialogue_config.max_turns_phase1', parseInt(e.target.value) || 5)}
+                            inputProps={{ min: 1, max: 20 }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={formData.config.dialogue_config.use_initial_data}
+                                onChange={(e) => updateConfig('dialogue_config.use_initial_data', e.target.checked)}
+                              />
+                            }
+                            label="Use Initial Data in Dialogue"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <FormControl fullWidth>
+                            <InputLabel>LLM Provider (Optional)</InputLabel>
+                            <Select
+                              value={formData.config.dialogue_config.llm_provider || ''}
+                              onChange={(e) => updateConfig('dialogue_config.llm_provider', e.target.value || null)}
+                              label="LLM Provider (Optional)"
+                            >
+                              <MenuItem value="">Default</MenuItem>
+                              <MenuItem value="gemini">Gemini</MenuItem>
+                              <MenuItem value="qwen">Qwen</MenuItem>
+                              <MenuItem value="mistral">Mistral</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            fullWidth
+                            label="Model Name (Optional)"
+                            value={formData.config.dialogue_config.model_name || ''}
+                            onChange={(e) => updateConfig('dialogue_config.model_name', e.target.value || null)}
+                            placeholder="Leave empty for default"
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Data Fetch Trigger */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">3. Data Fetch Trigger</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <FormControl fullWidth>
+                            <InputLabel>Trigger Type</InputLabel>
+                            <Select
+                              value={formData.config.data_fetch_trigger.type}
+                              onChange={(e) => updateConfig('data_fetch_trigger.type', e.target.value)}
+                              label="Trigger Type"
+                            >
+                              <MenuItem value="turn_count">Turn Count</MenuItem>
+                              <MenuItem value="keyword">Keyword</MenuItem>
+                              <MenuItem value="user_trigger">User Trigger</MenuItem>
+                              <MenuItem value="ai_detected">AI Detected</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          {formData.config.data_fetch_trigger.type === 'turn_count' ? (
+                            <TextField
+                              fullWidth
+                              type="number"
+                              label="Turn Count"
+                              value={formData.config.data_fetch_trigger.value || 3}
+                              onChange={(e) => updateConfig('data_fetch_trigger.value', parseInt(e.target.value) || 3)}
+                              inputProps={{ min: 1 }}
+                            />
+                          ) : formData.config.data_fetch_trigger.type === 'keyword' ? (
+                            <TextField
+                              fullWidth
+                              label="Keyword"
+                              value={formData.config.data_fetch_trigger.value || ''}
+                              onChange={(e) => updateConfig('data_fetch_trigger.value', e.target.value)}
+                              placeholder="Enter keyword to trigger data fetch"
+                            />
+                          ) : (
+                            <TextField
+                              fullWidth
+                              label="Value"
+                              value={formData.config.data_fetch_trigger.value || ''}
+                              onChange={(e) => updateConfig('data_fetch_trigger.value', e.target.value)}
+                              disabled
+                              helperText="This trigger type doesn't require a value"
+                            />
+                          )}
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Mid Dialogue Request */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">4. Mid-Dialogue Request</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <FormControl fullWidth>
+                            <InputLabel>Request Tool</InputLabel>
+                            <Select
+                              value={formData.config.mid_dialogue_request.request_tool_id}
+                              onChange={(e) => updateConfig('mid_dialogue_request.request_tool_id', e.target.value)}
+                              label="Request Tool"
+                            >
+                              {requestTools.map((tool) => (
+                                <MenuItem key={tool.id} value={tool.id}>
+                                  {tool.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="Parameter Mapping (JSON)"
+                            value={JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2)}
+                            onChange={(e) => {
+                              try {
+                                const parsed = JSON.parse(e.target.value);
+                                updateConfig('mid_dialogue_request.param_mapping', parsed);
+                              } catch (err) {
+                                // Invalid JSON
+                              }
+                            }}
+                            multiline
+                            rows={4}
+                            placeholder='{"query": "{{dialogue.user_input}}", "body": "{{dialogue.response}}"}'
+                            helperText="Map request parameters from dialogue context. Use {{dialogue.user_input}}, {{dialogue.response}}, etc."
+                            sx={{ fontFamily: 'monospace' }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Dialogue Phase 2 */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">5. Dialogue Phase 2 Configuration</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={formData.config.dialogue_phase2.continue_same_conversation}
+                                onChange={(e) => updateConfig('dialogue_phase2.continue_same_conversation', e.target.checked)}
+                              />
+                            }
+                            label="Continue Same Conversation"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={formData.config.dialogue_phase2.inject_fetched_data}
+                                onChange={(e) => updateConfig('dialogue_phase2.inject_fetched_data', e.target.checked)}
+                              />
+                            }
+                            label="Inject Fetched Data"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            fullWidth
+                            type="number"
+                            label="Max Turns Phase 2"
+                            value={formData.config.dialogue_phase2.max_turns_phase2}
+                            onChange={(e) => updateConfig('dialogue_phase2.max_turns_phase2', parseInt(e.target.value) || 5)}
+                            inputProps={{ min: 1, max: 20 }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Final Processing */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">6. Final Processing</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="System Prompt"
+                            value={formData.config.final_processing.system_prompt}
+                            onChange={(e) => updateConfig('final_processing.system_prompt', e.target.value)}
+                            multiline
+                            rows={4}
+                            required
+                            placeholder="Enter the system prompt for final processing..."
+                          />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="Input Template"
+                            value={formData.config.final_processing.input_template}
+                            onChange={(e) => updateConfig('final_processing.input_template', e.target.value)}
+                            multiline
+                            rows={4}
+                            helperText="Use {{initial_data}}, {{dialogue_summary}}, {{fetched_data}} as placeholders"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <FormControl fullWidth>
+                            <InputLabel>LLM Provider (Optional)</InputLabel>
+                            <Select
+                              value={formData.config.final_processing.llm_provider || ''}
+                              onChange={(e) => updateConfig('final_processing.llm_provider', e.target.value || null)}
+                              label="LLM Provider (Optional)"
+                            >
+                              <MenuItem value="">Default</MenuItem>
+                              <MenuItem value="gemini">Gemini</MenuItem>
+                              <MenuItem value="qwen">Qwen</MenuItem>
+                              <MenuItem value="mistral">Mistral</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            fullWidth
+                            label="Model Name (Optional)"
+                            value={formData.config.final_processing.model_name || ''}
+                            onChange={(e) => updateConfig('final_processing.model_name', e.target.value || null)}
+                            placeholder="Leave empty for default"
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {/* Final API Call */}
+                  <Accordion>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">7. Final API Call</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <FormControl fullWidth>
+                            <InputLabel>Request Tool</InputLabel>
+                            <Select
+                              value={formData.config.final_api_call.request_tool_id}
+                              onChange={(e) => updateConfig('final_api_call.request_tool_id', e.target.value)}
+                              label="Request Tool"
+                            >
+                              {requestTools.map((tool) => (
+                                <MenuItem key={tool.id} value={tool.id}>
+                                  {tool.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="Body Mapping"
+                            value={formData.config.final_api_call.body_mapping}
+                            onChange={(e) => updateConfig('final_api_call.body_mapping', e.target.value)}
+                            multiline
+                            rows={3}
+                            helperText="Use {{final_outcome}} as placeholder, or provide JSON template"
+                            placeholder='{{final_outcome}}'
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+                </Box>
+              ) : (
+                <TextField
+                  fullWidth
+                  label="Config (JSON)"
+                  value={JSON.stringify(formData.config, null, 2)}
+                  onChange={(e) => handleJsonChange(e.target.value)}
+                  multiline
+                  rows={20}
+                  sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                  helperText="Edit the configuration as JSON. Changes will sync with the form editor."
+                />
+              )}
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
+          <Button
+            onClick={handleCreateFlow}
+            variant="contained"
+            disabled={createFlowMutation.isLoading || updateFlowMutation.isLoading}
+          >
+            {editingFlowId ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Execute Dialog */}
+      <Dialog open={openExecuteDialog} onClose={() => setOpenExecuteDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Execute Special Flow 1: {selectedFlow?.name}</DialogTitle>
+        <DialogContent>
+          {executeLoading && <LinearProgress sx={{ mb: 2 }} />}
+          {executeResult && (
+            <Box>
+              <Alert severity={executeResult.success ? 'success' : 'error'} sx={{ mb: 2 }}>
+                {executeResult.success ? 'Flow executed successfully' : executeResult.error}
+              </Alert>
+              <Typography variant="h6" sx={{ mb: 1 }}>Phase: {executeResult.phase}</Typography>
+              {executeResult.initial_data && (
+                <Accordion sx={{ mb: 1 }}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography>Initial Data</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                      {JSON.stringify(executeResult.initial_data, null, 2)}
+                    </Typography>
+                  </AccordionDetails>
+                </Accordion>
+              )}
+              {executeResult.final_outcome && (
+                <Accordion sx={{ mb: 1 }}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography>Final Outcome</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {executeResult.final_outcome}
+                    </Typography>
+                  </AccordionDetails>
+                </Accordion>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenExecuteDialog(false)}>Close</Button>
+          <Button
+            onClick={handleExecuteFlow}
+            variant="contained"
+            disabled={executeLoading}
+            startIcon={<RunIcon />}
+          >
+            {executeLoading ? 'Executing...' : 'Execute Flow'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -1,12 +1,14 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi import status
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
 from typing import List, Dict, Any, Optional
 import asyncio
+import os
 
 from .config import settings
 from .models import (
@@ -46,6 +48,13 @@ from .models import (
     DialogueContinueRequest,
     DialogueResponse,
     DialogueMessage,
+    SpecialFlow1Profile,
+    SpecialFlow1CreateRequest,
+    SpecialFlow1UpdateRequest,
+    SpecialFlow1ExecuteRequest,
+    SpecialFlow1ExecuteResponse,
+    SmartImportRequest,
+    SmartImportResponse,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -253,6 +262,15 @@ class RAGAPI:
             dialogue_manager=self.dialogue_manager,
         )
         
+        # Initialize Special Flow 1 Service
+        from .flow import SpecialFlow1Service
+        self.special_flow_1_service = SpecialFlow1Service(
+            db_tools_manager=self.db_tools_manager,
+            request_tools_manager=self.request_tools_manager,
+            dialogue_manager=self.dialogue_manager,
+            rag_system=self.rag_system,
+        )
+        
         # Setup CORS - Allow all origins (configurable)
         # By default this uses settings.cors_origins which is ["*"],
         # meaning any frontend origin (localhost, 127.0.0.1, any port) is allowed.
@@ -288,6 +306,9 @@ class RAGAPI:
         
         # Setup routes
         self._setup_routes()
+        
+        # Setup static file handlers for common browser requests
+        self._setup_static_handlers()
 
     def _setup_routes(self):
         """Setup API routes"""
@@ -465,6 +486,97 @@ class RAGAPI:
                     raise HTTPException(status_code=400, detail="Failed to add data")
             except Exception as e:
                 self.logger.error(f"Error adding data: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/rag/smart-import",
+            tags=["RAG"],
+            summary="Smart Import",
+            description="Intelligently import CSV or JSON files: AI processes and cleans the data, auto-generates collection name, transforms to RAG format, and saves to RAG system.",
+            response_model=SmartImportResponse,
+            response_description="Smart import results including collection name, processed data, and metadata.",
+            responses={
+                200: {
+                    "description": "Smart import completed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "collection_name": "customer_data_2024",
+                                "collection_description": "Customer data imported and processed with AI",
+                                "processed_data": "[{\"id\": 1, \"name\": \"John\", ...}]",
+                                "original_record_count": 100,
+                                "processed_record_count": 98,
+                                "message": "Successfully imported and processed 100 records into collection 'customer_data_2024'",
+                                "metadata": {
+                                    "llm_provider": "gemini",
+                                    "model_used": "gemini-2.5-flash"
+                                }
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid file format or content"},
+                500: {"description": "Internal server error during processing"}
+            }
+        )
+        async def smart_import(req: SmartImportRequest) -> SmartImportResponse:
+            """
+            **Smart Import - AI-Powered Data Import and Processing**
+            
+            Intelligently imports CSV or JSON files with AI-powered processing:
+            
+            **Process Flow:**
+            1. **Parse File**: Validates and parses CSV or JSON file
+            2. **AI Processing**: Uses LLM to clean, abstract, and transform data
+               - Removes duplicates and inconsistencies
+               - Standardizes formats
+               - Extracts key information
+               - Creates meaningful summaries
+               - Structures for optimal RAG searchability
+            3. **Auto-Naming**: AI generates descriptive collection name and description
+            4. **RAG Format**: Converts to RAG-optimized JSON format
+            5. **Save**: Automatically saves to RAG collection
+            
+            **Features:**
+            - **Intelligent Cleaning**: AI removes noise and standardizes data
+            - **Auto-Naming**: AI generates meaningful collection names
+            - **RAG Optimization**: Data structured for best search performance
+            - **Custom Instructions**: Optional processing instructions for specific needs
+            - **Provider Selection**: Choose LLM provider (Gemini, Qwen, Mistral)
+            
+            **Use Cases:**
+            - Import messy CSV/JSON data and get clean, searchable RAG collections
+            - Automatically organize and name imported datasets
+            - Transform raw data into knowledge base format
+            - Clean and standardize data from various sources
+            
+            **Parameters:**
+            - `file_content`: The file content as string (CSV or JSON)
+            - `file_format`: "csv" or "json"
+            - `llm_provider`: Optional LLM provider (default: system default)
+            - `model_name`: Optional model name (default: provider default)
+            - `processing_instructions`: Optional custom instructions for AI processing
+            - `auto_name`: Whether to auto-generate collection name (default: true)
+            
+            **Returns:**
+            - Collection name and description
+            - Processed data in RAG format
+            - Record counts (original vs processed)
+            - Processing metadata
+            """
+            try:
+                result = await self.rag_system.smart_import(
+                    file_content=req.file_content,
+                    file_format=req.file_format,
+                    llm_provider=req.llm_provider.value if req.llm_provider else None,
+                    model_name=req.model_name,
+                    processing_instructions=req.processing_instructions,
+                    auto_name=req.auto_name,
+                )
+                return SmartImportResponse(**result)
+            except Exception as e:
+                self.logger.error(f"Error in smart import: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get(
@@ -3972,6 +4084,310 @@ Question: {{input}}
             except Exception as e:
                 self.logger.error(f"Error executing flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
+
+        # Special Flow 1 Endpoints
+        @self.app.get(
+            "/special-flows-1",
+            tags=["Special Flows"],
+            summary="List All Special Flow 1",
+            description="Get a list of all Special Flow 1 flows. Returns all configured Special Flow 1 profiles with their configurations.",
+            response_model=List[SpecialFlow1Profile],
+            response_description="List of Special Flow 1 profiles.",
+            responses={
+                200: {
+                    "description": "Successfully retrieved list of Special Flow 1 flows",
+                    "content": {
+                        "application/json": {
+                            "example": [
+                                {
+                                    "id": "my_special_flow",
+                                    "name": "My Special Flow",
+                                    "description": "A special flow for data processing",
+                                    "config": {
+                                        "initial_data_source": {"type": "db_tool", "resource_id": "db1"},
+                                        "dialogue_config": {"system_prompt": "You are a helpful assistant", "max_turns_phase1": 5},
+                                        "data_fetch_trigger": {"type": "turn_count", "value": 3},
+                                        "mid_dialogue_request": {"request_tool_id": "req1"},
+                                        "dialogue_phase2": {"continue_same_conversation": True, "max_turns_phase2": 5},
+                                        "final_processing": {"system_prompt": "Process the data", "input_template": "{{initial_data}}"},
+                                        "final_api_call": {"request_tool_id": "req2", "body_mapping": "{{final_outcome}}"}
+                                    },
+                                    "is_active": True,
+                                    "created_at": "2024-01-01T00:00:00",
+                                    "updated_at": "2024-01-01T00:00:00"
+                                }
+                            ]
+                        }
+                    }
+                },
+                500: {"description": "Internal server error"}
+            }
+        )
+        async def list_special_flows_1() -> List[SpecialFlow1Profile]:
+            """
+            **List All Special Flow 1 Flows**
+            
+            Retrieves all Special Flow 1 flows configured in the system.
+            Returns a list of flow profiles with their complete configurations.
+            """
+            try:
+                flows = self.special_flow_1_service.list_flows()
+                return flows
+            except Exception as e:
+                self.logger.error(f"Error listing special flows 1: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/special-flows-1/{flow_id}",
+            tags=["Special Flows"],
+            summary="Get Special Flow 1",
+            description="Get detailed information about a specific Special Flow 1 by its ID. Returns the complete flow profile including all configuration details.",
+            response_model=SpecialFlow1Profile,
+            response_description="Special Flow 1 profile details.",
+            responses={
+                200: {
+                    "description": "Successfully retrieved Special Flow 1",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "id": "my_special_flow",
+                                "name": "My Special Flow",
+                                "description": "A special flow for data processing",
+                                "config": {
+                                    "initial_data_source": {"type": "db_tool", "resource_id": "db1", "sql_input": None},
+                                    "dialogue_config": {
+                                        "system_prompt": "You are a helpful assistant",
+                                        "max_turns_phase1": 5,
+                                        "use_initial_data": True,
+                                        "llm_provider": None,
+                                        "model_name": None
+                                    },
+                                    "data_fetch_trigger": {"type": "turn_count", "value": 3},
+                                    "mid_dialogue_request": {"request_tool_id": "req1", "param_mapping": {}},
+                                    "dialogue_phase2": {
+                                        "continue_same_conversation": True,
+                                        "inject_fetched_data": True,
+                                        "max_turns_phase2": 5
+                                    },
+                                    "final_processing": {
+                                        "system_prompt": "Process the data",
+                                        "input_template": "{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}",
+                                        "llm_provider": None,
+                                        "model_name": None
+                                    },
+                                    "final_api_call": {"request_tool_id": "req2", "body_mapping": "{{final_outcome}}"}
+                                },
+                                "is_active": True,
+                                "created_at": "2024-01-01T00:00:00",
+                                "updated_at": "2024-01-01T00:00:00",
+                                "metadata": {}
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Special Flow 1 not found"},
+                500: {"description": "Internal server error"}
+            }
+        )
+        async def get_special_flow_1(flow_id: str) -> SpecialFlow1Profile:
+            """
+            **Get Special Flow 1 by ID**
+            
+            Retrieves detailed information about a specific Special Flow 1 flow.
+            Includes the complete configuration for all phases of the flow.
+            """
+            try:
+                flow = self.special_flow_1_service.get_flow(flow_id)
+                if not flow:
+                    raise HTTPException(status_code=404, detail="Special Flow 1 not found")
+                return flow
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting special flow 1 {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/special-flows-1",
+            tags=["Special Flows"],
+            summary="Create Special Flow 1",
+            description="Create a new Special Flow 1 that combines data fetching, dialogue, and API calls. The flow will execute: initial data fetch → dialogue phase 1 → mid-dialogue data fetch → dialogue phase 2 → final processing → final API call.",
+            response_description="Special Flow 1 creation response with flow ID.",
+            status_code=201,
+            responses={
+                201: {
+                    "description": "Special Flow 1 created successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "flow_id": "my_special_flow",
+                                "message": "Special Flow 1 created successfully"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request data"},
+                500: {"description": "Internal server error"}
+            }
+        )
+        async def create_special_flow_1(req: SpecialFlow1CreateRequest):
+            """
+            **Create a New Special Flow 1**
+            
+            Creates a new Special Flow 1 flow with the specified configuration.
+            
+            **Flow Execution Steps:**
+            1. **Initial Data Fetch**: Fetches data from DB tool or Request tool
+            2. **Dialogue Phase 1**: Starts dialogue with initial data (if configured)
+            3. **Mid-Dialogue Data Fetch**: Fetches additional data based on trigger condition
+            4. **Dialogue Phase 2**: Continues dialogue with fetched data
+            5. **Final Processing**: Processes all data using LLM with system prompt
+            6. **Final API Call**: Calls final API with processed outcome
+            
+            **Required Configuration:**
+            - Initial data source (DB tool or Request tool)
+            - Dialogue phase 1 system prompt
+            - Data fetch trigger condition
+            - Mid-dialogue request tool
+            - Final processing system prompt
+            - Final API call request tool
+            """
+            try:
+                flow_id = self.special_flow_1_service.create_flow(req)
+                return {"flow_id": flow_id, "message": "Special Flow 1 created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating special flow 1: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/special-flows-1/{flow_id}",
+            tags=["Special Flows"],
+            summary="Update Special Flow 1",
+            description="Update an existing Special Flow 1. All configuration fields can be updated. The flow ID cannot be changed.",
+            response_description="Confirmation message.",
+            responses={
+                200: {
+                    "description": "Special Flow 1 updated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "message": "Special Flow 1 updated successfully"
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Special Flow 1 not found"},
+                400: {"description": "Invalid request data"},
+                500: {"description": "Internal server error"}
+            }
+        )
+        async def update_special_flow_1(flow_id: str, req: SpecialFlow1UpdateRequest):
+            """
+            **Update Special Flow 1**
+            
+            Updates an existing Special Flow 1 flow with new configuration.
+            All fields in the configuration can be modified.
+            """
+            try:
+                success = self.special_flow_1_service.update_flow(flow_id, req)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Special Flow 1 not found")
+                return {"message": "Special Flow 1 updated successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating special flow 1 {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/special-flows-1/{flow_id}",
+            tags=["Special Flows"],
+            summary="Delete Special Flow 1",
+            description="Delete a Special Flow 1 flow permanently. This action cannot be undone.",
+            response_description="Confirmation message.",
+            responses={
+                200: {
+                    "description": "Special Flow 1 deleted successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "message": "Special Flow 1 deleted successfully"
+                            }
+                        }
+                    }
+                },
+                404: {"description": "Special Flow 1 not found"},
+                500: {"description": "Internal server error"}
+            }
+        )
+        async def delete_special_flow_1(flow_id: str):
+            """
+            **Delete Special Flow 1**
+            
+            Permanently deletes a Special Flow 1 flow from the system.
+            This action cannot be undone.
+            """
+            try:
+                success = self.special_flow_1_service.delete_flow(flow_id)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Special Flow 1 not found")
+                return {"message": "Special Flow 1 deleted successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting special flow 1 {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/special-flows-1/{flow_id}/execute",
+            tags=["Special Flows"],
+            summary="Execute Special Flow 1",
+            description="Execute a Special Flow 1. This will fetch initial data, start dialogue, fetch mid-dialogue data, continue dialogue, process final outcome, and call final API.",
+            response_model=SpecialFlow1ExecuteResponse,
+            response_description="Special Flow 1 execution results.",
+        )
+        async def execute_special_flow_1(flow_id: str, request: SpecialFlow1ExecuteRequest):
+            """Execute a Special Flow 1."""
+            try:
+                result = await self.special_flow_1_service.execute_flow(flow_id, request)
+                return result
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error executing special flow 1 {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+    def _setup_static_handlers(self):
+        """Setup handlers for common browser static file requests to prevent 404 errors"""
+        
+        @self.app.get("/favicon.ico", include_in_schema=False)
+        async def favicon():
+            """Return empty favicon to prevent 404"""
+            return Response(status_code=204)
+        
+        @self.app.get("/manifest.json", include_in_schema=False)
+        async def manifest():
+            """Return manifest.json if it exists, otherwise return empty response"""
+            manifest_path = os.path.join("frontend", "public", "manifest.json")
+            if os.path.exists(manifest_path):
+                from fastapi.responses import FileResponse
+                return FileResponse(manifest_path, media_type="application/json")
+            return Response(status_code=204)
+        
+        @self.app.get("/logo192.png", include_in_schema=False)
+        async def logo192():
+            """Return empty logo to prevent 404"""
+            return Response(status_code=204)
+        
+        @self.app.get("/apple-touch-icon.png", include_in_schema=False)
+        async def apple_touch_icon():
+            """Return empty apple touch icon to prevent 404"""
+            return Response(status_code=204)
+        
+        @self.app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+        async def apple_touch_icon_precomposed():
+            """Return empty apple touch icon precomposed to prevent 404"""
+            return Response(status_code=204)
 
     def get_app(self) -> FastAPI:
         """Get the FastAPI application"""

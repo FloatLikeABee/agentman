@@ -318,6 +318,31 @@ const apiService = {
     const response = await api.post(`/flows/${flowId}/execute`, payload);
     return response.data;
   },
+  // Special Flow 1
+  getSpecialFlows1: async () => {
+    const response = await api.get('/special-flows-1');
+    return response.data;
+  },
+  getSpecialFlow1: async (flowId) => {
+    const response = await api.get(`/special-flows-1/${flowId}`);
+    return response.data;
+  },
+  createSpecialFlow1: async (payload) => {
+    const response = await api.post('/special-flows-1', payload);
+    return response.data;
+  },
+  updateSpecialFlow1: async (flowId, payload) => {
+    const response = await api.put(`/special-flows-1/${flowId}`, payload);
+    return response.data;
+  },
+  deleteSpecialFlow1: async (flowId) => {
+    const response = await api.delete(`/special-flows-1/${flowId}`);
+    return response.data;
+  },
+  executeSpecialFlow1: async (flowId, payload) => {
+    const response = await api.post(`/special-flows-1/${flowId}/execute`, payload);
+    return response.data;
+  },
 };
 
 export default apiService; 
