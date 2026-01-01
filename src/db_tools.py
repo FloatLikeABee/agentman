@@ -220,11 +220,59 @@ class DatabaseToolsManager:
             raise
 
     def _execute_sql_query(self, profile: DatabaseToolProfile) -> Dict[str, Any]:
-        """Execute SQL query for SQL Server or MySQL."""
+        """Execute SQL query for SQL Server, MySQL, or SQLite."""
         try:
             config = profile.connection_config
             
-            if profile.db_type == DatabaseType.MYSQL:
+            if profile.db_type == DatabaseType.SQLITE:
+                try:
+                    import sqlite3
+                except ImportError:
+                    raise ValueError("SQLite support requires sqlite3 module (usually built into Python)")
+                
+                # SQLite connection - use database field as file path, or host if database is empty
+                db_path = config.database if config.database else config.host
+                if not db_path:
+                    raise ValueError("SQLite requires database file path in 'database' or 'host' field")
+                
+                # Build connection kwargs from additional_params
+                conn_kwargs = {}
+                if config.additional_params:
+                    # Common SQLite params: timeout, check_same_thread, isolation_level
+                    if 'timeout' in config.additional_params:
+                        conn_kwargs['timeout'] = float(config.additional_params['timeout'])
+                    if 'check_same_thread' in config.additional_params:
+                        conn_kwargs['check_same_thread'] = bool(config.additional_params['check_same_thread'])
+                    if 'isolation_level' in config.additional_params:
+                        conn_kwargs['isolation_level'] = config.additional_params['isolation_level']
+                
+                # Default: check_same_thread=False for better compatibility
+                if 'check_same_thread' not in conn_kwargs:
+                    conn_kwargs['check_same_thread'] = False
+                
+                connection = sqlite3.connect(db_path, **conn_kwargs)
+                # Enable row factory to return dict-like rows
+                connection.row_factory = sqlite3.Row
+                
+                try:
+                    cursor = connection.cursor()
+                    cursor.execute(profile.sql_statement)
+                    
+                    # Get column names
+                    columns = [description[0] for description in cursor.description] if cursor.description else []
+                    rows = cursor.fetchall()
+                    # Convert Row objects to list of lists
+                    data_rows = [[row[col] for col in columns] for row in rows] if rows else []
+                    
+                    return {
+                        "columns": columns,
+                        "rows": data_rows,
+                        "total_rows": len(data_rows)
+                    }
+                finally:
+                    connection.close()
+                    
+            elif profile.db_type == DatabaseType.MYSQL:
                 try:
                     import pymysql
                 except ImportError:
@@ -321,7 +369,7 @@ class DatabaseToolsManager:
                 finally:
                     connection.close()
             else:
-                raise ValueError(f"Unsupported SQL database type: {profile.db_type}")
+                raise ValueError(f"Unsupported SQL database type: {profile.db_type}. Supported: mysql, sqlserver, sqlite")
                 
         except ValueError:
             raise

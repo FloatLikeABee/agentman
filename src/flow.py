@@ -1073,7 +1073,6 @@ class FlowService:
                             )
                             # Parse response_text as JSON and use it as params (replace existing params)
                             try:
-                                import json
                                 if isinstance(response_text, str):
                                     # Try to parse as JSON
                                     parsed_params = json.loads(response_text)
@@ -1916,120 +1915,165 @@ class SpecialFlow1Service:
         config = flow.config
 
         try:
-            # Step 1: Fetch initial data
-            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 1: Fetching initial data")
-            initial_data = None
-            if config.initial_data_source.type == "db_tool":
-                if not self.db_tools_manager:
-                    raise ValueError("Database tools manager not available")
-                sql_input = request.initial_input if request.initial_input else config.initial_data_source.sql_input
-                initial_data = await asyncio.to_thread(
-                    self.db_tools_manager.execute_query,
-                    tool_id=config.initial_data_source.resource_id,
-                    sql_input=sql_input,
-                    force_refresh=True,
+            # Check if resuming from a specific phase
+            resume_from = request.resume_from_phase
+            dialogue_phase1_result = request.dialogue_phase1_result
+            initial_data = request.initial_data
+            
+            if resume_from == "dialogue_phase1" or resume_from == "dialogue_phase2" or resume_from == "dialogue":
+                if not dialogue_phase1_result:
+                    raise ValueError(f"dialogue_phase1_result is required when resuming from {resume_from}")
+                if not initial_data:
+                    raise ValueError("initial_data is required when resuming")
+                # Check if dialogue is complete
+                if dialogue_phase1_result.get("needs_user_input") and not dialogue_phase1_result.get("is_complete"):
+                    raise ValueError("Cannot resume: dialogue is still waiting for user input and is not complete")
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== RESUMING FROM DIALOGUE ==========")
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Dialogue result: conversation_id={dialogue_phase1_result.get('conversation_id')}, is_complete={dialogue_phase1_result.get('is_complete')}")
+                # Use dialogue_phase1_result as current_dialogue_result for continuous dialogue
+                current_dialogue_result = dialogue_phase1_result
+                conversation_id = current_dialogue_result.get("conversation_id")
+                dialogue_id = current_dialogue_result.get("dialogue_id")
+            else:
+                # Step 1: Fetch initial data
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 1: Fetching initial data ==========")
+                initial_data = None
+                if config.initial_data_source.type == "db_tool":
+                    if not self.db_tools_manager:
+                        raise ValueError("Database tools manager not available")
+                    sql_input = request.initial_input if request.initial_input else config.initial_data_source.sql_input
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Using DB tool: {config.initial_data_source.resource_id}, SQL: {sql_input}")
+                    initial_data = await asyncio.to_thread(
+                        self.db_tools_manager.execute_query,
+                        tool_id=config.initial_data_source.resource_id,
+                        sql_input=sql_input,
+                        force_refresh=True,
+                    )
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 1 OUTPUT: Initial data fetched: {json.dumps(initial_data, indent=2) if initial_data else 'None'}")
+                elif config.initial_data_source.type == "request_tool":
+                    if not self.request_tools_manager:
+                        raise ValueError("Request tools manager not available")
+                    # If initial_input provided, use it to update request params
+                    if request.initial_input:
+                        profile = self.request_tools_manager.get_profile(config.initial_data_source.resource_id)
+                        if profile:
+                            try:
+                                parsed = json.loads(request.initial_input) if isinstance(request.initial_input, str) else request.initial_input
+                                if isinstance(parsed, dict):
+                                    profile.params = {**(profile.params or {}), **parsed}
+                                    self.request_tools_manager.requests[profile.id] = profile
+                                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Updated request params: {json.dumps(parsed, indent=2)}")
+                            except Exception as e:
+                                self.logger.warning(f"[SPECIAL FLOW 1 {flow_id}] Failed to parse initial_input: {e}")
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Using Request tool: {config.initial_data_source.resource_id}")
+                    initial_data = await asyncio.to_thread(
+                        self.request_tools_manager.execute_request,
+                        config.initial_data_source.resource_id
+                    )
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 1 OUTPUT: Initial data fetched: {json.dumps(initial_data, indent=2) if initial_data else 'None'}")
+
+                # Step 2: Start dialogue (continuous - stays open until step 7)
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 2: Starting dialogue ==========")
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] System prompt: {config.dialogue_config.system_prompt[:200]}...")
+                dialogue_phase1_result = await self._start_dialogue_phase1(
+                    flow_id, config, initial_data, request.context or {}
                 )
-            elif config.initial_data_source.type == "request_tool":
-                if not self.request_tools_manager:
-                    raise ValueError("Request tools manager not available")
-                # If initial_input provided, use it to update request params
-                if request.initial_input:
-                    profile = self.request_tools_manager.get_profile(config.initial_data_source.resource_id)
-                    if profile:
-                        try:
-                            import json
-                            parsed = json.loads(request.initial_input) if isinstance(request.initial_input, str) else request.initial_input
-                            if isinstance(parsed, dict):
-                                profile.params = {**(profile.params or {}), **parsed}
-                                self.request_tools_manager.requests[profile.id] = profile
-                        except:
-                            pass
-                initial_data = await asyncio.to_thread(
-                    self.request_tools_manager.execute_request,
-                    config.initial_data_source.resource_id
-                )
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 2 OUTPUT: Dialogue result - conversation_id: {dialogue_phase1_result.get('conversation_id')}, needs_user_input: {dialogue_phase1_result.get('needs_user_input')}, is_complete: {dialogue_phase1_result.get('is_complete')}")
+                if dialogue_phase1_result.get('conversation_history'):
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Conversation history length: {len(dialogue_phase1_result.get('conversation_history', []))}")
 
-            # Step 2: Start dialogue phase 1
-            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 2: Starting dialogue phase 1")
-            dialogue_phase1_result = await self._start_dialogue_phase1(
-                flow_id, config, initial_data, request.context or {}
-            )
-
-            # Check if we need to pause for user interaction
-            if dialogue_phase1_result.get("needs_user_input"):
-                return SpecialFlow1ExecuteResponse(
-                    flow_id=flow_id,
-                    flow_name=flow.name,
-                    success=False,
-                    phase="dialogue_phase1",
-                    initial_data=initial_data,
-                    dialogue_phase1=dialogue_phase1_result,
-                    fetched_data=None,
-                    dialogue_phase2=None,
-                    final_outcome=None,
-                    api_call_result=None,
-                    total_execution_time=time.time() - start_time,
-                    error="Flow paused - waiting for user input in dialogue phase 1",
-                    metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": dialogue_phase1_result.get("conversation_id")},
-                )
-
-            # Step 3: Check trigger condition and fetch mid-dialogue data
-            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 3: Checking trigger condition")
-            should_fetch = self._check_trigger_condition(
-                config.data_fetch_trigger,
-                dialogue_phase1_result
-            )
-
-            fetched_data = None
-            if should_fetch:
-                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 4: Fetching mid-dialogue data")
-                fetched_data = await self._fetch_mid_dialogue_data(
-                    config.mid_dialogue_request,
-                    dialogue_phase1_result
-                )
-
-            # Step 5: Continue dialogue phase 2
-            dialogue_phase2_result = None
-            if fetched_data and config.dialogue_phase2.continue_same_conversation:
-                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 5: Continuing dialogue phase 2")
-                dialogue_phase2_result = await self._continue_dialogue_phase2(
-                    flow_id, config, dialogue_phase1_result, fetched_data, request.context or {}
-                )
-
-                # Check if we need to pause for user interaction
-                if dialogue_phase2_result.get("needs_user_input"):
+                # Store dialogue state for continuous conversation
+                current_dialogue_result = dialogue_phase1_result
+                conversation_id = dialogue_phase1_result.get("conversation_id")
+                dialogue_id = dialogue_phase1_result.get("dialogue_id")
+                
+                # Check if we need to pause for initial user interaction
+                if dialogue_phase1_result.get("needs_user_input") and not dialogue_phase1_result.get("is_complete"):
                     return SpecialFlow1ExecuteResponse(
                         flow_id=flow_id,
                         flow_name=flow.name,
                         success=False,
-                        phase="dialogue_phase2",
+                        phase="dialogue",
                         initial_data=initial_data,
                         dialogue_phase1=dialogue_phase1_result,
-                        fetched_data=fetched_data,
-                        dialogue_phase2=dialogue_phase2_result,
+                        fetched_data=None,
+                        dialogue_phase2=None,
                         final_outcome=None,
                         api_call_result=None,
                         total_execution_time=time.time() - start_time,
-                        error="Flow paused - waiting for user input in dialogue phase 2",
-                        metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": dialogue_phase2_result.get("conversation_id")},
+                        error="Flow paused - waiting for user input in dialogue",
+                        metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": conversation_id, "continuous_dialogue": True},
                     )
 
-            # Step 6: Final processing
-            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 6: Final processing")
+            # Step 3: Check trigger condition and fetch mid-dialogue data
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 3: Checking trigger condition ==========")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Trigger type: {config.data_fetch_trigger.type}, value: {config.data_fetch_trigger.value}")
+            should_fetch = self._check_trigger_condition(
+                config.data_fetch_trigger,
+                current_dialogue_result
+            )
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 3 OUTPUT: Should fetch data: {should_fetch}")
+
+            fetched_data = None
+            if should_fetch:
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 4: Fetching mid-dialogue data ==========")
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Request tool ID: {config.mid_dialogue_request.request_tool_id}")
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Param mapping: {json.dumps(config.mid_dialogue_request.param_mapping, indent=2) if config.mid_dialogue_request.param_mapping else 'None'}")
+                fetched_data = await self._fetch_mid_dialogue_data(
+                    config.mid_dialogue_request,
+                    current_dialogue_result
+                )
+                self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 4 OUTPUT: Fetched data: {json.dumps(fetched_data, indent=2) if fetched_data else 'None'}")
+                
+                # Step 5: Continue the same dialogue with fetched data injected
+                if fetched_data and config.dialogue_phase2.continue_same_conversation and config.dialogue_phase2.inject_fetched_data:
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 5: Continuing dialogue with fetched data ==========")
+                    current_dialogue_result = await self._continue_dialogue_with_data(
+                        flow_id, config, current_dialogue_result, fetched_data
+                    )
+                    self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 5 OUTPUT: Dialogue result - conversation_id: {current_dialogue_result.get('conversation_id')}, needs_user_input: {current_dialogue_result.get('needs_user_input')}, is_complete: {current_dialogue_result.get('is_complete')}")
+                    
+                    # Check if we need to pause for user interaction
+                    if current_dialogue_result.get("needs_user_input") and not current_dialogue_result.get("is_complete"):
+                        return SpecialFlow1ExecuteResponse(
+                            flow_id=flow_id,
+                            flow_name=flow.name,
+                            success=False,
+                            phase="dialogue",
+                            initial_data=initial_data,
+                            dialogue_phase1=current_dialogue_result,
+                            fetched_data=fetched_data,
+                            dialogue_phase2=None,
+                            final_outcome=None,
+                            api_call_result=None,
+                            total_execution_time=time.time() - start_time,
+                            error="Flow paused - waiting for user input in dialogue",
+                            metadata={"paused": True, "waiting_for_dialogue": True, "conversation_id": current_dialogue_result.get("conversation_id"), "continuous_dialogue": True},
+                        )
+
+            # Step 6: Final processing (use current_dialogue_result which contains the full conversation)
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 6: Final processing ==========")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] System prompt: {config.final_processing.system_prompt[:200]}...")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Input template: {config.final_processing.input_template[:200]}...")
             final_outcome = await self._final_processing(
                 config.final_processing,
                 initial_data,
-                dialogue_phase1_result,
+                current_dialogue_result,  # Use current dialogue result (contains full conversation)
                 fetched_data,
-                dialogue_phase2_result
+                None  # No separate phase 2 result since it's continuous
             )
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 6 OUTPUT: Final outcome length: {len(final_outcome) if final_outcome else 0} characters")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Final outcome preview: {final_outcome[:500] if final_outcome else 'None'}...")
 
             # Step 7: Final API call
-            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 7: Final API call")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] ========== STEP 7: Final API call ==========")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Request tool ID: {config.final_api_call.request_tool_id}")
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Body mapping: {config.final_api_call.body_mapping}")
             api_call_result = await self._final_api_call(
                 config.final_api_call,
                 final_outcome
             )
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Step 7 OUTPUT: API call result: {json.dumps(api_call_result, indent=2) if api_call_result else 'None'}")
 
             total_time = time.time() - start_time
             return SpecialFlow1ExecuteResponse(
@@ -2038,9 +2082,9 @@ class SpecialFlow1Service:
                 success=True,
                 phase="complete",
                 initial_data=initial_data,
-                dialogue_phase1=dialogue_phase1_result,
+                dialogue_phase1=current_dialogue_result,  # Full continuous dialogue result
                 fetched_data=fetched_data,
-                dialogue_phase2=dialogue_phase2_result,
+                dialogue_phase2=None,  # No separate phase 2 since it's continuous
                 final_outcome=final_outcome,
                 api_call_result=api_call_result,
                 total_execution_time=total_time,
@@ -2105,6 +2149,34 @@ class SpecialFlow1Service:
             provider = LLMProviderType.GEMINI
             api_key = settings.gemini_api_key
             model_name = settings.gemini_default_model
+
+        # Create or get dialogue profile for this flow
+        from .models import DialogueProfile
+        if dialogue_id not in self.dialogue_manager.dialogues:
+            # Create a temporary dialogue profile
+            dialogue_profile = DialogueProfile(
+                id=dialogue_id,
+                name=f"Special Flow 1 Dialogue - {flow_id}",
+                description=f"Temporary dialogue profile for Special Flow 1: {flow_id}",
+                system_prompt=system_prompt,
+                rag_collection=None,  # DialogueConfig doesn't have rag_collection
+                db_tools=[],  # DialogueConfig doesn't have db_tools
+                request_tools=[],  # DialogueConfig doesn't have request_tools
+                llm_provider=provider,
+                model_name=model_name,
+                max_turns=config.dialogue_config.max_turns_phase1,
+                metadata={"flow_id": flow_id, "is_temporary": True}
+            )
+            self.dialogue_manager.dialogues[dialogue_id] = dialogue_profile
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Created temporary dialogue profile: {dialogue_id}")
+        else:
+            # Update existing profile with current config
+            existing_profile = self.dialogue_manager.dialogues[dialogue_id]
+            existing_profile.system_prompt = system_prompt
+            existing_profile.max_turns = config.dialogue_config.max_turns_phase1
+            existing_profile.llm_provider = provider
+            existing_profile.model_name = model_name
+            # DialogueConfig doesn't have rag_collection, db_tools, or request_tools
 
         # Create LLM caller
         llm_caller = LLMFactory.create_caller(
@@ -2174,6 +2246,8 @@ class SpecialFlow1Service:
         dialogue_result: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Fetch data using request tool based on dialogue context."""
+        import re
+        
         if not self.request_tools_manager:
             raise ValueError("Request tools manager not available")
 
@@ -2181,20 +2255,69 @@ class SpecialFlow1Service:
         if not profile:
             raise ValueError(f"Request tool {request_config.request_tool_id} not found")
 
+        self.logger.info(f"[SPECIAL FLOW 1] _fetch_mid_dialogue_data: Extracting params from dialogue")
+        self.logger.info(f"[SPECIAL FLOW 1] Dialogue conversation history: {json.dumps(dialogue_result.get('conversation_history', []), indent=2)}")
+
         # Map dialogue context to request params if param_mapping provided
         if request_config.param_mapping:
-            import json
+            # First, try to extract JSON from the conversation history
+            # Look for JSON in assistant's last response
+            conversation_history = dialogue_result.get("conversation_history", [])
+            extracted_json = None
+            
+            # Search for JSON in the conversation (usually in assistant's response)
+            for msg in reversed(conversation_history):
+                if msg.get("role") == "assistant":
+                    content = msg.get("content", "")
+                    # Try to find JSON in the content
+                    json_match = re.search(r'\{[^{}]*"username"[^{}]*"formId"[^{}]*\}', content, re.DOTALL)
+                    if json_match:
+                        try:
+                            extracted_json = json.loads(json_match.group())
+                            self.logger.info(f"[SPECIAL FLOW 1] Extracted JSON from dialogue: {json.dumps(extracted_json, indent=2)}")
+                            break
+                        except:
+                            pass
+                    # Also try to find any JSON object
+                    json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
+                    for json_str in json_objects:
+                        try:
+                            parsed = json.loads(json_str)
+                            if "username" in parsed and "formId" in parsed:
+                                extracted_json = parsed
+                                self.logger.info(f"[SPECIAL FLOW 1] Extracted JSON from dialogue: {json.dumps(extracted_json, indent=2)}")
+                                break
+                        except:
+                            pass
+                    if extracted_json:
+                        break
+            
+            # Apply param mapping
             for param_key, template in request_config.param_mapping.items():
-                # Simple template replacement
                 value = template
-                value = value.replace("{{dialogue.user_input}}", dialogue_result.get("user_input", ""))
-                value = value.replace("{{dialogue.response}}", dialogue_result.get("response", ""))
-                # Try to parse as JSON if it looks like JSON
-                try:
-                    value = json.loads(value)
-                except:
-                    pass
+                
+                # If we extracted JSON, use it
+                if extracted_json and param_key in extracted_json:
+                    value = extracted_json[param_key]
+                    self.logger.info(f"[SPECIAL FLOW 1] Using extracted value for {param_key}: {value}")
+                else:
+                    # Try template replacement
+                    value = value.replace("{{dialogue.user_input}}", dialogue_result.get("user_input", ""))
+                    value = value.replace("{{dialogue.response}}", dialogue_result.get("response", ""))
+                    # Try to extract from conversation history
+                    if "{{dialogue.conversation_history}}" in value:
+                        value = value.replace("{{dialogue.conversation_history}}", json.dumps(conversation_history))
+                    # Try to parse as JSON if it looks like JSON
+                    try:
+                        parsed_value = json.loads(value)
+                        value = parsed_value
+                    except:
+                        pass
+                
                 profile.params[param_key] = value
+                self.logger.info(f"[SPECIAL FLOW 1] Set param {param_key} = {value}")
+
+        self.logger.info(f"[SPECIAL FLOW 1] Final request params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
 
         result = await asyncio.to_thread(
             self.request_tools_manager.execute_request,
@@ -2202,25 +2325,161 @@ class SpecialFlow1Service:
         )
         return result
 
-    async def _continue_dialogue_phase2(
+    async def _continue_dialogue_with_data(
         self,
         flow_id: str,
         config: "SpecialFlow1Config",
-        dialogue_phase1_result: Dict[str, Any],
+        current_dialogue_result: Dict[str, Any],
         fetched_data: Dict[str, Any],
-        context: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Continue dialogue phase 2 with fetched data."""
-        # This would continue the existing conversation with fetched data injected
-        # For now, return a placeholder - actual implementation would use dialogue_manager
+        """Continue the same dialogue with fetched data injected."""
+        from .config import settings
+        from .llm_factory import LLMFactory, LLMProvider
+        from .llm_langchain_wrapper import LangChainLLMWrapper
+        from .models import LLMProviderType
+        
+        if not self.dialogue_manager:
+            raise ValueError("Dialogue manager not available")
+        
+        self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] _continue_dialogue_with_data: Continuing dialogue with fetched data")
+        
+        conversation_id = current_dialogue_result.get("conversation_id")
+        dialogue_id = current_dialogue_result.get("dialogue_id")
+        
+        if not conversation_id or not dialogue_id:
+            raise ValueError("Missing conversation_id or dialogue_id")
+        
+        # Get the conversation from dialogue manager
+        conversation = self.dialogue_manager.get_conversation(conversation_id)
+        if not conversation:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        # Get the dialogue profile
+        profile = self.dialogue_manager.get_profile(dialogue_id)
+        if not profile:
+            raise ValueError(f"Dialogue profile {dialogue_id} not found")
+        
+        # Build context with fetched data
+        system_prompt = profile.system_prompt
+        if fetched_data:
+            fetched_data_str = json.dumps(fetched_data, indent=2)
+            system_prompt = f"{system_prompt}\n\nFetched Data:\n{fetched_data_str}"
+            self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Injected fetched data into dialogue system prompt")
+        
+        # Update profile temporarily
+        original_system_prompt = profile.system_prompt
+        profile.system_prompt = system_prompt
+        profile.max_turns = config.dialogue_phase2.max_turns_phase2
+        
+        # Determine provider/model
+        provider = current_dialogue_result.get("llm_provider")
+        model_name = current_dialogue_result.get("model_name")
+        
+        if provider:
+            try:
+                provider = LLMProviderType(provider)
+            except:
+                provider = LLMProviderType.GEMINI
+        
+        if provider == LLMProviderType.GEMINI:
+            api_key = settings.gemini_api_key
+            model_name = model_name or settings.gemini_default_model
+        elif provider == LLMProviderType.QWEN:
+            api_key = settings.qwen_api_key
+            model_name = model_name or settings.qwen_default_model
+        else:
+            provider = LLMProviderType.GEMINI
+            api_key = settings.gemini_api_key
+            model_name = settings.gemini_default_model
+        
+        # Create LLM caller
+        llm_caller = LLMFactory.create_caller(
+            provider=LLMProvider(provider.value),
+            api_key=api_key,
+            model=model_name,
+            temperature=0.7,
+            max_tokens=8192,
+            timeout=settings.api_timeout,
+        )
+        llm = LangChainLLMWrapper(llm_caller=llm_caller)
+        
+        # Get conversation history
+        conversation_history = conversation.get("messages", [])
+        current_turn = conversation.get("turn_number", 0)
+        
+        # Build conversation history string for prompt
+        conversation_history_str = "\n".join([
+            f"{msg.get('role', 'unknown') if isinstance(msg, dict) else getattr(msg, 'role', 'unknown')}: {msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')}"
+            for msg in conversation_history
+        ])
+        
+        # Build prompt with fetched data context
+        if fetched_data:
+            fetched_data_str = json.dumps(fetched_data, indent=2)
+            full_prompt = (
+                f"{system_prompt}\n\n"
+                f"Conversation history so far:\n{conversation_history_str}\n\n"
+                f"Now, based on the fetched data above, ask the user: 'What's the complaint against the user?' "
+                f"or similar question to gather the complaint details."
+            )
+        else:
+            full_prompt = (
+                f"{system_prompt}\n\n"
+                f"Conversation history so far:\n{conversation_history_str}\n\n"
+                f"Now ask the user for the complaint details."
+            )
+        
+        self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] Calling LLM to continue dialogue with fetched data")
+        
+        # Call LLM to generate the next message
+        response_text = await llm.ainvoke(full_prompt)
+        
+        self.logger.info(f"[SPECIAL FLOW 1 {flow_id}] AI response: {response_text[:200]}...")
+        
+        # Add assistant response to conversation
+        self.dialogue_manager._add_message_to_conversation(
+            conversation_id,
+            "assistant",
+            response_text
+        )
+        
+        # Increment turn
+        self.dialogue_manager._increment_turn(conversation_id)
+        
+        # Get updated conversation
+        updated_conversation = self.dialogue_manager.get_conversation(conversation_id)
+        updated_history = updated_conversation.get("messages", [])
+        
+        # Determine if conversation needs to continue
+        response_lower = response_text.lower()
+        asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
+        needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and updated_conversation["turn_number"] < config.dialogue_phase2.max_turns_phase2
+        is_complete = not needs_more_info or updated_conversation["turn_number"] >= config.dialogue_phase2.max_turns_phase2
+        
+        # Restore original system prompt
+        profile.system_prompt = original_system_prompt
+        
         return {
-            "conversation_id": dialogue_phase1_result.get("conversation_id"),
-            "turn_number": dialogue_phase1_result.get("turn_number", 0) + 1,
+            "conversation_id": conversation_id,
+            "dialogue_id": dialogue_id,
+            "turn_number": updated_conversation.get("turn_number", current_turn + 1),
             "max_turns": config.dialogue_phase2.max_turns_phase2,
-            "response": "Dialogue phase 2 - implementation needed",
-            "needs_more_info": False,
-            "is_complete": True,
-            "needs_user_input": False,
+            "response": response_text,
+            "needs_more_info": needs_more_info,
+            "is_complete": is_complete,
+            "needs_user_input": not is_complete,
+            "conversation_history": [
+                msg.model_dump() if hasattr(msg, 'model_dump') 
+                else (msg if isinstance(msg, dict) 
+                else {
+                    "role": getattr(msg, 'role', 'unknown'), 
+                    "content": getattr(msg, 'content', ''),
+                    "timestamp": getattr(msg, 'timestamp', None)
+                }) 
+                for msg in updated_history
+            ],
+            "llm_provider": provider.value,
+            "model_name": model_name,
         }
 
     async def _final_processing(
@@ -2239,6 +2498,8 @@ class SpecialFlow1Service:
 
         # Build input from template
         dialogue_summary = ""
+        
+        # Use dialogue_phase1_result which now contains the full continuous conversation
         if dialogue_phase1_result:
             history = dialogue_phase1_result.get("conversation_history", [])
             dialogue_summary = "\n".join([
@@ -2250,6 +2511,9 @@ class SpecialFlow1Service:
         input_text = input_text.replace("{{initial_data}}", json.dumps(initial_data, indent=2) if initial_data else "None")
         input_text = input_text.replace("{{dialogue_summary}}", dialogue_summary)
         input_text = input_text.replace("{{fetched_data}}", json.dumps(fetched_data, indent=2) if fetched_data else "None")
+        
+        self.logger.info(f"[SPECIAL FLOW 1] Final processing input text length: {len(input_text)}")
+        self.logger.info(f"[SPECIAL FLOW 1] Final processing input preview: {input_text[:1000]}...")
 
         # Determine provider/model
         provider = processing_config.llm_provider or LLMProviderType.GEMINI
@@ -2275,11 +2539,31 @@ class SpecialFlow1Service:
         )
         llm = LangChainLLMWrapper(llm_caller=llm_caller)
 
-        # Build full prompt
-        full_prompt = f"{processing_config.system_prompt}\n\n{input_text}"
+        # Build full prompt with explicit JSON output instruction
+        full_prompt = f"""{processing_config.system_prompt}
+
+IMPORTANT: You must output ONLY valid JSON. Do not include any explanations, thinking, or markdown formatting. Output the JSON directly.
+
+{input_text}
+
+Remember: Output ONLY the JSON object, nothing else."""
+        
+        self.logger.info(f"[SPECIAL FLOW 1] Final processing full prompt length: {len(full_prompt)}")
 
         # Call LLM
         response = await llm.ainvoke(full_prompt)
+        
+        # Try to extract JSON from response if it's wrapped in markdown or has extra text
+        import re
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
+        if json_match:
+            try:
+                extracted_json = json.loads(json_match.group())
+                response = json.dumps(extracted_json, indent=2)
+                self.logger.info(f"[SPECIAL FLOW 1] Extracted JSON from response")
+            except:
+                self.logger.warning(f"[SPECIAL FLOW 1] Failed to extract JSON, using raw response")
+        
         return response
 
     async def _final_api_call(
@@ -2298,7 +2582,6 @@ class SpecialFlow1Service:
         # Map final outcome to request body
         body_mapping = api_config.body_mapping.replace("{{final_outcome}}", final_outcome)
         try:
-            import json
             profile.body = json.loads(body_mapping)
         except:
             profile.body = body_mapping

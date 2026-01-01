@@ -580,7 +580,19 @@ const Flow = () => {
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box sx={{ flex: 1 }}>
-                    <Typography variant="h6" sx={{ mb: 1 }}>{flow.name}</Typography>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        mb: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100%'
+                      }}
+                      title={flow.name}
+                    >
+                      {flow.name}
+                    </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                       {flow.description}
                     </Typography>
@@ -1236,7 +1248,14 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const [executeResult, setExecuteResult] = useState(null);
   const [executeLoading, setExecuteLoading] = useState(false);
+  // Dialogue conversation state for Special Flow 1
+  const [dialogueConversation, setDialogueConversation] = useState(null);
+  const [dialogueMessage, setDialogueMessage] = useState('');
+  const [dialogueLoading, setDialogueLoading] = useState(false);
+  const [openDialogueDialog, setOpenDialogueDialog] = useState(false);
+  const [pausedFlowState, setPausedFlowState] = useState(null);
   const [configEditorMode, setConfigEditorMode] = useState('form'); // 'form' or 'json'
+  const [paramMappingText, setParamMappingText] = useState(''); // Temporary state for param mapping input
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -1294,6 +1313,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
       },
     });
     setConfigEditorMode('form');
+    setParamMappingText('{}');
   };
 
   const updateConfig = (path, value) => {
@@ -1324,20 +1344,69 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
       alert('Please provide a name');
       return;
     }
+    
+    // Ensure param mapping is saved before submission
+    // Use the latest paramMappingText if it exists and is different from formData
+    let finalFormData = { ...formData };
+    if (paramMappingText !== '') {
+      try {
+        const parsed = JSON.parse(paramMappingText);
+        finalFormData = {
+          ...formData,
+          config: {
+            ...formData.config,
+            mid_dialogue_request: {
+              ...formData.config.mid_dialogue_request,
+              param_mapping: parsed,
+            },
+          },
+        };
+      } catch (err) {
+        // If invalid JSON, check if it's just a template string
+        const trimmed = paramMappingText.trim();
+        if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+          // User entered just a template, wrap it in an object
+          try {
+            const wrapped = `{"value": ${JSON.stringify(trimmed)}}`;
+            const parsed = JSON.parse(wrapped);
+            finalFormData = {
+              ...formData,
+              config: {
+                ...formData.config,
+                mid_dialogue_request: {
+                  ...formData.config.mid_dialogue_request,
+                  param_mapping: parsed,
+                },
+              },
+            };
+          } catch (err2) {
+            console.warn('Invalid JSON in parameter mapping:', err2);
+            // Use existing formData
+          }
+        } else {
+          console.warn('Invalid JSON in parameter mapping:', err);
+          // Use existing formData
+        }
+      }
+    }
+    
     if (editingFlowId) {
-      updateFlowMutation.mutate({ flowId: editingFlowId, payload: formData });
+      updateFlowMutation.mutate({ flowId: editingFlowId, payload: finalFormData });
     } else {
-      createFlowMutation.mutate(formData);
+      createFlowMutation.mutate(finalFormData);
     }
   };
 
   const handleEditFlow = (flow) => {
+    const config = flow.config || formData.config;
     setFormData({
       name: flow.name || '',
       description: flow.description || '',
       is_active: flow.is_active !== undefined ? flow.is_active : true,
-      config: flow.config || formData.config,
+      config: config,
     });
+    // Initialize param mapping text
+    setParamMappingText(JSON.stringify(config.mid_dialogue_request?.param_mapping || {}, null, 2));
     setEditingFlowId(flow.id);
     setOpenCreateDialog(true);
   };
@@ -1346,12 +1415,56 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
     if (!selectedFlow) return;
     setExecuteLoading(true);
     setExecuteResult(null);
+    setDialogueConversation(null);
     try {
-      const result = await api.executeSpecialFlow1(selectedFlow.id, {
+      // Check if resuming from a paused state
+      let requestPayload = {
         initial_input: '',
         context: {},
-      });
+      };
+      
+      if (pausedFlowState && pausedFlowState.dialoguePhase1Result) {
+        // Resuming after dialogue (continuous dialogue)
+        requestPayload = {
+          resume_from_phase: 'dialogue',
+          dialogue_phase1_result: pausedFlowState.dialoguePhase1Result,
+          initial_data: pausedFlowState.initialData,
+        };
+      }
+      
+      const result = await api.executeSpecialFlow1(selectedFlow.id, requestPayload);
       setExecuteResult(result);
+      
+      // Check if flow is paused waiting for dialogue (continuous dialogue)
+      if ((result.phase === 'dialogue' || result.phase === 'dialogue_phase1') && result.dialogue_phase1 && result.dialogue_phase1.needs_user_input) {
+        // Store paused state for resuming
+        setPausedFlowState({
+          flowId: result.flow_id,
+          initialData: result.initial_data,
+          dialoguePhase1Result: result.dialogue_phase1,
+          fetchedData: result.fetched_data,
+        });
+        
+        // Set up dialogue conversation (continuous - stays open)
+        const dialogueData = result.dialogue_phase1;
+        setDialogueConversation({
+          flowId: result.flow_id,
+          dialogueId: dialogueData.dialogue_id,
+          conversationId: dialogueData.conversation_id,
+          conversationHistory: dialogueData.conversation_history || [],
+          isComplete: dialogueData.is_complete || false,
+          needsMoreInfo: dialogueData.needs_more_info || true,
+          turnNumber: dialogueData.turn_number || 0,
+          maxTurns: dialogueData.max_turns || 5,
+          waitingForInitial: !dialogueData.conversation_history || dialogueData.conversation_history.length === 0,
+          systemPrompt: dialogueData.system_prompt,
+          phase: 'continuous', // Continuous dialogue
+        });
+        setOpenDialogueDialog(true);
+      } else if (result.success) {
+        // Flow completed, clear paused state
+        setPausedFlowState(null);
+      }
     } catch (error) {
       setExecuteResult({
         success: false,
@@ -1359,6 +1472,108 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
       });
     } finally {
       setExecuteLoading(false);
+    }
+  };
+  
+  const handleDialogueSend = async () => {
+    if (!dialogueConversation || !dialogueMessage.trim()) return;
+    
+    setDialogueLoading(true);
+    try {
+      let result;
+      if (dialogueConversation.waitingForInitial || !dialogueConversation.conversationId) {
+        result = await api.startDialogue(dialogueConversation.dialogueId, {
+          initial_message: dialogueMessage,
+          n_results: 3,
+        });
+      } else {
+        result = await api.continueDialogue(dialogueConversation.dialogueId, {
+          conversation_id: dialogueConversation.conversationId,
+          user_message: dialogueMessage,
+        });
+      }
+      
+      // Update conversation state
+      setDialogueConversation({
+        ...dialogueConversation,
+        conversationId: result.conversation_id,
+        conversationHistory: result.conversation_history || [],
+        isComplete: result.is_complete,
+        needsMoreInfo: result.needs_more_info,
+        turnNumber: result.turn_number,
+        waitingForInitial: false,
+      });
+      
+      setDialogueMessage('');
+      
+      // If dialogue is complete, resume the flow (continuous dialogue)
+      if (result.is_complete && pausedFlowState) {
+        // Update paused state with completed dialogue result
+        const updatedPausedState = {
+          ...pausedFlowState,
+          dialoguePhase1Result: {
+            ...pausedFlowState.dialoguePhase1Result,
+            conversation_id: result.conversation_id,
+            is_complete: true,
+            conversation_history: result.conversation_history,
+            response: result.response,
+            turn_number: result.turn_number,
+            needs_user_input: false,
+          },
+        };
+        setPausedFlowState(updatedPausedState);
+        
+        // Resume the flow
+        setOpenDialogueDialog(false);
+        setExecuteLoading(true);
+        try {
+          const resumePayload = {
+            resume_from_phase: 'dialogue',
+            dialogue_phase1_result: updatedPausedState.dialoguePhase1Result,
+            initial_data: updatedPausedState.initialData,
+          };
+          const resumeResult = await api.executeSpecialFlow1(selectedFlow.id, resumePayload);
+          setExecuteResult(resumeResult);
+          
+          // Check if it paused again (continuous dialogue)
+          if ((resumeResult.phase === 'dialogue' || resumeResult.phase === 'dialogue_phase1') && resumeResult.dialogue_phase1 && resumeResult.dialogue_phase1.needs_user_input) {
+            setPausedFlowState({
+              flowId: resumeResult.flow_id,
+              initialData: resumeResult.initial_data,
+              dialoguePhase1Result: resumeResult.dialogue_phase1,
+              fetchedData: resumeResult.fetched_data,
+            });
+            const dialogueData = resumeResult.dialogue_phase1;
+            setDialogueConversation({
+              flowId: resumeResult.flow_id,
+              dialogueId: dialogueData.dialogue_id,
+              conversationId: dialogueData.conversation_id,
+              conversationHistory: dialogueData.conversation_history || [],
+              isComplete: dialogueData.is_complete || false,
+              needsMoreInfo: dialogueData.needs_more_info || true,
+              turnNumber: dialogueData.turn_number || 0,
+              maxTurns: dialogueData.max_turns || 5,
+              waitingForInitial: false,
+              systemPrompt: dialogueData.system_prompt,
+              phase: 'continuous',
+            });
+            setOpenDialogueDialog(true);
+          } else if (resumeResult.success) {
+            setPausedFlowState(null);
+          }
+        } catch (error) {
+          setExecuteResult({
+            success: false,
+            error: error.response?.data?.detail || error.message,
+          });
+        } finally {
+          setExecuteLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error in dialogue:', error);
+    } finally {
+      setDialogueLoading(false);
     }
   };
 
@@ -1384,10 +1599,33 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
           <Grid item xs={12} md={6} lg={4} key={flow.id}>
             <Card sx={{ boxShadow: 2, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}>
               <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="h6" sx={{ mb: 1 }}>{flow.name}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, gap: 1 }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        mb: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%'
+                      }}
+                      title={flow.name}
+                    >
+                      {flow.name}
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      color="text.secondary" 
+                      sx={{ 
+                        mb: 2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%'
+                      }}
+                      title={flow.description}
+                    >
                       {flow.description}
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
@@ -1403,7 +1641,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                       />
                     </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flexShrink: 0 }}>
                     <IconButton
                       size="small"
                       color="primary"
@@ -1708,19 +1946,55 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                           <TextField
                             fullWidth
                             label="Parameter Mapping (JSON)"
-                            value={JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2)}
+                            value={paramMappingText !== '' ? paramMappingText : JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2)}
                             onChange={(e) => {
+                              const newValue = e.target.value;
+                              setParamMappingText(newValue);
+                              // Try to parse and update config if valid
                               try {
-                                const parsed = JSON.parse(e.target.value);
+                                const parsed = JSON.parse(newValue);
                                 updateConfig('mid_dialogue_request.param_mapping', parsed);
                               } catch (err) {
-                                // Invalid JSON
+                                // Allow typing even if JSON is temporarily invalid
+                              }
+                            }}
+                            onBlur={(e) => {
+                              // On blur, validate and fix JSON
+                              const value = e.target.value.trim();
+                              if (!value) {
+                                setParamMappingText('{}');
+                                updateConfig('mid_dialogue_request.param_mapping', {});
+                                return;
+                              }
+                              try {
+                                const parsed = JSON.parse(value);
+                                const formatted = JSON.stringify(parsed, null, 2);
+                                setParamMappingText(formatted);
+                                updateConfig('mid_dialogue_request.param_mapping', parsed);
+                              } catch (err) {
+                                // If invalid JSON, try to help the user by checking if it's a template string
+                                // If it looks like a template (starts with {{), wrap it in a simple object
+                                if (value.trim().startsWith('{{') && value.trim().endsWith('}}')) {
+                                  // User might have entered just the template, wrap it
+                                  const wrapped = `{"value": ${JSON.stringify(value.trim())}}`;
+                                  try {
+                                    const parsed = JSON.parse(wrapped);
+                                    updateConfig('mid_dialogue_request.param_mapping', parsed);
+                                    setParamMappingText(JSON.stringify(parsed, null, 2));
+                                  } catch (err2) {
+                                    // Still invalid, reset to last valid value
+                                    setParamMappingText(JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2));
+                                  }
+                                } else {
+                                  // Reset to last valid value
+                                  setParamMappingText(JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2));
+                                }
                               }
                             }}
                             multiline
                             rows={4}
-                            placeholder='{"query": "{{dialogue.user_input}}", "body": "{{dialogue.response}}"}'
-                            helperText="Map request parameters from dialogue context. Use {{dialogue.user_input}}, {{dialogue.response}}, etc."
+                            placeholder='{"username": "{{dialogue.extract.username}}", "formId": "{{dialogue.extract.formId}}"}'
+                            helperText="Map request parameters. The system will automatically extract JSON from dialogue (e.g., {'username': '...', 'formId': '...'}). You can also use {{dialogue.user_input}}, {{dialogue.response}}, etc."
                             sx={{ fontFamily: 'monospace' }}
                           />
                         </Grid>
@@ -1943,6 +2217,127 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
           >
             {executeLoading ? 'Executing...' : 'Execute Flow'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue Dialog for Special Flow 1 */}
+      <Dialog
+        open={openDialogueDialog}
+        onClose={() => !dialogueLoading && setOpenDialogueDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ChatIcon color="primary" />
+            <Typography>
+              Special Flow 1 - Dialogue {dialogueConversation?.phase === 'phase2' ? 'Phase 2' : 'Phase 1'}
+            </Typography>
+            {dialogueConversation && (
+              <Chip
+                size="small"
+                label={`Turn: ${dialogueConversation.turnNumber}/${dialogueConversation.maxTurns}`}
+                sx={{ ml: 'auto' }}
+              />
+            )}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {dialogueLoading && <LinearProgress sx={{ mb: 2 }} />}
+          {dialogueConversation && (
+            <Box>
+              {/* Conversation History */}
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: 'grey.50',
+                  borderRadius: 1,
+                  maxHeight: 400,
+                  overflow: 'auto',
+                  mb: 2,
+                }}
+              >
+                {dialogueConversation.conversationHistory.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                    Start a conversation by typing a message below
+                  </Typography>
+                ) : (
+                  dialogueConversation.conversationHistory.map((msg, idx) => (
+                    <Box
+                      key={idx}
+                      sx={{
+                        mb: 2,
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          maxWidth: '80%',
+                          bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                          color: msg.role === 'user' ? 'white' : 'text.primary',
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                          {msg.role === 'user' ? 'You' : 'Assistant'}
+                        </Typography>
+                        <Typography variant="body2">{msg.content}</Typography>
+                      </Box>
+                    </Box>
+                  ))
+                )}
+              </Box>
+
+              {/* Status Messages */}
+              {dialogueConversation.isComplete && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Conversation complete. The flow will resume automatically.
+                </Alert>
+              )}
+              {dialogueConversation.needsMoreInfo && !dialogueConversation.isComplete && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  The assistant needs more information. Please respond below.
+                </Alert>
+              )}
+
+              {/* Message Input */}
+              {!dialogueConversation.isComplete && (
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  label={dialogueConversation.waitingForInitial ? "Start conversation" : "Your message"}
+                  value={dialogueMessage}
+                  onChange={(e) => setDialogueMessage(e.target.value)}
+                  disabled={dialogueLoading}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleDialogueSend();
+                    }
+                  }}
+                  sx={{ mb: 2 }}
+                />
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDialogueDialog(false)} disabled={dialogueLoading}>
+            Close
+          </Button>
+          {dialogueConversation && !dialogueConversation.isComplete && (
+            <Button
+              onClick={handleDialogueSend}
+              variant="contained"
+              disabled={dialogueLoading || !dialogueMessage.trim()}
+              startIcon={<SendIcon />}
+            >
+              {dialogueLoading ? 'Sending...' : 'Send'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

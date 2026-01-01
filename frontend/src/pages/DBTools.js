@@ -131,6 +131,8 @@ const DBTools = () => {
         return 3306;
       case 'sqlserver':
         return 1433;
+      case 'sqlite':
+        return 0; // SQLite doesn't use port
       case 'mongodb':
         return 27017;
       default:
@@ -139,16 +141,21 @@ const DBTools = () => {
   };
 
   const handleCreate = () => {
+    // For SQLite, use database field as file path, or host if database is empty
+    const dbPath = createForm.db_type === 'sqlite' 
+      ? (createForm.database || createForm.host)
+      : createForm.database;
+    
     const payload = {
       name: createForm.name,
       description: createForm.description || null,
       db_type: createForm.db_type,
       connection_config: {
-        host: createForm.host,
-        port: createForm.port,
-        database: createForm.database,
-        username: createForm.username,
-        password: createForm.password,
+        host: createForm.db_type === 'sqlite' ? dbPath : createForm.host,
+        port: createForm.db_type === 'sqlite' ? 0 : createForm.port,
+        database: dbPath,
+        username: createForm.db_type === 'sqlite' ? '' : createForm.username,
+        password: createForm.db_type === 'sqlite' ? '' : createForm.password,
         additional_params: createForm.additional_params || {},
       },
       sql_statement: createForm.sql_statement,
@@ -183,19 +190,29 @@ const DBTools = () => {
   };
 
   const handleUpdate = () => {
+    // For SQLite, use database field as file path, or host if database is empty
+    const dbPath = createForm.db_type === 'sqlite' 
+      ? (createForm.database || createForm.host)
+      : createForm.database;
+    
     const connectionConfig = {
-      host: createForm.host,
-      port: createForm.port,
-      database: createForm.database,
-      username: createForm.username,
+      host: createForm.db_type === 'sqlite' ? dbPath : createForm.host,
+      port: createForm.db_type === 'sqlite' ? 0 : createForm.port,
+      database: dbPath,
+      username: createForm.db_type === 'sqlite' ? '' : createForm.username,
       additional_params: createForm.additional_params || {},
     };
     
     // Only include password if provided (empty/null means keep existing)
-    if (createForm.password && createForm.password.trim() !== '') {
-      connectionConfig.password = createForm.password;
+    // For SQLite, password is not used
+    if (createForm.db_type !== 'sqlite') {
+      if (createForm.password && createForm.password.trim() !== '') {
+        connectionConfig.password = createForm.password;
+      } else {
+        connectionConfig.password = null; // Backend will preserve existing
+      }
     } else {
-      connectionConfig.password = null; // Backend will preserve existing
+      connectionConfig.password = null;
     }
     
     const payload = {
@@ -271,6 +288,8 @@ const DBTools = () => {
         return 'success';
       case 'sqlserver':
         return 'primary';
+      case 'sqlite':
+        return 'info';
       case 'mongodb':
         return 'warning';
       default:
@@ -284,6 +303,8 @@ const DBTools = () => {
         return 'MySQL';
       case 'sqlserver':
         return 'SQL Server';
+      case 'sqlite':
+        return 'SQLite';
       case 'mongodb':
         return 'MongoDB';
       default:
@@ -624,61 +645,82 @@ const DBTools = () => {
               >
                 <MenuItem value="mysql">MySQL</MenuItem>
                 <MenuItem value="sqlserver">SQL Server</MenuItem>
+                <MenuItem value="sqlite">SQLite</MenuItem>
                 <MenuItem value="mongodb">MongoDB</MenuItem>
               </Select>
             </FormControl>
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={8}>
+            {createForm.db_type === 'sqlite' ? (
+              <TextField
+                fullWidth
+                label="Database File Path"
+                value={createForm.database || createForm.host}
+                onChange={(e) => {
+                  setCreateForm({ 
+                    ...createForm, 
+                    database: e.target.value,
+                    host: e.target.value 
+                  });
+                }}
+                sx={{ mb: 2 }}
+                required
+                helperText="Path to SQLite database file (e.g., /path/to/database.db or ./data.db)"
+              />
+            ) : (
+              <>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={12} sm={8}>
+                    <TextField
+                      fullWidth
+                      label="Host"
+                      value={createForm.host}
+                      onChange={(e) => setCreateForm({ ...createForm, host: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label="Port"
+                      type="number"
+                      value={createForm.port}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, port: parseInt(e.target.value) || getDefaultPort(createForm.db_type) })
+                      }
+                      required
+                    />
+                  </Grid>
+                </Grid>
                 <TextField
                   fullWidth
-                  label="Host"
-                  value={createForm.host}
-                  onChange={(e) => setCreateForm({ ...createForm, host: e.target.value })}
+                  label="Database Name"
+                  value={createForm.database}
+                  onChange={(e) => setCreateForm({ ...createForm, database: e.target.value })}
+                  sx={{ mb: 2 }}
                   required
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="Port"
-                  type="number"
-                  value={createForm.port}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, port: parseInt(e.target.value) || getDefaultPort(createForm.db_type) })
-                  }
-                  required
-                />
-              </Grid>
-            </Grid>
-            <TextField
-              fullWidth
-              label="Database Name"
-              value={createForm.database}
-              onChange={(e) => setCreateForm({ ...createForm, database: e.target.value })}
-              sx={{ mb: 2 }}
-              required
-            />
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Username"
-                  value={createForm.username}
-                  onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
-                  required
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Password"
-                  type="password"
-                  value={createForm.password}
-                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                  required
-                />
-              </Grid>
-            </Grid>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Username"
+                      value={createForm.username}
+                      onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Password"
+                      type="password"
+                      value={createForm.password}
+                      onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                </Grid>
+              </>
+            )}
             <FormControlLabel
               control={
                 <Switch
@@ -774,11 +816,13 @@ const DBTools = () => {
             disabled={
               createMutation.isLoading ||
               !createForm.name.trim() ||
-              !createForm.host.trim() ||
-              !createForm.database.trim() ||
-              !createForm.username.trim() ||
-              !createForm.password.trim() ||
-              !createForm.sql_statement.trim()
+              !createForm.sql_statement.trim() ||
+              (createForm.db_type === 'sqlite' 
+                ? !createForm.database.trim() && !createForm.host.trim()
+                : !createForm.host.trim() || 
+                  !createForm.database.trim() || 
+                  !createForm.username.trim() || 
+                  !createForm.password.trim())
             }
           >
             {createMutation.isLoading ? 'Creating...' : 'Create'}
@@ -838,61 +882,82 @@ const DBTools = () => {
               >
                 <MenuItem value="mysql">MySQL</MenuItem>
                 <MenuItem value="sqlserver">SQL Server</MenuItem>
+                <MenuItem value="sqlite">SQLite</MenuItem>
                 <MenuItem value="mongodb">MongoDB</MenuItem>
               </Select>
             </FormControl>
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={8}>
+            {createForm.db_type === 'sqlite' ? (
+              <TextField
+                fullWidth
+                label="Database File Path"
+                value={createForm.database || createForm.host}
+                onChange={(e) => {
+                  setCreateForm({ 
+                    ...createForm, 
+                    database: e.target.value,
+                    host: e.target.value 
+                  });
+                }}
+                sx={{ mb: 2 }}
+                required
+                helperText="Path to SQLite database file (e.g., /path/to/database.db or ./data.db)"
+              />
+            ) : (
+              <>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={12} sm={8}>
+                    <TextField
+                      fullWidth
+                      label="Host"
+                      value={createForm.host}
+                      onChange={(e) => setCreateForm({ ...createForm, host: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label="Port"
+                      type="number"
+                      value={createForm.port}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, port: parseInt(e.target.value) || getDefaultPort(createForm.db_type) })
+                      }
+                      required
+                    />
+                  </Grid>
+                </Grid>
                 <TextField
                   fullWidth
-                  label="Host"
-                  value={createForm.host}
-                  onChange={(e) => setCreateForm({ ...createForm, host: e.target.value })}
+                  label="Database Name"
+                  value={createForm.database}
+                  onChange={(e) => setCreateForm({ ...createForm, database: e.target.value })}
+                  sx={{ mb: 2 }}
                   required
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="Port"
-                  type="number"
-                  value={createForm.port}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, port: parseInt(e.target.value) || getDefaultPort(createForm.db_type) })
-                  }
-                  required
-                />
-              </Grid>
-            </Grid>
-            <TextField
-              fullWidth
-              label="Database Name"
-              value={createForm.database}
-              onChange={(e) => setCreateForm({ ...createForm, database: e.target.value })}
-              sx={{ mb: 2 }}
-              required
-            />
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Username"
-                  value={createForm.username}
-                  onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
-                  required
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Password"
-                  type="password"
-                  value={createForm.password}
-                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                  helperText="Leave blank to keep existing password, or enter new password"
-                />
-              </Grid>
-            </Grid>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Username"
+                      value={createForm.username}
+                      onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Password"
+                      type="password"
+                      value={createForm.password}
+                      onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                      helperText="Leave blank to keep existing password, or enter new password"
+                    />
+                  </Grid>
+                </Grid>
+              </>
+            )}
             <FormControlLabel
               control={
                 <Switch
@@ -988,10 +1053,12 @@ const DBTools = () => {
             disabled={
               updateMutation.isLoading ||
               !createForm.name.trim() ||
-              !createForm.host.trim() ||
-              !createForm.database.trim() ||
-              !createForm.username.trim() ||
-              !createForm.sql_statement.trim()
+              !createForm.sql_statement.trim() ||
+              (createForm.db_type === 'sqlite' 
+                ? !createForm.database.trim() && !createForm.host.trim()
+                : !createForm.host.trim() || 
+                  !createForm.database.trim() || 
+                  !createForm.username.trim())
             }
           >
             {updateMutation.isLoading ? 'Updating...' : 'Update'}

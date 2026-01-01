@@ -220,31 +220,43 @@ class DatabaseType(str, Enum):
     SQLSERVER = "sqlserver"
     MYSQL = "mysql"
     MONGODB = "mongodb"
+    SQLITE = "sqlite"
 
 
 class DatabaseConnectionConfig(BaseModel):
-    """Database connection configuration"""
-    host: str = Field(..., description="Database host address")
-    port: int = Field(..., description="Database port number")
-    database: str = Field(..., description="Database name")
-    username: str = Field(..., description="Database username")
-    password: str = Field(..., description="Database password")
+    """Database connection configuration
+    
+    For SQLite: 
+    - Use 'database' field for the SQLite file path (e.g., '/path/to/database.db' or './data.db')
+    - 'host', 'port', 'username', 'password' are not used
+    - 'additional_params' can include: timeout, check_same_thread, isolation_level
+    """
+    host: str = Field(..., description="Database host address (for SQLite: can be used as alternative to 'database' field for file path)")
+    port: int = Field(..., description="Database port number (not used for SQLite)")
+    database: str = Field(..., description="Database name (for SQLite: database file path, e.g., '/path/to/database.db')")
+    username: str = Field(..., description="Database username (not used for SQLite)")
+    password: str = Field(..., description="Database password (not used for SQLite)")
     additional_params: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional connection parameters (e.g., SSL settings, connection pool settings)"
+        description="Additional connection parameters. For SQLite: timeout (float), check_same_thread (bool), isolation_level (str). For others: SSL settings, connection pool settings."
     )
 
 
 class DatabaseConnectionConfigUpdate(BaseModel):
-    """Database connection configuration for updates (password optional)"""
-    host: str = Field(..., description="Database host address")
-    port: int = Field(..., description="Database port number")
-    database: str = Field(..., description="Database name")
-    username: str = Field(..., description="Database username")
-    password: Optional[str] = Field(None, description="Database password (optional, omit to keep existing)")
+    """Database connection configuration for updates (password optional)
+    
+    For SQLite: 
+    - Use 'database' field for the SQLite file path
+    - 'host', 'port', 'username', 'password' are not used
+    """
+    host: str = Field(..., description="Database host address (for SQLite: can be used as alternative to 'database' field for file path)")
+    port: int = Field(..., description="Database port number (not used for SQLite)")
+    database: str = Field(..., description="Database name (for SQLite: database file path)")
+    username: str = Field(..., description="Database username (not used for SQLite)")
+    password: Optional[str] = Field(None, description="Database password (optional, omit to keep existing, not used for SQLite)")
     additional_params: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional connection parameters (e.g., SSL settings, connection pool settings)"
+        description="Additional connection parameters. For SQLite: timeout, check_same_thread, isolation_level."
     )
 
 
@@ -253,7 +265,7 @@ class DatabaseToolProfile(BaseModel):
     id: str = Field(..., description="Unique database tool id")
     name: str = Field(..., description="Display name")
     description: Optional[str] = Field(None, description="Description / use case")
-    db_type: DatabaseType = Field(..., description="Database type (sqlserver, mysql, mongodb)")
+    db_type: DatabaseType = Field(..., description="Database type (sqlserver, mysql, sqlite, mongodb)")
     connection_config: DatabaseConnectionConfig = Field(..., description="Database connection configuration")
     sql_statement: str = Field(..., description="SQL query statement (for SQL databases) or query (for MongoDB)")
     is_active: bool = Field(default=True, description="Whether this database tool is active")
@@ -855,6 +867,10 @@ class SpecialFlow1ExecuteRequest(BaseModel):
     """Request to execute a Special Flow 1"""
     initial_input: Optional[str] = Field(None, description="Optional initial input (for DB tool SQL or request params)")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+    resume_from_phase: Optional[str] = Field(None, description="Resume from specific phase: 'dialogue_phase1', 'dialogue_phase2'. If provided, dialogue_phase1_result must also be provided.")
+    dialogue_phase1_result: Optional[Dict[str, Any]] = Field(None, description="Dialogue phase 1 result to resume from (required if resume_from_phase is set)")
+    dialogue_phase2_result: Optional[Dict[str, Any]] = Field(None, description="Dialogue phase 2 result to resume from (required if resume_from_phase is 'dialogue_phase2')")
+    initial_data: Optional[Dict[str, Any]] = Field(None, description="Initial data from previous execution (required if resuming)")
 
 
 class SpecialFlow1ExecuteResponse(BaseModel):

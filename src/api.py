@@ -2348,11 +2348,12 @@ Question: {{input}}
             """
             **Create Database Tool Profile**
             
-            Creates a new database tool profile that can execute queries against SQL Server, MySQL, or MongoDB databases.
+            Creates a new database tool profile that can execute queries against SQL Server, MySQL, SQLite, or MongoDB databases.
             
             **Database Types Supported:**
             - **SQL Server**: Microsoft SQL Server databases
             - **MySQL**: MySQL/MariaDB databases
+            - **SQLite**: SQLite file-based databases
             - **MongoDB**: MongoDB NoSQL databases
             
             **Connection Configuration:**
@@ -2633,9 +2634,10 @@ Question: {{input}}
             
             **Database-Specific Notes:**
             
-            **SQL Server/MySQL:**
+            **SQL Server/MySQL/SQLite:**
             - Use standard SQL SELECT statements
             - Example: `SELECT id, name, email FROM users WHERE active = 1`
+            - For SQLite: Provide database file path in 'database' field (e.g., '/path/to/database.db')
             
             **MongoDB:**
             - Use JSON query format:
@@ -4342,12 +4344,47 @@ Question: {{input}}
             "/special-flows-1/{flow_id}/execute",
             tags=["Special Flows"],
             summary="Execute Special Flow 1",
-            description="Execute a Special Flow 1. This will fetch initial data, start dialogue, fetch mid-dialogue data, continue dialogue, process final outcome, and call final API.",
+            description="Execute a Special Flow 1. This will fetch initial data, start dialogue, fetch mid-dialogue data, continue dialogue, process final outcome, and call final API. To resume after dialogue phase 1, set resume_from_phase='dialogue_phase1' and provide dialogue_phase1_result and initial_data from the previous execution.",
             response_model=SpecialFlow1ExecuteResponse,
             response_description="Special Flow 1 execution results.",
         )
         async def execute_special_flow_1(flow_id: str, request: SpecialFlow1ExecuteRequest):
-            """Execute a Special Flow 1."""
+            """
+            **Execute Special Flow 1**
+            
+            Executes a Special Flow 1 flow. The flow will:
+            1. Fetch initial data (DB tool or Request tool)
+            2. Start dialogue phase 1 with initial data
+            3. Pause and wait for user input (if needed)
+            4. Fetch mid-dialogue data when trigger condition is met
+            5. Continue dialogue phase 2 with fetched data
+            6. Process final outcome using LLM
+            7. Call final API with processed outcome
+            
+            **Resuming After Dialogue Phase 1:**
+            
+            When the flow pauses after dialogue phase 1 (returns with `phase="dialogue_phase1"` and `needs_user_input=True`):
+            
+            1. Continue the dialogue conversation using `/dialogues/{dialogue_id}/continue` with the `conversation_id` from the response
+            2. Once the dialogue is complete (`is_complete=True`), resume the flow by calling this endpoint again with:
+               - `resume_from_phase`: "dialogue_phase1"
+               - `dialogue_phase1_result`: The complete dialogue result from the dialogue API
+               - `initial_data`: The `initial_data` from the previous execution response
+            
+            **Example Resume Request:**
+            ```json
+            {
+              "resume_from_phase": "dialogue_phase1",
+              "dialogue_phase1_result": {
+                "conversation_id": "...",
+                "is_complete": true,
+                "response": "...",
+                "conversation_history": [...]
+              },
+              "initial_data": {...}
+            }
+            ```
+            """
             try:
                 result = await self.special_flow_1_service.execute_flow(flow_id, request)
                 return result
