@@ -825,10 +825,10 @@ class FinalAPICallConfig(BaseModel):
 class SpecialFlow1Config(BaseModel):
     """Configuration for Dialogue-Driven Flow"""
     initial_data_source: InitialDataSourceConfig = Field(..., description="Initial data source configuration")
-    dialogue_config: DialogueConfig = Field(..., description="Dialogue phase 1 configuration")
-    data_fetch_trigger: DataFetchTrigger = Field(..., description="When to trigger data fetch")
-    mid_dialogue_request: MidDialogueRequestConfig = Field(..., description="Mid-dialogue request configuration")
-    dialogue_phase2: DialoguePhase2Config = Field(..., description="Dialogue phase 2 configuration")
+    dialogue_config: DialogueConfig = Field(..., description="Dialogue configuration")
+    data_fetch_trigger: Optional[DataFetchTrigger] = Field(None, description="When to trigger data fetch (deprecated - not used in simplified flow)")
+    mid_dialogue_request: MidDialogueRequestConfig = Field(..., description="Request configuration for fetching data after dialogue")
+    dialogue_phase2: Optional[DialoguePhase2Config] = Field(None, description="Dialogue phase 2 configuration (deprecated - not used in simplified flow)")
     final_processing: FinalProcessingConfig = Field(..., description="Final processing configuration")
     final_api_call: FinalAPICallConfig = Field(..., description="Final API call configuration")
 
