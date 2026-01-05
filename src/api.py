@@ -262,7 +262,7 @@ class RAGAPI:
             dialogue_manager=self.dialogue_manager,
         )
         
-        # Initialize Special Flow 1 Service
+        # Initialize Dialogue-Driven Flow Service
         from .flow import SpecialFlow1Service
         self.special_flow_1_service = SpecialFlow1Service(
             db_tools_manager=self.db_tools_manager,
@@ -4087,17 +4087,17 @@ Question: {{input}}
                 self.logger.error(f"Error executing flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # Special Flow 1 Endpoints
+        # Dialogue-Driven Flow Endpoints
         @self.app.get(
             "/special-flows-1",
-            tags=["Special Flows"],
-            summary="List All Special Flow 1",
-            description="Get a list of all Special Flow 1 flows. Returns all configured Special Flow 1 profiles with their configurations.",
+            tags=["Dialogue-Driven Flows"],
+            summary="List All Dialogue-Driven Flows",
+            description="Get a list of all Dialogue-Driven Flows. Returns all configured Dialogue-Driven Flow profiles with their configurations.",
             response_model=List[SpecialFlow1Profile],
-            response_description="List of Special Flow 1 profiles.",
+            response_description="List of Dialogue-Driven Flow profiles.",
             responses={
                 200: {
-                    "description": "Successfully retrieved list of Special Flow 1 flows",
+                    "description": "Successfully retrieved list of Dialogue-Driven Flows",
                     "content": {
                         "application/json": {
                             "example": [
@@ -4127,28 +4127,28 @@ Question: {{input}}
         )
         async def list_special_flows_1() -> List[SpecialFlow1Profile]:
             """
-            **List All Special Flow 1 Flows**
+            **List All Dialogue-Driven Flows**
             
-            Retrieves all Special Flow 1 flows configured in the system.
+            Retrieves all Dialogue-Driven Flows configured in the system.
             Returns a list of flow profiles with their complete configurations.
             """
             try:
                 flows = self.special_flow_1_service.list_flows()
                 return flows
             except Exception as e:
-                self.logger.error(f"Error listing special flows 1: {e}", exc_info=True)
+                self.logger.error(f"Error listing dialogue-driven flows: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get(
             "/special-flows-1/{flow_id}",
-            tags=["Special Flows"],
-            summary="Get Special Flow 1",
-            description="Get detailed information about a specific Special Flow 1 by its ID. Returns the complete flow profile including all configuration details.",
+            tags=["Dialogue-Driven Flows"],
+            summary="Get Dialogue-Driven Flow",
+            description="Get detailed information about a specific Dialogue-Driven Flow by its ID. Returns the complete flow profile including all configuration details.",
             response_model=SpecialFlow1Profile,
-            response_description="Special Flow 1 profile details.",
+            response_description="Dialogue-Driven Flow profile details.",
             responses={
                 200: {
-                    "description": "Successfully retrieved Special Flow 1",
+                    "description": "Successfully retrieved Dialogue-Driven Flow",
                     "content": {
                         "application/json": {
                             "example": {
@@ -4193,9 +4193,9 @@ Question: {{input}}
         )
         async def get_special_flow_1(flow_id: str) -> SpecialFlow1Profile:
             """
-            **Get Special Flow 1 by ID**
+            **Get Dialogue-Driven Flow by ID**
             
-            Retrieves detailed information about a specific Special Flow 1 flow.
+            Retrieves detailed information about a specific Dialogue-Driven Flow.
             Includes the complete configuration for all phases of the flow.
             """
             try:
@@ -4206,19 +4206,19 @@ Question: {{input}}
             except HTTPException:
                 raise
             except Exception as e:
-                self.logger.error(f"Error getting special flow 1 {flow_id}: {e}", exc_info=True)
+                self.logger.error(f"Error getting dialogue-driven flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post(
             "/special-flows-1",
-            tags=["Special Flows"],
-            summary="Create Special Flow 1",
-            description="Create a new Special Flow 1 that combines data fetching, dialogue, and API calls. The flow will execute: initial data fetch → dialogue phase 1 → mid-dialogue data fetch → dialogue phase 2 → final processing → final API call.",
-            response_description="Special Flow 1 creation response with flow ID.",
+            tags=["Dialogue-Driven Flows"],
+            summary="Create Dialogue-Driven Flow",
+            description="Create a new Dialogue-Driven Flow that combines data fetching, dialogue, and API calls. The flow will execute: initial data fetch → dialogue (caches conversation) → fetch data after dialogue → final processing → final API call.",
+            response_description="Dialogue-Driven Flow creation response with flow ID.",
             status_code=201,
             responses={
                 201: {
-                    "description": "Special Flow 1 created successfully",
+                    "description": "Dialogue-Driven Flow created successfully",
                     "content": {
                         "application/json": {
                             "example": {
@@ -4234,147 +4234,144 @@ Question: {{input}}
         )
         async def create_special_flow_1(req: SpecialFlow1CreateRequest):
             """
-            **Create a New Special Flow 1**
+            **Create a New Dialogue-Driven Flow**
             
-            Creates a new Special Flow 1 flow with the specified configuration.
+            Creates a new Dialogue-Driven Flow with the specified configuration.
             
             **Flow Execution Steps:**
             1. **Initial Data Fetch**: Fetches data from DB tool or Request tool
-            2. **Dialogue Phase 1**: Starts dialogue with initial data (if configured)
-            3. **Mid-Dialogue Data Fetch**: Fetches additional data based on trigger condition
-            4. **Dialogue Phase 2**: Continues dialogue with fetched data
-            5. **Final Processing**: Processes all data using LLM with system prompt
-            6. **Final API Call**: Calls final API with processed outcome
+            2. **Dialogue**: Starts dialogue with initial data (caches all conversation)
+            3. **After Dialogue Data Fetch**: Fetches data after dialogue using cached conversation
+            4. **Final Processing**: Processes all data using LLM with system prompt (uses cached conversation)
+            5. **Final API Call**: Calls final API with processed outcome
             
             **Required Configuration:**
             - Initial data source (DB tool or Request tool)
-            - Dialogue phase 1 system prompt
-            - Data fetch trigger condition
-            - Mid-dialogue request tool
+            - Dialogue system prompt
+            - After dialogue request tool
             - Final processing system prompt
             - Final API call request tool
             """
             try:
                 flow_id = self.special_flow_1_service.create_flow(req)
-                return {"flow_id": flow_id, "message": "Special Flow 1 created successfully"}
+                return {"flow_id": flow_id, "message": "Dialogue-Driven Flow created successfully"}
             except Exception as e:
-                self.logger.error(f"Error creating special flow 1: {e}", exc_info=True)
+                self.logger.error(f"Error creating dialogue-driven flow: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.put(
             "/special-flows-1/{flow_id}",
-            tags=["Special Flows"],
-            summary="Update Special Flow 1",
-            description="Update an existing Special Flow 1. All configuration fields can be updated. The flow ID cannot be changed.",
+            tags=["Dialogue-Driven Flows"],
+            summary="Update Dialogue-Driven Flow",
+            description="Update an existing Dialogue-Driven Flow. All configuration fields can be updated. The flow ID cannot be changed.",
             response_description="Confirmation message.",
             responses={
                 200: {
-                    "description": "Special Flow 1 updated successfully",
+                    "description": "Dialogue-Driven Flow updated successfully",
                     "content": {
                         "application/json": {
                             "example": {
-                                "message": "Special Flow 1 updated successfully"
+                                "message": "Dialogue-Driven Flow updated successfully"
                             }
                         }
                     }
                 },
-                404: {"description": "Special Flow 1 not found"},
+                404: {"description": "Dialogue-Driven Flow not found"},
                 400: {"description": "Invalid request data"},
                 500: {"description": "Internal server error"}
             }
         )
         async def update_special_flow_1(flow_id: str, req: SpecialFlow1UpdateRequest):
             """
-            **Update Special Flow 1**
+            **Update Dialogue-Driven Flow**
             
-            Updates an existing Special Flow 1 flow with new configuration.
+            Updates an existing Dialogue-Driven Flow with new configuration.
             All fields in the configuration can be modified.
             """
             try:
                 success = self.special_flow_1_service.update_flow(flow_id, req)
                 if not success:
-                    raise HTTPException(status_code=404, detail="Special Flow 1 not found")
-                return {"message": "Special Flow 1 updated successfully"}
+                    raise HTTPException(status_code=404, detail="Dialogue-Driven Flow not found")
+                return {"message": "Dialogue-Driven Flow updated successfully"}
             except HTTPException:
                 raise
             except Exception as e:
-                self.logger.error(f"Error updating special flow 1 {flow_id}: {e}", exc_info=True)
+                self.logger.error(f"Error updating dialogue-driven flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.delete(
             "/special-flows-1/{flow_id}",
-            tags=["Special Flows"],
-            summary="Delete Special Flow 1",
-            description="Delete a Special Flow 1 flow permanently. This action cannot be undone.",
+            tags=["Dialogue-Driven Flows"],
+            summary="Delete Dialogue-Driven Flow",
+            description="Delete a Dialogue-Driven Flow permanently. This action cannot be undone.",
             response_description="Confirmation message.",
             responses={
                 200: {
-                    "description": "Special Flow 1 deleted successfully",
+                    "description": "Dialogue-Driven Flow deleted successfully",
                     "content": {
                         "application/json": {
                             "example": {
-                                "message": "Special Flow 1 deleted successfully"
+                                "message": "Dialogue-Driven Flow deleted successfully"
                             }
                         }
                     }
                 },
-                404: {"description": "Special Flow 1 not found"},
+                404: {"description": "Dialogue-Driven Flow not found"},
                 500: {"description": "Internal server error"}
             }
         )
         async def delete_special_flow_1(flow_id: str):
             """
-            **Delete Special Flow 1**
+            **Delete Dialogue-Driven Flow**
             
-            Permanently deletes a Special Flow 1 flow from the system.
+            Permanently deletes a Dialogue-Driven Flow from the system.
             This action cannot be undone.
             """
             try:
                 success = self.special_flow_1_service.delete_flow(flow_id)
                 if not success:
-                    raise HTTPException(status_code=404, detail="Special Flow 1 not found")
-                return {"message": "Special Flow 1 deleted successfully"}
+                    raise HTTPException(status_code=404, detail="Dialogue-Driven Flow not found")
+                return {"message": "Dialogue-Driven Flow deleted successfully"}
             except HTTPException:
                 raise
             except Exception as e:
-                self.logger.error(f"Error deleting special flow 1 {flow_id}: {e}", exc_info=True)
+                self.logger.error(f"Error deleting dialogue-driven flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post(
             "/special-flows-1/{flow_id}/execute",
-            tags=["Special Flows"],
-            summary="Execute Special Flow 1",
-            description="Execute a Special Flow 1. This will fetch initial data, start dialogue, fetch mid-dialogue data, continue dialogue, process final outcome, and call final API. To resume after dialogue phase 1, set resume_from_phase='dialogue_phase1' and provide dialogue_phase1_result and initial_data from the previous execution.",
+            tags=["Dialogue-Driven Flows"],
+            summary="Execute Dialogue-Driven Flow",
+            description="Execute a Dialogue-Driven Flow. This will fetch initial data, start dialogue (caches conversation), fetch data after dialogue, process final outcome, and call final API. To resume after dialogue, set resume_from_phase='dialogue' and provide dialogue_phase1_result and initial_data from the previous execution.",
             response_model=SpecialFlow1ExecuteResponse,
-            response_description="Special Flow 1 execution results.",
+            response_description="Dialogue-Driven Flow execution results.",
         )
         async def execute_special_flow_1(flow_id: str, request: SpecialFlow1ExecuteRequest):
             """
-            **Execute Special Flow 1**
+            **Execute Dialogue-Driven Flow**
             
-            Executes a Special Flow 1 flow. The flow will:
+            Executes a Dialogue-Driven Flow. The flow will:
             1. Fetch initial data (DB tool or Request tool)
-            2. Start dialogue phase 1 with initial data
+            2. Start dialogue with initial data (caches all conversation)
             3. Pause and wait for user input (if needed)
-            4. Fetch mid-dialogue data when trigger condition is met
-            5. Continue dialogue phase 2 with fetched data
-            6. Process final outcome using LLM
-            7. Call final API with processed outcome
+            4. Fetch data after dialogue using cached conversation
+            5. Process final outcome using LLM (uses cached conversation)
+            6. Call final API with processed outcome
             
-            **Resuming After Dialogue Phase 1:**
+            **Resuming After Dialogue:**
             
-            When the flow pauses after dialogue phase 1 (returns with `phase="dialogue_phase1"` and `needs_user_input=True`):
+            When the flow pauses after dialogue (returns with `phase="dialogue"` and `needs_user_input=True`):
             
             1. Continue the dialogue conversation using `/dialogues/{dialogue_id}/continue` with the `conversation_id` from the response
             2. Once the dialogue is complete (`is_complete=True`), resume the flow by calling this endpoint again with:
-               - `resume_from_phase`: "dialogue_phase1"
+               - `resume_from_phase`: "dialogue"
                - `dialogue_phase1_result`: The complete dialogue result from the dialogue API
                - `initial_data`: The `initial_data` from the previous execution response
             
             **Example Resume Request:**
             ```json
             {
-              "resume_from_phase": "dialogue_phase1",
+              "resume_from_phase": "dialogue",
               "dialogue_phase1_result": {
                 "conversation_id": "...",
                 "is_complete": true,
@@ -4391,7 +4388,7 @@ Question: {{input}}
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
-                self.logger.error(f"Error executing special flow 1 {flow_id}: {e}", exc_info=True)
+                self.logger.error(f"Error executing dialogue-driven flow {flow_id}: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
     def _setup_static_handlers(self):

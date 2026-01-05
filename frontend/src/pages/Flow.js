@@ -553,7 +553,7 @@ const Flow = () => {
 
       <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 3 }}>
         <Tab label="Regular Flows" icon={<ArrowForwardIcon />} />
-        <Tab label="Special Flow 1" icon={<DataObjectIcon />} />
+        <Tab label="Dialogue-Driven Flow" icon={<DataObjectIcon />} />
       </Tabs>
 
       {tabValue === 0 && (
@@ -1239,7 +1239,7 @@ const Flow = () => {
   );
 };
 
-// Special Flow 1 Section Component
+// Dialogue-Driven Flow Section Component
 const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
   const queryClient = useQueryClient();
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
@@ -1248,7 +1248,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const [executeResult, setExecuteResult] = useState(null);
   const [executeLoading, setExecuteLoading] = useState(false);
-  // Dialogue conversation state for Special Flow 1
+  // Dialogue conversation state for Dialogue-Driven Flow
   const [dialogueConversation, setDialogueConversation] = useState(null);
   const [dialogueMessage, setDialogueMessage] = useState('');
   const [dialogueLoading, setDialogueLoading] = useState(false);
@@ -1263,9 +1263,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
     config: {
       initial_data_source: { type: 'db_tool', resource_id: '', sql_input: '' },
       dialogue_config: { system_prompt: '', max_turns_phase1: 5, use_initial_data: true, llm_provider: null, model_name: '' },
-      data_fetch_trigger: { type: 'turn_count', value: 3 },
       mid_dialogue_request: { request_tool_id: '', param_mapping: {} },
-      dialogue_phase2: { continue_same_conversation: true, inject_fetched_data: true, max_turns_phase2: 5 },
       final_processing: { system_prompt: '', input_template: '{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}', llm_provider: null, model_name: '' },
       final_api_call: { request_tool_id: '', body_mapping: '{{final_outcome}}' },
     },
@@ -1305,9 +1303,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
       config: {
         initial_data_source: { type: 'db_tool', resource_id: '', sql_input: '' },
         dialogue_config: { system_prompt: '', max_turns_phase1: 5, use_initial_data: true, llm_provider: null, model_name: '' },
-        data_fetch_trigger: { type: 'turn_count', value: 3 },
         mid_dialogue_request: { request_tool_id: '', param_mapping: {} },
-        dialogue_phase2: { continue_same_conversation: true, inject_fetched_data: true, max_turns_phase2: 5 },
         final_processing: { system_prompt: '', input_template: '{{initial_data}}\n\nDialogue Summary:\n{{dialogue_summary}}\n\nFetched Data:\n{{fetched_data}}', llm_provider: null, model_name: '' },
         final_api_call: { request_tool_id: '', body_mapping: '{{final_outcome}}' },
       },
@@ -1589,7 +1585,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
             setOpenCreateDialog(true);
           }}
         >
-          Create Special Flow 1
+          Create Dialogue-Driven Flow
         </Button>
       </Box>
 
@@ -1679,7 +1675,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
 
       {/* Create/Edit Dialog */}
       <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="lg" fullWidth>
-        <DialogTitle>{editingFlowId ? 'Edit Special Flow 1' : 'Create Special Flow 1'}</DialogTitle>
+        <DialogTitle>{editingFlowId ? 'Edit Dialogue-Driven Flow' : 'Create Dialogue-Driven Flow'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12}>
@@ -1799,7 +1795,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                   {/* Dialogue Config */}
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">2. Dialogue Phase 1 Configuration</Typography>
+                      <Typography variant="subtitle1">2. Dialogue Configuration</Typography>
                     </AccordionSummary>
                     <AccordionDetails>
                       <Grid container spacing={2}>
@@ -1813,6 +1809,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                             rows={4}
                             required
                             placeholder="Enter the system prompt for the dialogue..."
+                            helperText="This prompt defines the dialogue outcome (conversation_history) that will be cached for the session. Step 3 will use this outcome to extract parameters, and step 4 will use the cached conversation for final processing."
                           />
                         </Grid>
                         <Grid item xs={12} sm={6}>
@@ -1864,65 +1861,10 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                     </AccordionDetails>
                   </Accordion>
 
-                  {/* Data Fetch Trigger */}
+                  {/* After Dialogue Request */}
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">3. Data Fetch Trigger</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                          <FormControl fullWidth>
-                            <InputLabel>Trigger Type</InputLabel>
-                            <Select
-                              value={formData.config.data_fetch_trigger.type}
-                              onChange={(e) => updateConfig('data_fetch_trigger.type', e.target.value)}
-                              label="Trigger Type"
-                            >
-                              <MenuItem value="turn_count">Turn Count</MenuItem>
-                              <MenuItem value="keyword">Keyword</MenuItem>
-                              <MenuItem value="user_trigger">User Trigger</MenuItem>
-                              <MenuItem value="ai_detected">AI Detected</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                          {formData.config.data_fetch_trigger.type === 'turn_count' ? (
-                            <TextField
-                              fullWidth
-                              type="number"
-                              label="Turn Count"
-                              value={formData.config.data_fetch_trigger.value || 3}
-                              onChange={(e) => updateConfig('data_fetch_trigger.value', parseInt(e.target.value) || 3)}
-                              inputProps={{ min: 1 }}
-                            />
-                          ) : formData.config.data_fetch_trigger.type === 'keyword' ? (
-                            <TextField
-                              fullWidth
-                              label="Keyword"
-                              value={formData.config.data_fetch_trigger.value || ''}
-                              onChange={(e) => updateConfig('data_fetch_trigger.value', e.target.value)}
-                              placeholder="Enter keyword to trigger data fetch"
-                            />
-                          ) : (
-                            <TextField
-                              fullWidth
-                              label="Value"
-                              value={formData.config.data_fetch_trigger.value || ''}
-                              onChange={(e) => updateConfig('data_fetch_trigger.value', e.target.value)}
-                              disabled
-                              helperText="This trigger type doesn't require a value"
-                            />
-                          )}
-                        </Grid>
-                      </Grid>
-                    </AccordionDetails>
-                  </Accordion>
-
-                  {/* Mid Dialogue Request */}
-                  <Accordion>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">4. Mid-Dialogue Request</Typography>
+                      <Typography variant="subtitle1">3. After Dialogue Request</Typography>
                     </AccordionSummary>
                     <AccordionDetails>
                       <Grid container spacing={2}>
@@ -1994,51 +1936,8 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                             multiline
                             rows={4}
                             placeholder='{"username": "{{dialogue.extract.username}}", "formId": "{{dialogue.extract.formId}}"}'
-                            helperText="Map request parameters. The system will automatically extract JSON from dialogue (e.g., {'username': '...', 'formId': '...'}). You can also use {{dialogue.user_input}}, {{dialogue.response}}, etc."
+                            helperText="Map request parameters. This request runs after the dialogue completes (step 3). It uses the dialogue outcome (conversation_history) from step 2, which is defined by the dialogue prompt. The system will automatically extract JSON from the cached conversation (e.g., {'username': '...', 'formId': '...'}). You can also use {{dialogue.user_input}}, {{dialogue.response}}, {{dialogue.conversation_history}}, etc."
                             sx={{ fontFamily: 'monospace' }}
-                          />
-                        </Grid>
-                      </Grid>
-                    </AccordionDetails>
-                  </Accordion>
-
-                  {/* Dialogue Phase 2 */}
-                  <Accordion>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">5. Dialogue Phase 2 Configuration</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={formData.config.dialogue_phase2.continue_same_conversation}
-                                onChange={(e) => updateConfig('dialogue_phase2.continue_same_conversation', e.target.checked)}
-                              />
-                            }
-                            label="Continue Same Conversation"
-                          />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={formData.config.dialogue_phase2.inject_fetched_data}
-                                onChange={(e) => updateConfig('dialogue_phase2.inject_fetched_data', e.target.checked)}
-                              />
-                            }
-                            label="Inject Fetched Data"
-                          />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                          <TextField
-                            fullWidth
-                            type="number"
-                            label="Max Turns Phase 2"
-                            value={formData.config.dialogue_phase2.max_turns_phase2}
-                            onChange={(e) => updateConfig('dialogue_phase2.max_turns_phase2', parseInt(e.target.value) || 5)}
-                            inputProps={{ min: 1, max: 20 }}
                           />
                         </Grid>
                       </Grid>
@@ -2048,7 +1947,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                   {/* Final Processing */}
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">6. Final Processing</Typography>
+                      <Typography variant="subtitle1">4. Final Processing</Typography>
                     </AccordionSummary>
                     <AccordionDetails>
                       <Grid container spacing={2}>
@@ -2072,7 +1971,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                             onChange={(e) => updateConfig('final_processing.input_template', e.target.value)}
                             multiline
                             rows={4}
-                            helperText="Use {{initial_data}}, {{dialogue_summary}}, {{fetched_data}} as placeholders"
+                            helperText="Use {{initial_data}}, {{dialogue_summary}}, {{fetched_data}} as placeholders. The {{dialogue_summary}} uses the cached conversation from step 2 (dialogue), which is available throughout the session."
                           />
                         </Grid>
                         <Grid item xs={12} sm={6}>
@@ -2106,7 +2005,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                   {/* Final API Call */}
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">7. Final API Call</Typography>
+                      <Typography variant="subtitle1">5. Final API Call</Typography>
                     </AccordionSummary>
                     <AccordionDetails>
                       <Grid container spacing={2}>
@@ -2171,7 +2070,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
 
       {/* Execute Dialog */}
       <Dialog open={openExecuteDialog} onClose={() => setOpenExecuteDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Execute Special Flow 1: {selectedFlow?.name}</DialogTitle>
+        <DialogTitle>Execute Dialogue-Driven Flow: {selectedFlow?.name}</DialogTitle>
         <DialogContent>
           {executeLoading && <LinearProgress sx={{ mb: 2 }} />}
           {executeResult && (
@@ -2220,7 +2119,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Dialogue Dialog for Special Flow 1 */}
+      {/* Dialogue Dialog for Dialogue-Driven Flow */}
       <Dialog
         open={openDialogueDialog}
         onClose={() => !dialogueLoading && setOpenDialogueDialog(false)}
@@ -2231,7 +2130,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <ChatIcon color="primary" />
             <Typography>
-              Special Flow 1 - Dialogue {dialogueConversation?.phase === 'phase2' ? 'Phase 2' : 'Phase 1'}
+              Dialogue-Driven Flow - Dialogue
             </Typography>
             {dialogueConversation && (
               <Chip

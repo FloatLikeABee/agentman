@@ -763,7 +763,7 @@ class DialogueResponse(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
 
 
-# Special Flow 1 Models
+# Dialogue-Driven Flow Models
 class InitialDataSourceConfig(BaseModel):
     """Configuration for initial data source"""
     type: str = Field(..., description="Type: 'db_tool' or 'request_tool'")
@@ -823,7 +823,7 @@ class FinalAPICallConfig(BaseModel):
 
 
 class SpecialFlow1Config(BaseModel):
-    """Configuration for Special Flow 1"""
+    """Configuration for Dialogue-Driven Flow"""
     initial_data_source: InitialDataSourceConfig = Field(..., description="Initial data source configuration")
     dialogue_config: DialogueConfig = Field(..., description="Dialogue phase 1 configuration")
     data_fetch_trigger: DataFetchTrigger = Field(..., description="When to trigger data fetch")
@@ -834,7 +834,7 @@ class SpecialFlow1Config(BaseModel):
 
 
 class SpecialFlow1Profile(BaseModel):
-    """Stored Special Flow 1 profile"""
+    """Stored Dialogue-Driven Flow profile"""
     id: str = Field(..., description="Unique flow ID")
     name: str = Field(..., description="Flow name")
     description: Optional[str] = Field(None, description="Flow description")
@@ -846,7 +846,7 @@ class SpecialFlow1Profile(BaseModel):
 
 
 class SpecialFlow1CreateRequest(BaseModel):
-    """Request to create a new Special Flow 1"""
+    """Request to create a new Dialogue-Driven Flow"""
     name: str = Field(..., description="Flow name")
     description: Optional[str] = None
     config: SpecialFlow1Config = Field(..., description="Flow configuration")
@@ -855,7 +855,7 @@ class SpecialFlow1CreateRequest(BaseModel):
 
 
 class SpecialFlow1UpdateRequest(BaseModel):
-    """Request to update an existing Special Flow 1"""
+    """Request to update an existing Dialogue-Driven Flow"""
     name: str = Field(..., description="Flow name")
     description: Optional[str] = None
     config: SpecialFlow1Config = Field(..., description="Flow configuration")
@@ -864,7 +864,7 @@ class SpecialFlow1UpdateRequest(BaseModel):
 
 
 class SpecialFlow1ExecuteRequest(BaseModel):
-    """Request to execute a Special Flow 1"""
+    """Request to execute a Dialogue-Driven Flow"""
     initial_input: Optional[str] = Field(None, description="Optional initial input (for DB tool SQL or request params)")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
     resume_from_phase: Optional[str] = Field(None, description="Resume from specific phase: 'dialogue_phase1', 'dialogue_phase2'. If provided, dialogue_phase1_result must also be provided.")
@@ -874,7 +874,7 @@ class SpecialFlow1ExecuteRequest(BaseModel):
 
 
 class SpecialFlow1ExecuteResponse(BaseModel):
-    """Response from executing a Special Flow 1"""
+    """Response from executing a Dialogue-Driven Flow"""
     flow_id: str = Field(..., description="Flow ID")
     flow_name: str = Field(..., description="Flow name")
     success: bool = Field(..., description="Whether flow completed successfully")
