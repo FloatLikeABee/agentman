@@ -2351,7 +2351,9 @@ class SpecialFlow1Service:
         # Update profile temporarily
         original_system_prompt = profile.system_prompt
         profile.system_prompt = system_prompt
-        profile.max_turns = config.dialogue_phase2.max_turns_phase2
+        # Use dialogue_phase2 config if available, otherwise use default
+        max_turns = config.dialogue_phase2.max_turns_phase2 if config.dialogue_phase2 else 5
+        profile.max_turns = max_turns
         
         # Determine provider/model
         provider = current_dialogue_result.get("llm_provider")
@@ -2435,8 +2437,9 @@ class SpecialFlow1Service:
         # Determine if conversation needs to continue
         response_lower = response_text.lower()
         asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
-        needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and updated_conversation["turn_number"] < config.dialogue_phase2.max_turns_phase2
-        is_complete = not needs_more_info or updated_conversation["turn_number"] >= config.dialogue_phase2.max_turns_phase2
+        max_turns = config.dialogue_phase2.max_turns_phase2 if config.dialogue_phase2 else 5
+        needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and updated_conversation["turn_number"] < max_turns
+        is_complete = not needs_more_info or updated_conversation["turn_number"] >= max_turns
         
         # Restore original system prompt
         profile.system_prompt = original_system_prompt
@@ -2445,7 +2448,7 @@ class SpecialFlow1Service:
             "conversation_id": conversation_id,
             "dialogue_id": dialogue_id,
             "turn_number": updated_conversation.get("turn_number", current_turn + 1),
-            "max_turns": config.dialogue_phase2.max_turns_phase2,
+            "max_turns": config.dialogue_phase2.max_turns_phase2 if config.dialogue_phase2 else 5,
             "response": response_text,
             "needs_more_info": needs_more_info,
             "is_complete": is_complete,
