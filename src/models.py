@@ -789,9 +789,9 @@ class DataFetchTrigger(BaseModel):
 class MidDialogueRequestConfig(BaseModel):
     """Configuration for mid-dialogue request"""
     request_tool_id: str = Field(..., description="Request tool ID to use")
-    param_mapping: Optional[Dict[str, str]] = Field(
+    param_mapping: Optional[Union[str, Dict[str, str]]] = Field(
         None,
-        description="Mapping of request params from dialogue context. Use {{dialogue.user_input}}, {{dialogue.conversation_history}}, etc."
+        description="Mapping of request params from dialogue context. Can be a template string like '{{dialogue.response}}' (if response is JSON, it will be parsed and merged), or a dict mapping param keys to template values. Use {{dialogue.user_input}}, {{dialogue.conversation_history}}, etc."
     )
 
 

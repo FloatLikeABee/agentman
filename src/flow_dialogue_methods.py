@@ -1,63 +1,34 @@
-    async def _execute_dialogue_step(
-        self,
-        step: FlowStepConfig,
-        step_input: Optional[Union[str, Dict[str, Any]]],
-        context: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Execute a dialogue step."""
-        if not self.dialogue_manager:
-            raise ValueError("Dialogue manager not available")
+"""
+Flow Dialogue Methods - Internal dialogue conversation management
+"""
+import logging
+import time
+import asyncio
+from typing import Optional, Dict, Any
 
-        profile = self.dialogue_manager.get_profile(step.resource_id)
-        if not profile:
-            raise ValueError(f"Dialogue profile {step.resource_id} not found")
+from .config import settings
+from .llm_factory import LLMFactory, LLMProvider
+from .llm_langchain_wrapper import LangChainLLMWrapper
+from .models import LLMProviderType
 
-        # Convert step_input to initial message string
-        initial_message = ""
-        if isinstance(step_input, dict):
-            # Extract message from dict
-            initial_message = step_input.get("response", step_input.get("output", step_input.get("message", str(step_input))))
-        elif step_input:
-            initial_message = str(step_input)
-        else:
-            raise ValueError("Dialogue step requires an initial message in step_input")
 
-        # Check if we're continuing an existing conversation or starting new
-        conversation_id = context.get("conversation_id")
-        
-        if conversation_id:
-            # Continue existing conversation
-            from .models import DialogueContinueRequest
-            request = DialogueContinueRequest(
-                user_message=initial_message,
-                conversation_id=conversation_id
-            )
-            result = await self._continue_dialogue_internal(step.resource_id, request)
-        else:
-            # Start new conversation
-            from .models import DialogueStartRequest
-            request = DialogueStartRequest(
-                initial_message=initial_message,
-                n_results=3,
-            )
-            result = await self._start_dialogue_internal(step.resource_id, request)
-            # Store conversation_id in context for next steps
-            if result and "conversation_id" in result:
-                context["conversation_id"] = result["conversation_id"]
+class FlowDialogueMethods:
+    """Internal methods for managing dialogue conversations within flows"""
 
-        return result
+    def __init__(self, dialogue_manager=None, rag_system=None):
+        self.logger = logging.getLogger(__name__)
+        self.dialogue_manager = dialogue_manager
+        self.rag_system = rag_system
 
-    async def _start_dialogue_internal(
+    async def start_dialogue_internal(
         self,
         dialogue_id: str,
         request: "DialogueStartRequest"
     ) -> Dict[str, Any]:
         """Internal method to start a dialogue conversation (replicates API logic)"""
-        from .config import settings
-        from .llm_factory import LLMFactory, LLMProvider
-        from .llm_langchain_wrapper import LangChainLLMWrapper
-        from .models import LLMProviderType
-
+        print(f"[FLOW DIALOGUE] Starting dialogue: {dialogue_id}")
+        print(f"[FLOW DIALOGUE] Initial message: {request.initial_message[:200] if request.initial_message else 'None'}...")
+        
         profile = self.dialogue_manager.get_profile(dialogue_id)
         if not profile:
             raise ValueError(f"Dialogue profile {dialogue_id} not found")
@@ -85,6 +56,8 @@
             api_key = settings.gemini_api_key
             model_name = profile.model_name or settings.gemini_default_model
 
+        print(f"[FLOW DIALOGUE] Using provider: {provider.value}, model: {model_name}")
+
         # Create LLM caller
         llm_caller = LLMFactory.create_caller(
             provider=LLMProvider(provider.value),
@@ -109,6 +82,7 @@
             )
             if results:
                 context = "\n\n".join(r["content"] for r in results[: request.n_results])
+                print(f"[FLOW DIALOGUE] RAG context retrieved: {len(context)} chars")
 
         # Create conversation
         conversation_id = self.dialogue_manager._create_conversation(
@@ -116,6 +90,8 @@
             request.initial_message,
             turn_number=1
         )
+
+        print(f"[FLOW DIALOGUE] Created conversation: {conversation_id}")
 
         # Build prompt
         system_prompt = profile.system_prompt
@@ -130,6 +106,7 @@
 
         # Call LLM
         response_text = await llm.ainvoke(full_prompt)
+        print(f"[FLOW DIALOGUE] LLM response: {response_text[:200]}...")
 
         # Add assistant response to conversation
         self.dialogue_manager._add_message_to_conversation(
@@ -146,7 +123,7 @@
         conversation = self.dialogue_manager.get_conversation(conversation_id)
         conversation_history = conversation["messages"] if conversation else []
 
-        return {
+        result = {
             "conversation_id": conversation_id,
             "turn_number": 1,
             "max_turns": profile.max_turns,
@@ -159,18 +136,21 @@
             "rag_collection_used": rag_used,
             "conversation_history": [msg.model_dump() if hasattr(msg, 'model_dump') else msg for msg in conversation_history],
         }
+        
+        print(f"[FLOW DIALOGUE] Dialogue started - conversation_id: {conversation_id}, "
+              f"needs_more_info: {needs_more_info}, is_complete: {is_complete}")
+        
+        return result
 
-    async def _continue_dialogue_internal(
+    async def continue_dialogue_internal(
         self,
         dialogue_id: str,
         request: "DialogueContinueRequest"
     ) -> Dict[str, Any]:
         """Internal method to continue a dialogue conversation (replicates API logic)"""
-        from .config import settings
-        from .llm_factory import LLMFactory, LLMProvider
-        from .llm_langchain_wrapper import LangChainLLMWrapper
-        from .models import LLMProviderType
-
+        print(f"[FLOW DIALOGUE] Continuing dialogue: {dialogue_id}, conversation: {request.conversation_id}")
+        print(f"[FLOW DIALOGUE] User message: {request.user_message[:200] if request.user_message else 'None'}...")
+        
         profile = self.dialogue_manager.get_profile(dialogue_id)
         if not profile:
             raise ValueError(f"Dialogue profile {dialogue_id} not found")
@@ -205,6 +185,8 @@
             api_key = settings.gemini_api_key
             model_name = profile.model_name or settings.gemini_default_model
 
+        print(f"[FLOW DIALOGUE] Using provider: {provider.value}, model: {model_name}")
+
         # Create LLM caller
         llm_caller = LLMFactory.create_caller(
             provider=LLMProvider(provider.value),
@@ -212,6 +194,7 @@
             model=model_name,
             temperature=0.7,
             max_tokens=8192,
+            timeout=settings.api_timeout,
         )
 
         # Wrap in LangChain-compatible wrapper
@@ -237,6 +220,7 @@
             )
             if results:
                 context = "\n\n".join(r["content"] for r in results[:3])
+                print(f"[FLOW DIALOGUE] RAG context retrieved: {len(context)} chars")
 
         # Build conversation history string
         conversation_history_str = "\n".join([
@@ -262,6 +246,7 @@
 
         # Call LLM
         response_text = await llm.ainvoke(full_prompt)
+        print(f"[FLOW DIALOGUE] LLM response: {response_text[:200]}...")
 
         # Add assistant response
         self.dialogue_manager._add_message_to_conversation(
@@ -281,7 +266,7 @@
         # Get updated conversation history
         conversation_history = conversation["messages"] if conversation else []
 
-        return {
+        result = {
             "conversation_id": request.conversation_id,
             "turn_number": conversation["turn_number"],
             "max_turns": conversation["max_turns"],
@@ -294,4 +279,190 @@
             "rag_collection_used": rag_used,
             "conversation_history": [msg.model_dump() if hasattr(msg, 'model_dump') else msg for msg in conversation_history],
         }
+        
+        print(f"[FLOW DIALOGUE] Dialogue continued - turn: {conversation['turn_number']}/{conversation['max_turns']}, "
+              f"needs_more_info: {needs_more_info}, is_complete: {is_complete}")
+        
+        return result
 
+    async def wait_for_dialogue_completion(
+        self,
+        conversation_id: Optional[str],
+        dialogue_id: str,
+        timeout_seconds: int = 3600,
+        flow_id: str = "",
+        step_id: str = ""
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Wait for a dialogue conversation to complete by polling the dialogue manager.
+        Returns the final dialogue result when complete, or None if timeout.
+        
+        Args:
+            conversation_id: The conversation ID to wait for (None if waiting for initial message)
+            dialogue_id: The dialogue profile ID
+            timeout_seconds: Maximum time to wait (default: 1 hour)
+            flow_id: Flow ID for logging
+            step_id: Step ID for logging
+            
+        Returns:
+            Final dialogue result dict if conversation completes, None if timeout
+        """
+        print(f"[FLOW DIALOGUE] Waiting for dialogue completion - flow: {flow_id}, step: {step_id}, "
+              f"conversation: {conversation_id}, timeout: {timeout_seconds}s")
+        
+        if not self.dialogue_manager:
+            self.logger.warning(f"[FLOW {flow_id}] Dialogue manager not available, cannot wait for completion")
+            return None
+        
+        start_time = time.time()
+        poll_interval = 2.0  # Poll every 2 seconds
+        last_log_time = start_time
+        log_interval = 30.0  # Log status every 30 seconds
+        
+        self.logger.info(
+            f"[FLOW {flow_id}] Waiting for dialogue {dialogue_id} to complete "
+            f"(conversation_id={conversation_id}, timeout={timeout_seconds}s)"
+        )
+        
+        while True:
+            elapsed = time.time() - start_time
+            
+            # Check timeout
+            if elapsed >= timeout_seconds:
+                self.logger.warning(
+                    f"[FLOW {flow_id}] Dialogue step {step_id} timed out after {timeout_seconds}s. Proceeding anyway."
+                )
+                print(f"[FLOW DIALOGUE] Timeout after {elapsed:.1f}s")
+                # Try to get the current conversation state even if not complete
+                if conversation_id:
+                    try:
+                        conversation = self.dialogue_manager.get_conversation(conversation_id)
+                        if conversation:
+                            profile = self.dialogue_manager.get_profile(dialogue_id)
+                            result = {
+                                "conversation_id": conversation_id,
+                                "turn_number": conversation.get("turn_number", 0),
+                                "max_turns": conversation.get("max_turns", 5),
+                                "response": "Dialogue timed out - proceeding with flow",
+                                "needs_more_info": False,
+                                "is_complete": True,  # Mark as complete to proceed
+                                "profile_id": dialogue_id,
+                                "profile_name": profile.name if profile else dialogue_id,
+                                "model_used": "unknown",
+                                "rag_collection_used": None,
+                                "conversation_history": [
+                                    msg.model_dump() if hasattr(msg, 'model_dump') else msg 
+                                    for msg in conversation.get("messages", [])
+                                ],
+                                "metadata": {"timeout": True, "elapsed_seconds": elapsed}
+                            }
+                            print(f"[FLOW DIALOGUE] Returning timeout result")
+                            return result
+                    except Exception as e:
+                        self.logger.error(f"Error getting conversation state on timeout: {e}")
+                return None
+            
+            # Check if conversation exists and is complete
+            if conversation_id:
+                try:
+                    conversation = self.dialogue_manager.get_conversation(conversation_id)
+                    if conversation:
+                        turn_number = conversation.get("turn_number", 0)
+                        max_turns = conversation.get("max_turns", 999)
+                        messages = conversation.get("messages", [])
+                        
+                        # Check if conversation reached max turns or has a final response
+                        is_complete = turn_number >= max_turns
+                        
+                        # If complete, get the final dialogue result
+                        if is_complete:
+                            profile = self.dialogue_manager.get_profile(dialogue_id)
+                            if not profile:
+                                self.logger.warning(f"Dialogue profile {dialogue_id} not found")
+                                return None
+                            
+                            # Get the last assistant message as the final response
+                            last_assistant_msg = None
+                            for msg in reversed(messages):
+                                if hasattr(msg, 'role') and msg.role == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                                elif isinstance(msg, dict) and msg.get('role') == 'assistant':
+                                    last_assistant_msg = msg
+                                    break
+                            
+                            final_response = (
+                                last_assistant_msg.content if hasattr(last_assistant_msg, 'content')
+                                else last_assistant_msg.get('content', '') if last_assistant_msg
+                                else "Dialogue completed"
+                            )
+                            
+                            self.logger.info(
+                                f"[FLOW {flow_id}] Dialogue step {step_id} completed after {elapsed:.1f}s "
+                                f"(turn {turn_number}/{max_turns})"
+                            )
+                            
+                            result = {
+                                "conversation_id": conversation_id,
+                                "turn_number": turn_number,
+                                "max_turns": max_turns,
+                                "response": final_response,
+                                "needs_more_info": False,
+                                "is_complete": True,
+                                "profile_id": dialogue_id,
+                                "profile_name": profile.name,
+                                "model_used": profile.model_name or "unknown",
+                                "rag_collection_used": profile.rag_collection,
+                                "conversation_history": [
+                                    msg.model_dump() if hasattr(msg, 'model_dump') else msg 
+                                    for msg in messages
+                                ],
+                                "metadata": {"elapsed_seconds": elapsed}
+                            }
+                            
+                            print(f"[FLOW DIALOGUE] Dialogue completed after {elapsed:.1f}s - "
+                                  f"turn {turn_number}/{max_turns}, response: {final_response[:200]}...")
+                            
+                            return result
+                    else:
+                        # Conversation not found - might have been deleted or never created
+                        # If we've waited a bit, assume it's not coming and proceed
+                        if elapsed > 60:  # Wait at least 1 minute before giving up
+                            self.logger.warning(
+                                f"[FLOW {flow_id}] Conversation {conversation_id} not found after {elapsed:.1f}s. Proceeding."
+                            )
+                            return None
+                except Exception as e:
+                    self.logger.error(f"Error checking conversation state: {e}")
+            else:
+                # No conversation_id yet - waiting for initial message
+                # Check if a conversation was created for this dialogue_id
+                # We need to find any active conversation for this dialogue profile
+                try:
+                    # Get all active conversations and find one for this dialogue_id
+                    # Note: This is a workaround since we don't have a direct way to list conversations by dialogue_id
+                    # We'll check if any conversation exists and matches
+                    if hasattr(self.dialogue_manager, 'active_conversations'):
+                        for conv_id, conv in self.dialogue_manager.active_conversations.items():
+                            if conv.get("profile_id") == dialogue_id:
+                                # Found a conversation for this dialogue - update conversation_id and continue checking
+                                conversation_id = conv_id
+                                self.logger.info(
+                                    f"[FLOW {flow_id}] Found conversation {conversation_id} for dialogue {dialogue_id}"
+                                )
+                                print(f"[FLOW DIALOGUE] Found conversation: {conversation_id}")
+                                break
+                except Exception as e:
+                    self.logger.debug(f"Error checking for new conversations: {e}")
+            
+            # Log status periodically
+            if time.time() - last_log_time >= log_interval:
+                self.logger.info(
+                    f"[FLOW {flow_id}] Still waiting for dialogue step {step_id} "
+                    f"(elapsed: {elapsed:.0f}s / {timeout_seconds}s)"
+                )
+                print(f"[FLOW DIALOGUE] Still waiting... elapsed: {elapsed:.0f}s / {timeout_seconds}s")
+                last_log_time = time.time()
+            
+            # Wait before next poll
+            await asyncio.sleep(poll_interval)

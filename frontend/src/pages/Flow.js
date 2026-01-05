@@ -1361,24 +1361,17 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
         // If invalid JSON, check if it's just a template string
         const trimmed = paramMappingText.trim();
         if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
-          // User entered just a template, wrap it in an object
-          try {
-            const wrapped = `{"value": ${JSON.stringify(trimmed)}}`;
-            const parsed = JSON.parse(wrapped);
-            finalFormData = {
-              ...formData,
-              config: {
-                ...formData.config,
-                mid_dialogue_request: {
-                  ...formData.config.mid_dialogue_request,
-                  param_mapping: parsed,
-                },
+          // User entered just a template, use it directly as a string
+          finalFormData = {
+            ...formData,
+            config: {
+              ...formData.config,
+              mid_dialogue_request: {
+                ...formData.config.mid_dialogue_request,
+                param_mapping: trimmed, // Store as string directly
               },
-            };
-          } catch (err2) {
-            console.warn('Invalid JSON in parameter mapping:', err2);
-            // Use existing formData
-          }
+            },
+          };
         } else {
           console.warn('Invalid JSON in parameter mapping:', err);
           // Use existing formData
@@ -1401,8 +1394,13 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
       is_active: flow.is_active !== undefined ? flow.is_active : true,
       config: config,
     });
-    // Initialize param mapping text
-    setParamMappingText(JSON.stringify(config.mid_dialogue_request?.param_mapping || {}, null, 2));
+    // Initialize param mapping text - handle both string templates and JSON objects
+    const paramMapping = config.mid_dialogue_request?.param_mapping;
+    if (typeof paramMapping === 'string') {
+      setParamMappingText(paramMapping);
+    } else {
+      setParamMappingText(JSON.stringify(paramMapping || {}, null, 2));
+    }
     setEditingFlowId(flow.id);
     setOpenCreateDialog(true);
   };
@@ -1887,25 +1885,40 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                         <Grid item xs={12}>
                           <TextField
                             fullWidth
-                            label="Parameter Mapping (JSON)"
-                            value={paramMappingText !== '' ? paramMappingText : JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2)}
+                            label="Parameter Mapping (JSON or Template)"
+                            value={paramMappingText !== '' ? paramMappingText : (typeof formData.config.mid_dialogue_request.param_mapping === 'string' 
+                              ? formData.config.mid_dialogue_request.param_mapping 
+                              : JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2))}
                             onChange={(e) => {
                               const newValue = e.target.value;
                               setParamMappingText(newValue);
-                              // Try to parse and update config if valid
+                              // Try to parse and update config if valid JSON
                               try {
                                 const parsed = JSON.parse(newValue);
                                 updateConfig('mid_dialogue_request.param_mapping', parsed);
                               } catch (err) {
-                                // Allow typing even if JSON is temporarily invalid
+                                // If it's a template string, allow it
+                                const trimmed = newValue.trim();
+                                if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+                                  updateConfig('mid_dialogue_request.param_mapping', trimmed);
+                                }
+                                // Otherwise, allow typing even if JSON is temporarily invalid
                               }
                             }}
                             onBlur={(e) => {
-                              // On blur, validate and fix JSON
+                              // On blur, validate and fix JSON or template
                               const value = e.target.value.trim();
                               if (!value) {
+                                // Empty - default to empty object
                                 setParamMappingText('{}');
                                 updateConfig('mid_dialogue_request.param_mapping', {});
+                                return;
+                              }
+                              // Check if it's a template string first
+                              if (value.startsWith('{{') && value.endsWith('}}')) {
+                                // It's a template string, use it directly
+                                updateConfig('mid_dialogue_request.param_mapping', value);
+                                setParamMappingText(value);
                                 return;
                               }
                               try {
@@ -1914,29 +1927,19 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                                 setParamMappingText(formatted);
                                 updateConfig('mid_dialogue_request.param_mapping', parsed);
                               } catch (err) {
-                                // If invalid JSON, try to help the user by checking if it's a template string
-                                // If it looks like a template (starts with {{), wrap it in a simple object
-                                if (value.trim().startsWith('{{') && value.trim().endsWith('}}')) {
-                                  // User might have entered just the template, wrap it
-                                  const wrapped = `{"value": ${JSON.stringify(value.trim())}}`;
-                                  try {
-                                    const parsed = JSON.parse(wrapped);
-                                    updateConfig('mid_dialogue_request.param_mapping', parsed);
-                                    setParamMappingText(JSON.stringify(parsed, null, 2));
-                                  } catch (err2) {
-                                    // Still invalid, reset to last valid value
-                                    setParamMappingText(JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2));
-                                  }
+                                // Invalid JSON and not a template - reset to last valid value
+                                const lastValid = formData.config.mid_dialogue_request.param_mapping || {};
+                                if (typeof lastValid === 'string') {
+                                  setParamMappingText(lastValid);
                                 } else {
-                                  // Reset to last valid value
-                                  setParamMappingText(JSON.stringify(formData.config.mid_dialogue_request.param_mapping || {}, null, 2));
+                                  setParamMappingText(JSON.stringify(lastValid, null, 2));
                                 }
                               }
                             }}
                             multiline
                             rows={4}
-                            placeholder='{"username": "{{dialogue.extract.username}}", "formId": "{{dialogue.extract.formId}}"}'
-                            helperText="Map request parameters. This request runs after the dialogue completes (step 3). It uses the dialogue outcome (conversation_history) from step 2, which is defined by the dialogue prompt. The system will automatically extract JSON from the cached conversation (e.g., {'username': '...', 'formId': '...'}). You can also use {{dialogue.user_input}}, {{dialogue.response}}, {{dialogue.conversation_history}}, etc."
+                            placeholder='{{dialogue.response}} or {"username": "{{dialogue.extract.username}}", "formId": "{{dialogue.extract.formId}}"}'
+                            helperText="Map request parameters. You can use {{dialogue.response}} directly (if response is JSON, it will be parsed and merged). Or use a JSON object with template values. This request runs after the dialogue completes (step 3). It uses the dialogue outcome (conversation_history) from step 2, which is defined by the dialogue prompt. The system will automatically extract JSON from the cached conversation. You can also use {{dialogue.user_input}}, {{dialogue.response}}, {{dialogue.conversation_history}}, etc."
                             sx={{ fontFamily: 'monospace' }}
                           />
                         </Grid>
