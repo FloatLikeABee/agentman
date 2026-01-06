@@ -59,6 +59,7 @@ const Flow = () => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const [executeResult, setExecuteResult] = useState(null);
   const [executeLoading, setExecuteLoading] = useState(false);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, flowId: null, isSpecial: false });
   // Dialogue conversation state for flow execution
   const [dialogueConversation, setDialogueConversation] = useState(null);
   const [dialogueMessage, setDialogueMessage] = useState('');
@@ -115,8 +116,28 @@ const Flow = () => {
   const deleteFlowMutation = useMutation(api.deleteFlow, {
     onSuccess: () => {
       queryClient.invalidateQueries('flows');
+      setDeleteConfirmDialog({ open: false, flowId: null, isSpecial: false });
     },
   });
+
+  const deleteSpecialFlowMutation = useMutation(api.deleteSpecialFlow1, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('special-flows-1');
+      setDeleteConfirmDialog({ open: false, flowId: null, isSpecial: false });
+    },
+  });
+
+  const handleDeleteClick = (flowId, isSpecial = false) => {
+    setDeleteConfirmDialog({ open: true, flowId, isSpecial });
+  };
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirmDialog.isSpecial) {
+      deleteSpecialFlowMutation.mutate(deleteConfirmDialog.flowId);
+    } else {
+      deleteFlowMutation.mutate(deleteConfirmDialog.flowId);
+    }
+  };
 
   const resetForm = () => {
     setFormData({
@@ -1235,6 +1256,27 @@ const Flow = () => {
           requestTools={requestTools}
         />
       )}
+
+      {/* Delete Confirmation Dialog for Regular Flows */}
+      <Dialog
+        open={deleteConfirmDialog.open && !deleteConfirmDialog.isSpecial}
+        onClose={() => setDeleteConfirmDialog({ open: false, flowId: null, isSpecial: false })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this flow? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, flowId: null, isSpecial: false })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
@@ -1248,6 +1290,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const [executeResult, setExecuteResult] = useState(null);
   const [executeLoading, setExecuteLoading] = useState(false);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, flowId: null });
   // Dialogue conversation state for Dialogue-Driven Flow
   const [dialogueConversation, setDialogueConversation] = useState(null);
   const [dialogueMessage, setDialogueMessage] = useState('');
@@ -1292,8 +1335,17 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
   const deleteFlowMutation = useMutation(api.deleteSpecialFlow1, {
     onSuccess: () => {
       queryClient.invalidateQueries('special-flows-1');
+      setDeleteConfirmDialog({ open: false, flowId: null });
     },
   });
+
+  const handleDeleteClick = (flowId) => {
+    setDeleteConfirmDialog({ open: true, flowId });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteFlowMutation.mutate(deleteConfirmDialog.flowId);
+  };
 
   const resetForm = () => {
     setFormData({
@@ -1658,7 +1710,7 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                     <IconButton
                       size="small"
                       color="error"
-                      onClick={() => deleteFlowMutation.mutate(flow.id)}
+                      onClick={() => handleDeleteClick(flow.id)}
                       title="Delete Flow"
                     >
                       <DeleteIcon />
@@ -2240,6 +2292,27 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
               {dialogueLoading ? 'Sending...' : 'Send'}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, flowId: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this special flow? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, flowId: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

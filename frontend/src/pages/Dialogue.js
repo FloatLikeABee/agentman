@@ -45,6 +45,7 @@ const Dialogue = () => {
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingDialogueId, setEditingDialogueId] = useState(null);
   const [selectedDialogue, setSelectedDialogue] = useState(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, dialogueId: null });
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -240,9 +241,11 @@ const Dialogue = () => {
   };
 
   const handleDeleteDialogue = (dialogueId) => {
-    if (window.confirm('Are you sure you want to delete this dialogue?')) {
-      deleteMutation.mutate(dialogueId);
-    }
+    setDeleteConfirmDialog({ open: true, dialogueId });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteMutation.mutate(deleteConfirmDialog.dialogueId);
   };
 
   const handleSelectDialogue = (dialogue) => {
@@ -851,6 +854,27 @@ const Dialogue = () => {
             disabled={createMutation.isLoading || !createForm.name.trim() || !createForm.system_prompt.trim()}
           >
             {createMutation.isLoading ? 'Creating...' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, dialogueId: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this dialogue? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, dialogueId: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

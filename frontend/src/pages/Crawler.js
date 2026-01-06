@@ -226,6 +226,7 @@ const RequestToolsPanel = () => {
   const [openResponseModal, setOpenResponseModal] = useState(false);
   const [responseData, setResponseData] = useState(null);
   const [validationError, setValidationError] = useState('');
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, requestId: null });
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -264,6 +265,7 @@ const RequestToolsPanel = () => {
   const deleteMutation = useMutation(api.deleteRequestTool, {
     onSuccess: () => {
       queryClient.invalidateQueries('request-tools');
+      setDeleteConfirmDialog({ open: false, requestId: null });
       if (selectedRequest) {
         setSelectedRequest(null);
       }
@@ -460,9 +462,7 @@ const RequestToolsPanel = () => {
                             color="error"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (window.confirm('Delete this request?')) {
-                                deleteMutation.mutate(req.id);
-                              }
+                              setDeleteConfirmDialog({ open: true, requestId: req.id });
                             }}
                           >
                             <DeleteIcon fontSize="small" />
@@ -748,6 +748,33 @@ const RequestToolsPanel = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setOpenResponseModal(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog
+          open={deleteConfirmDialog.open}
+          onClose={() => setDeleteConfirmDialog({ open: false, requestId: null })}
+        >
+          <DialogTitle>Confirm Delete</DialogTitle>
+          <DialogContent>
+            <Typography>
+              Are you sure you want to delete this request? This action cannot be undone.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteConfirmDialog({ open: false, requestId: null })}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                deleteMutation.mutate(deleteConfirmDialog.requestId);
+              }} 
+              color="error" 
+              variant="contained"
+            >
+              Delete
+            </Button>
           </DialogActions>
         </Dialog>
       </CardContent>
