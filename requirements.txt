@@ -1,10 +1,10 @@
 # Core RAG and AI dependencies
-langchain
-langchain-community
-langchain-core
-langchain-text-splitters
-langchain-ollama
-langchain-openai
+langchain==0.3.27
+langchain-community==0.3.27
+langchain-core==0.3.80
+langchain-text-splitters==0.3.11
+langchain-ollama==0.3.10
+langchain-openai==0.3.35
 google-generativeai
 mistralai
 
