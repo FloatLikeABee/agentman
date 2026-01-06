@@ -596,9 +596,11 @@ class SpecialFlow1Service:
                     parsed_json = json.loads(value)
                     if isinstance(parsed_json, dict):
                         # Use the parsed JSON directly as params (replace existing params)
-                        profile.params = parsed_json
-                        self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed JSON from template and set as params: {json.dumps(parsed_json, indent=2)}")
-                        print(f"[SPECIAL FLOW SERVICE] Parsed JSON from template and set as params: {json.dumps(parsed_json, indent=2)[:200]}...")
+                        # Exclude "value" key if it exists (redundant)
+                        filtered_json = {k: v for k, v in parsed_json.items() if k != "value"}
+                        profile.params = filtered_json
+                        self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed JSON from template and set as params (excluding 'value'): {json.dumps(filtered_json, indent=2)}")
+                        print(f"[SPECIAL FLOW SERVICE] Parsed JSON from template and set as params (excluding 'value'): {json.dumps(filtered_json, indent=2)[:200]}...")
                     else:
                         # Not a dict, use as single value
                         profile.params = parsed_json
@@ -611,9 +613,11 @@ class SpecialFlow1Service:
                             parsed_response = json.loads(dialogue_response)
                             if isinstance(parsed_response, dict):
                                 # Use the parsed JSON directly as params (replace existing params)
-                                profile.params = parsed_response
-                                self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed dialogue.response as JSON and set as params")
-                                print(f"[SPECIAL FLOW SERVICE] Parsed dialogue.response as JSON and set as params")
+                                # Exclude "value" key if it exists (redundant)
+                                filtered_response = {k: v for k, v in parsed_response.items() if k != "value"}
+                                profile.params = filtered_response
+                                self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed dialogue.response as JSON and set as params (excluding 'value')")
+                                print(f"[SPECIAL FLOW SERVICE] Parsed dialogue.response as JSON and set as params (excluding 'value')")
                             else:
                                 profile.params = parsed_response
                         except (json.JSONDecodeError, ValueError):
@@ -680,9 +684,11 @@ class SpecialFlow1Service:
                                 parsed_response = json.loads(dialogue_response)
                                 if isinstance(parsed_response, dict):
                                     # Merge the parsed JSON directly into params (don't use param_key)
-                                    profile.params = {**(profile.params or {}), **parsed_response}
-                                    self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed dialogue.response as JSON and merged into params (skipping param_key)")
-                                    print(f"[SPECIAL FLOW SERVICE] Parsed dialogue.response as JSON and merged into params directly")
+                                    # Exclude "value" key if it exists (redundant)
+                                    filtered_response = {k: v for k, v in parsed_response.items() if k != "value"}
+                                    profile.params = {**(profile.params or {}), **filtered_response}
+                                    self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Parsed dialogue.response as JSON and merged into params (skipping param_key, excluding 'value')")
+                                    print(f"[SPECIAL FLOW SERVICE] Parsed dialogue.response as JSON and merged into params directly (excluding 'value')")
                                     continue  # Skip setting param_key since we merged directly
                                 else:
                                     value = parsed_response
@@ -700,6 +706,12 @@ class SpecialFlow1Service:
                     profile.params[param_key] = value
                     self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Set param {param_key} = {value}")
                     print(f"[SPECIAL FLOW SERVICE] Set param {param_key} = {value}")
+
+        # Remove "value" key from params if it exists (redundant - params already contain all needed fields)
+        if profile.params and "value" in profile.params:
+            del profile.params["value"]
+            self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Removed redundant 'value' key from params")
+            print(f"[SPECIAL FLOW SERVICE] Removed redundant 'value' key from params")
 
         self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Final request params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
         print(f"[SPECIAL FLOW SERVICE] Final request params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
@@ -1041,6 +1053,18 @@ Remember: Output ONLY the JSON object, nothing else."""
         except:
             profile.body = body_mapping
             print(f"[SPECIAL FLOW SERVICE] Using body as string")
+        
+        # Print the request body for step 5
+        print(f"[SPECIAL FLOW SERVICE] ========== STEP 5 REQUEST BODY ==========")
+        if isinstance(profile.body, dict):
+            body_str = json.dumps(profile.body, indent=2)
+            print(f"[SPECIAL FLOW SERVICE] Request body (JSON): {body_str}")
+            self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Step 5 REQUEST BODY (JSON): {body_str}")
+        else:
+            body_str = str(profile.body)[:500]
+            print(f"[SPECIAL FLOW SERVICE] Request body (string): {body_str}...")
+            self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Step 5 REQUEST BODY (string): {body_str}...")
+        print(f"[SPECIAL FLOW SERVICE] =========================================")
 
         result = await asyncio.to_thread(
             self.request_tools_manager.execute_request,
