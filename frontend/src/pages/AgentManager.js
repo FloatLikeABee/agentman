@@ -38,6 +38,7 @@ const AgentManager = () => {
   const [openRunDialog, setOpenRunDialog] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [editingAgentId, setEditingAgentId] = useState(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, agentId: null });
   const [queryText, setQueryText] = useState('');
   const [agentResponse, setAgentResponse] = useState('');
   const [formData, setFormData] = useState({
@@ -60,6 +61,7 @@ const AgentManager = () => {
   const { data: models } = useQuery('models', api.getModels);
   const { data: collections } = useQuery('collections', api.getRAGCollections);
   const { data: tools } = useQuery('tools', api.getTools);
+  const { data: providersData } = useQuery('providers', api.getProviders);
 
   const createAgentMutation = useMutation(api.createAgent, {
     onSuccess: () => {
@@ -109,6 +111,7 @@ const AgentManager = () => {
   const deleteAgentMutation = useMutation(api.deleteAgent, {
     onSuccess: () => {
       queryClient.invalidateQueries('agents');
+      setDeleteConfirmDialog({ open: false, agentId: null });
     },
   });
 
@@ -186,9 +189,11 @@ const AgentManager = () => {
   };
 
   const handleDeleteAgent = (agentId) => {
-    if (window.confirm('Are you sure you want to delete this agent?')) {
-      deleteAgentMutation.mutate(agentId);
-    }
+    setDeleteConfirmDialog({ open: true, agentId });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteAgentMutation.mutate(deleteConfirmDialog.agentId);
   };
 
   const handleRunAgent = () => {
@@ -385,8 +390,11 @@ const AgentManager = () => {
                   value={formData.llm_provider}
                   onChange={(e) => setFormData({ ...formData, llm_provider: e.target.value })}
                 >
-                  <MenuItem value="gemini">Gemini</MenuItem>
-                  <MenuItem value="qwen">Qwen</MenuItem>
+                  {providersData?.providers?.map((provider) => (
+                    <MenuItem key={provider} value={provider}>
+                      {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>
@@ -743,6 +751,27 @@ const AgentManager = () => {
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1, flexShrink: 0 }}>
           <Button onClick={() => setOpenRunDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, agentId: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this agent? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, agentId: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

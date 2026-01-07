@@ -34,11 +34,13 @@ const Customizations = () => {
   const { data: profiles = [], isLoading, error } = useQuery('customizations', api.getCustomizations);
   const { data: models = [] } = useQuery('models', api.getModels, { enabled: true });
   const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true });
+  const { data: collections = [] } = useQuery('collections', api.getRAGCollections);
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, profileId: null });
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -176,9 +178,11 @@ const Customizations = () => {
   };
 
   const handleDeleteProfile = (profileId) => {
-    if (window.confirm('Are you sure you want to delete this customization?')) {
-      deleteMutation.mutate(profileId);
-    }
+    setDeleteConfirmDialog({ open: true, profileId });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteMutation.mutate(deleteConfirmDialog.profileId);
   };
 
   return (
@@ -423,13 +427,21 @@ const Customizations = () => {
               sx={{ mb: 2 }}
               placeholder="Describe how the AI should behave for this customization..."
             />
-            <TextField
-              fullWidth
-              label="RAG Collection (optional)"
+            <Autocomplete
+              freeSolo
+              options={collections.map((col) => col.name)}
               value={createForm.rag_collection}
-              onChange={(e) => setCreateForm({ ...createForm, rag_collection: e.target.value })}
-              sx={{ mb: 2 }}
-              helperText="Name of an existing RAG collection to use as context (optional)"
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, rag_collection: newValue || '' });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="RAG Collection (optional)"
+                  helperText="Name of an existing RAG collection to use as context (optional)"
+                  sx={{ mb: 2 }}
+                />
+              )}
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>LLM Provider (optional)</InputLabel>
@@ -518,13 +530,21 @@ const Customizations = () => {
               sx={{ mb: 2 }}
               placeholder="Describe how the AI should behave for this customization..."
             />
-            <TextField
-              fullWidth
-              label="RAG Collection (optional)"
+            <Autocomplete
+              freeSolo
+              options={collections.map((col) => col.name)}
               value={createForm.rag_collection}
-              onChange={(e) => setCreateForm({ ...createForm, rag_collection: e.target.value })}
-              sx={{ mb: 2 }}
-              helperText="Name of an existing RAG collection to use as context (optional)"
+              onChange={(event, newValue) => {
+                setCreateForm({ ...createForm, rag_collection: newValue || '' });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="RAG Collection (optional)"
+                  helperText="Name of an existing RAG collection to use as context (optional)"
+                  sx={{ mb: 2 }}
+                />
+              )}
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>LLM Provider (optional)</InputLabel>
@@ -573,6 +593,27 @@ const Customizations = () => {
             disabled={createMutation.isLoading || !createForm.name.trim() || !createForm.system_prompt.trim()}
           >
             {createMutation.isLoading ? 'Creating...' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, profileId: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this customization? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, profileId: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

@@ -49,6 +49,7 @@ const DBTools = () => {
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingToolId, setEditingToolId] = useState(null);
   const [selectedTool, setSelectedTool] = useState(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, toolId: null });
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -232,9 +233,11 @@ const DBTools = () => {
   };
 
   const handleDeleteTool = (toolId) => {
-    if (window.confirm('Are you sure you want to delete this database tool? This action cannot be undone.')) {
-      deleteMutation.mutate(toolId);
-    }
+    setDeleteConfirmDialog({ open: true, toolId });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteMutation.mutate(deleteConfirmDialog.toolId);
   };
 
   const handlePreview = async (toolId, forceRefresh = false) => {
@@ -1062,6 +1065,27 @@ const DBTools = () => {
             }
           >
             {updateMutation.isLoading ? 'Updating...' : 'Update'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, toolId: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this database tool? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, toolId: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

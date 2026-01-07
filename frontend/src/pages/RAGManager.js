@@ -36,6 +36,7 @@ const RAGManager = () => {
   const [queryText, setQueryText] = useState('');
   const [queryResults, setQueryResults] = useState([]);
   const [queryError, setQueryError] = useState('');
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, collectionName: null });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -66,6 +67,7 @@ const RAGManager = () => {
   const deleteCollectionMutation = useMutation(api.deleteRAGCollection, {
     onSuccess: () => {
       queryClient.invalidateQueries('collections');
+      setDeleteConfirmDialog({ open: false, collectionName: null });
     },
   });
 
@@ -88,9 +90,11 @@ const RAGManager = () => {
   };
 
   const handleDeleteCollection = (collectionName) => {
-    if (window.confirm(`Are you sure you want to delete collection "${collectionName}"?`)) {
-      deleteCollectionMutation.mutate(collectionName);
-    }
+    setDeleteConfirmDialog({ open: true, collectionName });
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteCollectionMutation.mutate(deleteConfirmDialog.collectionName);
   };
 
   return (
@@ -320,6 +324,27 @@ const RAGManager = () => {
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
           <Button onClick={() => setOpenQueryDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, collectionName: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete collection "{deleteConfirmDialog.collectionName}"? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, collectionName: null })}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

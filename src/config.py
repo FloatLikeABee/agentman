@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     default_model: str = "gemini-2.5-flash"
 
     # Gemini settings
-    gemini_api_key: str = "AIzaSyBOE5DEz-Y7PJ4DB1rqR1cSyqWyWWBLl3A"
+    gemini_api_key: str = "AIzaSyDcs-5IodVYVg6rop3pEdt7UYaevbakIF0"
     gemini_default_model: str = "gemini-2.5-flash"
 
     # Qwen settings
