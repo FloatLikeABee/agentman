@@ -34,12 +34,12 @@ import api from '../services/api';
 
 const Dialogue = () => {
   const queryClient = useQueryClient();
-  const { data: dialogues = [], isLoading, error } = useQuery('dialogues', api.getDialogues);
-  const { data: models = [] } = useQuery('models', api.getModels, { enabled: true });
-  const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true });
-  const { data: collections = [] } = useQuery('collections', api.getRAGCollections);
-  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools);
-  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools);
+  const { data: dialogues = [], isLoading, error } = useQuery('dialogues', api.getDialogues, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+  const { data: models = [] } = useQuery('models', api.getModels, { enabled: true, staleTime: 5 * 60 * 1000 });
+  const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true, staleTime: 5 * 60 * 1000 });
+  const { data: collections = [] } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 });
+  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools, { staleTime: 5 * 60 * 1000 });
+  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 });
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);

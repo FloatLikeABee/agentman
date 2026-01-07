@@ -38,7 +38,7 @@ const ToolManager = () => {
   const [jsonError, setJsonError] = useState('');
 
   const queryClient = useQueryClient();
-  const { data: tools, isLoading } = useQuery('tools', api.getTools);
+  const { data: tools, isLoading } = useQuery('tools', api.getTools, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
 
   const updateToolMutation = useMutation(api.updateToolConfig, {
     onSuccess: () => {

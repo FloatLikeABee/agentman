@@ -43,7 +43,7 @@ import api from '../services/api';
 
 const DBTools = () => {
   const queryClient = useQueryClient();
-  const { data: tools = [], isLoading, error } = useQuery('db-tools', api.getDBTools);
+  const { data: tools = [], isLoading, error } = useQuery('db-tools', api.getDBTools, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);

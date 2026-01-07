@@ -331,19 +331,22 @@ class SpecialFlow1Service:
             )
             self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Step 3 OUTPUT: Fetched data: {json.dumps(fetched_data, indent=2) if fetched_data else 'None'}")
             print(f"[SPECIAL FLOW SERVICE] Step 3 OUTPUT - Fetched data keys: {list(fetched_data.keys()) if isinstance(fetched_data, dict) else 'N/A'}")
-            # Print the response body from step 3
+            # Print the response body from step 3 (short preview)
             step3_response_body = None
             if isinstance(fetched_data, dict):
                 step3_response_body = fetched_data.get('response_data') or fetched_data.get('response_body') or fetched_data.get('body') or fetched_data.get('data')
                 if step3_response_body:
-                    print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {json.dumps(step3_response_body, indent=2) if isinstance(step3_response_body, dict) else str(step3_response_body)[:1000]}")
+                    body_preview = json.dumps(step3_response_body, indent=2) if isinstance(step3_response_body, dict) else str(step3_response_body)
+                    print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {body_preview[:200]}..." if len(body_preview) > 200 else f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {body_preview}")
                 else:
                     # If no response_data, use the whole fetched_data
                     step3_response_body = fetched_data
-                    print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY (using full fetched_data): {json.dumps(fetched_data, indent=2)[:1000]}")
+                    body_preview = json.dumps(fetched_data, indent=2)
+                    print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY (using full fetched_data): {body_preview[:200]}..." if len(body_preview) > 200 else f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {body_preview}")
             else:
                 step3_response_body = fetched_data
-                print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {str(fetched_data)[:1000]}")
+                body_str = str(fetched_data)
+                print(f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {body_str[:200]}..." if len(body_str) > 200 else f"[SPECIAL FLOW SERVICE] Step 3 RESPONSE BODY: {body_str}")
 
             # Step 4: Final processing (use cached conversation from step 2 - available throughout the session)
             # The full conversation history from step 2 is cached and used here
@@ -448,6 +451,42 @@ class SpecialFlow1Service:
             system_prompt = f"{system_prompt}\n\nInitial Data:\n{initial_data_str}"
             print(f"[SPECIAL FLOW SERVICE] Added initial data to system prompt: {len(initial_data_str)} chars")
 
+        # Print the system prompt for step 2 (filter out formsample and pushsample, just show instructions)
+        print(f"[SPECIAL FLOW SERVICE] ========== STEP 2 SYSTEM PROMPT ==========")
+        # Filter out formsample and pushsample sections - extract just the instructions
+        filtered_prompt = system_prompt
+        
+        # Remove formsample and pushsample sections using a more robust approach
+        # This handles nested JSON objects by counting braces
+        def remove_json_section(text, keyword):
+            """Remove a JSON section starting with keyword"""
+            pattern = rf'(?i){re.escape(keyword)}\s*:?\s*\{{'
+            matches = list(re.finditer(pattern, text))
+            for match in reversed(matches):  # Process from end to avoid index issues
+                start = match.start()
+                brace_count = 0
+                i = match.end() - 1  # Start from the opening brace
+                while i < len(text):
+                    if text[i] == '{':
+                        brace_count += 1
+                    elif text[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            # Found the matching closing brace
+                            text = text[:start] + text[i+1:]
+                            break
+                    i += 1
+            return text
+        
+        filtered_prompt = remove_json_section(filtered_prompt, 'formsample')
+        filtered_prompt = remove_json_section(filtered_prompt, 'pushsample')
+        
+        # Clean up extra whitespace
+        filtered_prompt = re.sub(r'\n\s*\n\s*\n+', '\n\n', filtered_prompt).strip()
+        print(f"[SPECIAL FLOW SERVICE] {filtered_prompt}")
+        print(f"[SPECIAL FLOW SERVICE] ===========================================")
+        self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Step 2 SYSTEM PROMPT (filtered): {filtered_prompt}")
+
         # Determine provider/model
         provider = config.dialogue_config.llm_provider or LLMProviderType.GEMINI
         if provider == LLMProviderType.GEMINI:
@@ -465,32 +504,40 @@ class SpecialFlow1Service:
 
         # Create or get dialogue profile for this flow
         from .models import DialogueProfile
-        if dialogue_id not in self.dialogue_manager.dialogues:
-            # Create a temporary dialogue profile
-            dialogue_profile = DialogueProfile(
-                id=dialogue_id,
-                name=f"Dialogue-Driven Flow Dialogue - {flow_id}",
-                description=f"Temporary dialogue profile for Dialogue-Driven Flow: {flow_id}",
-                system_prompt=system_prompt,
-                rag_collection=None,  # DialogueConfig doesn't have rag_collection
-                db_tools=[],  # DialogueConfig doesn't have db_tools
-                request_tools=[],  # DialogueConfig doesn't have request_tools
-                llm_provider=provider,
-                model_name=model_name,
-                max_turns=config.dialogue_config.max_turns_phase1,
-                metadata={"flow_id": flow_id, "is_temporary": True}
-            )
-            self.dialogue_manager.dialogues[dialogue_id] = dialogue_profile
-            self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Created temporary dialogue profile: {dialogue_id}")
-            print(f"[SPECIAL FLOW SERVICE] Created temporary dialogue profile: {dialogue_id}")
-        else:
-            # Update existing profile with current config
-            existing_profile = self.dialogue_manager.dialogues[dialogue_id]
-            existing_profile.system_prompt = system_prompt
-            existing_profile.max_turns = config.dialogue_config.max_turns_phase1
-            existing_profile.llm_provider = provider
-            existing_profile.model_name = model_name
-            # DialogueConfig doesn't have rag_collection, db_tools, or request_tools
+        
+        # Always recreate the profile to ensure system prompt changes take effect
+        # This prevents caching issues where old system prompts might be used
+        if dialogue_id in self.dialogue_manager.dialogues:
+            # Clean up any active conversations for this profile to ensure fresh start
+            conversations_to_remove = [
+                conv_id for conv_id, conv in self.dialogue_manager.active_conversations.items()
+                if conv.get("profile_id") == dialogue_id
+            ]
+            for conv_id in conversations_to_remove:
+                del self.dialogue_manager.active_conversations[conv_id]
+                self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Cleared active conversation: {conv_id}")
+            # Remove old profile to force recreation with new system prompt
+            del self.dialogue_manager.dialogues[dialogue_id]
+            self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Removed existing dialogue profile to apply new system prompt")
+            print(f"[SPECIAL FLOW SERVICE] Removed existing dialogue profile to apply new system prompt")
+        
+        # Create a new temporary dialogue profile with current config
+        dialogue_profile = DialogueProfile(
+            id=dialogue_id,
+            name=f"Dialogue-Driven Flow Dialogue - {flow_id}",
+            description=f"Temporary dialogue profile for Dialogue-Driven Flow: {flow_id}",
+            system_prompt=system_prompt,
+            rag_collection=None,  # DialogueConfig doesn't have rag_collection
+            db_tools=[],  # DialogueConfig doesn't have db_tools
+            request_tools=[],  # DialogueConfig doesn't have request_tools
+            llm_provider=provider,
+            model_name=model_name,
+            max_turns=config.dialogue_config.max_turns_phase1,
+            metadata={"flow_id": flow_id, "is_temporary": True}
+        )
+        self.dialogue_manager.dialogues[dialogue_id] = dialogue_profile
+        self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Created/updated temporary dialogue profile: {dialogue_id} with system prompt length: {len(system_prompt)}")
+        print(f"[SPECIAL FLOW SERVICE] Created/updated temporary dialogue profile: {dialogue_id} with system prompt length: {len(system_prompt)}")
 
         # Create LLM caller
         llm_caller = LLMFactory.create_caller(
@@ -910,11 +957,12 @@ class SpecialFlow1Service:
         if step3_response_body is None and isinstance(fetched_data, dict):
             step3_response_body = fetched_data.get('response_data') or fetched_data.get('response_body') or fetched_data.get('body') or fetched_data.get('data')
         
-        # Print step 3 response body for debugging
+        # Print step 3 response body for debugging (short preview)
         if step3_response_body:
-            print(f"[SPECIAL FLOW SERVICE] Step 3 Response Body (for Step 4): {json.dumps(step3_response_body, indent=2) if isinstance(step3_response_body, dict) else str(step3_response_body)[:1000]}")
+            body_preview = json.dumps(step3_response_body, indent=2) if isinstance(step3_response_body, dict) else str(step3_response_body)
+            print(f"[SPECIAL FLOW SERVICE] Step 4 - Step 3 Response Body: {body_preview[:200]}..." if len(body_preview) > 200 else f"[SPECIAL FLOW SERVICE] Step 4 - Step 3 Response Body: {body_preview}")
         else:
-            print(f"[SPECIAL FLOW SERVICE] Step 3 Response Body: None or not available")
+            print(f"[SPECIAL FLOW SERVICE] Step 4 - Step 3 Response Body: None or not available")
 
         # Build input from template
         dialogue_summary = ""

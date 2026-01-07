@@ -31,10 +31,10 @@ import api from '../services/api';
 
 const Customizations = () => {
   const queryClient = useQueryClient();
-  const { data: profiles = [], isLoading, error } = useQuery('customizations', api.getCustomizations);
-  const { data: models = [] } = useQuery('models', api.getModels, { enabled: true });
-  const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true });
-  const { data: collections = [] } = useQuery('collections', api.getRAGCollections);
+  const { data: profiles = [], isLoading, error } = useQuery('customizations', api.getCustomizations, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+  const { data: models = [] } = useQuery('models', api.getModels, { enabled: true, staleTime: 5 * 60 * 1000 });
+  const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true, staleTime: 5 * 60 * 1000 });
+  const { data: collections = [] } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 });
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);

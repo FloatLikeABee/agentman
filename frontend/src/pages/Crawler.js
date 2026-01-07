@@ -217,7 +217,7 @@ const Crawler = () => {
 // Request Tools Panel Component
 const RequestToolsPanel = () => {
   const queryClient = useQueryClient();
-  const { data: requests = [], isLoading } = useQuery('request-tools', api.getRequestTools);
+  const { data: requests = [], isLoading } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);

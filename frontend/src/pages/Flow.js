@@ -45,13 +45,13 @@ import api from '../services/api';
 const Flow = () => {
   const queryClient = useQueryClient();
   const [tabValue, setTabValue] = useState(0);
-  const { data: flows = [], isLoading } = useQuery('flows', api.getFlows);
-  const { data: specialFlows1 = [], isLoading: isLoadingSpecial } = useQuery('special-flows-1', api.getSpecialFlows1);
-  const { data: customizations = [] } = useQuery('customizations', api.getCustomizations);
-  const { data: agents = [] } = useQuery('agents', api.getAgents);
-  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools);
-  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools);
-  const { data: dialogues = [] } = useQuery('dialogues', api.getDialogues);
+  const { data: flows = [], isLoading } = useQuery('flows', api.getFlows, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+  const { data: specialFlows1 = [], isLoading: isLoadingSpecial } = useQuery('special-flows-1', api.getSpecialFlows1, { staleTime: 5 * 60 * 1000 });
+  const { data: customizations = [] } = useQuery('customizations', api.getCustomizations, { staleTime: 5 * 60 * 1000 });
+  const { data: agents = [] } = useQuery('agents', api.getAgents, { staleTime: 5 * 60 * 1000 });
+  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools, { staleTime: 5 * 60 * 1000 });
+  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 });
+  const { data: dialogues = [] } = useQuery('dialogues', api.getDialogues, { staleTime: 5 * 60 * 1000 });
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openExecuteDialog, setOpenExecuteDialog] = useState(false);

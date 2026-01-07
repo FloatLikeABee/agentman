@@ -57,11 +57,11 @@ const AgentManager = () => {
   });
 
   const queryClient = useQueryClient();
-  const { data: agents, isLoading } = useQuery('agents', api.getAgents);
-  const { data: models } = useQuery('models', api.getModels);
-  const { data: collections } = useQuery('collections', api.getRAGCollections);
-  const { data: tools } = useQuery('tools', api.getTools);
-  const { data: providersData } = useQuery('providers', api.getProviders);
+  const { data: agents, isLoading } = useQuery('agents', api.getAgents, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+  const { data: models } = useQuery('models', api.getModels, { staleTime: 5 * 60 * 1000 });
+  const { data: collections } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 });
+  const { data: tools } = useQuery('tools', api.getTools, { staleTime: 5 * 60 * 1000 });
+  const { data: providersData } = useQuery('providers', api.getProviders, { staleTime: 5 * 60 * 1000 });
 
   const createAgentMutation = useMutation(api.createAgent, {
     onSuccess: () => {

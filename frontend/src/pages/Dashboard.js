@@ -20,10 +20,10 @@ import { useQuery } from 'react-query';
 import api from '../services/api';
 
 const Dashboard = () => {
-  const { data: status, isLoading, error } = useQuery('status', api.getStatus);
-  const { data: collections } = useQuery('collections', api.getRAGCollections);
-  const { data: agents } = useQuery('agents', api.getAgents);
-  const { data: tools } = useQuery('tools', api.getTools);
+  const { data: status, isLoading, error } = useQuery('status', api.getStatus, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+  const { data: collections } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 });
+  const { data: agents } = useQuery('agents', api.getAgents, { staleTime: 5 * 60 * 1000 });
+  const { data: tools } = useQuery('tools', api.getTools, { staleTime: 5 * 60 * 1000 });
 
   if (isLoading) {
     return <LinearProgress />;

@@ -47,7 +47,7 @@ const RAGManager = () => {
   });
 
   const queryClient = useQueryClient();
-  const { data: collections, isLoading } = useQuery('collections', api.getRAGCollections);
+  const { data: collections, isLoading } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
 
   const addDataMutation = useMutation(api.addRAGData, {
     onSuccess: () => {
