@@ -3,15 +3,13 @@ langchain==0.3.27
 langchain-community==0.3.27
 langchain-core==0.3.80
 langchain-text-splitters==0.3.11
-langchain-ollama==0.3.10
-langchain-openai==0.3.35
 google-generativeai
 mistralai
+openai
 
 # Vector database and embeddings
 chromadb==0.5.23
 sentence-transformers==5.0.0
-faiss-cpu==1.8.0
 
 # Web framework and API
 fastapi==0.115.11
@@ -27,30 +25,19 @@ python-docx==1.1.2
 PyPDF2==3.0.1
 beautifulsoup4==4.13.3
 
-# MCP (Model Context Protocol)
-mcp==1.12.2
-
-# Email tools
-emails==0.6.0
-
 # Web search and tools
 wikipedia
-duckduckgo-search==7.5.0
 requests==2.32.3
-aiohttp==3.11.13
 
 # Financial data
 yfinance>=0.2.66
-alpha-vantage==2.3.1
 
 # Database drivers
 pyodbc>=5.0.0
 
 # Utilities
 python-dotenv==1.0.1
-pydantic-settings
-loguru==0.7.2
-websockets==13.1
+pydantic-settings>=2.0.0
 tinydb==4.8.2
 
 # Development and testing
@@ -58,6 +45,3 @@ pytest==8.2.2
 pytest-asyncio==0.24.0
 black==25.1.0
 isort==5.13.2
-
-# CORS for frontend
-fastapi-cors==0.0.6
