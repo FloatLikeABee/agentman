@@ -32,6 +32,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
+import SystemPromptInput from '../components/SystemPromptInput';
 
 const AgentManager = () => {
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
@@ -508,9 +509,8 @@ const AgentManager = () => {
               </Typography>
             </Grid>
             <Grid item xs={12}>
-              <TextField
+              <SystemPromptInput
                 fullWidth
-                multiline
                 rows={4}
                 label="System Prompt"
                 value={formData.system_prompt}
@@ -520,9 +520,8 @@ const AgentManager = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <TextField
+              <SystemPromptInput
                 fullWidth
-                multiline
                 rows={4}
                 label="System Prompt Data (Optional)"
                 value={formData.system_prompt_data || ''}
