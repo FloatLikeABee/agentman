@@ -3643,9 +3643,27 @@ Question: {input}
                 # Determine if conversation needs to continue
                 # Check if response contains questions or asking phrases
                 response_lower = response_text.lower()
-                asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
-                needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and self.dialogue_manager.active_conversations[conversation_id]["turn_number"] < profile.max_turns
-                is_complete = not needs_more_info or self.dialogue_manager.active_conversations[conversation_id]["turn_number"] >= profile.max_turns
+                
+                # Check for completion indicators (AI is ready to proceed)
+                completion_phrases = [
+                    "thank you", "i have all", "i have the", "i've got", "i've collected",
+                    "ready to", "proceed", "all set", "complete", "finished", "done",
+                    "i understand", "got it", "perfect", "that's all", "no more questions",
+                    "sufficient information", "enough information", "all the information"
+                ]
+                has_completion_phrase = any(phrase in response_lower for phrase in completion_phrases)
+                
+                # Check for asking indicators (AI needs more info)
+                asking_phrases = ["?", "can you", "could you", "please provide", "i need", 
+                                 "what", "which", "when", "where", "how", "tell me",
+                                 "missing", "need more", "need additional", "require"]
+                is_asking = any(phrase in response_lower for phrase in asking_phrases)
+                
+                # Determine if more info is needed
+                # If AI has completion phrase and is not asking, it's complete
+                # If AI is asking questions, it needs more info (unless we've hit max turns)
+                needs_more_info = is_asking and not has_completion_phrase and self.dialogue_manager.active_conversations[conversation_id]["turn_number"] < profile.max_turns
+                is_complete = has_completion_phrase or (not needs_more_info) or self.dialogue_manager.active_conversations[conversation_id]["turn_number"] >= profile.max_turns
 
                 conversation = self.dialogue_manager.get_conversation(conversation_id)
 
@@ -3978,9 +3996,27 @@ Question: {{input}}
 
                 # Determine if conversation needs to continue
                 response_lower = response_text.lower()
-                asking_phrases = ["?", "can you", "could you", "please provide", "i need", "what", "which", "when", "where", "how"]
-                needs_more_info = any(phrase in response_lower for phrase in asking_phrases) and updated_conversation["turn_number"] < profile.max_turns
-                is_complete = not needs_more_info or updated_conversation["turn_number"] >= profile.max_turns
+                
+                # Check for completion indicators (AI is ready to proceed)
+                completion_phrases = [
+                    "thank you", "i have all", "i have the", "i've got", "i've collected",
+                    "ready to", "proceed", "all set", "complete", "finished", "done",
+                    "i understand", "got it", "perfect", "that's all", "no more questions",
+                    "sufficient information", "enough information", "all the information"
+                ]
+                has_completion_phrase = any(phrase in response_lower for phrase in completion_phrases)
+                
+                # Check for asking indicators (AI needs more info)
+                asking_phrases = ["?", "can you", "could you", "please provide", "i need", 
+                                 "what", "which", "when", "where", "how", "tell me",
+                                 "missing", "need more", "need additional", "require"]
+                is_asking = any(phrase in response_lower for phrase in asking_phrases)
+                
+                # Determine if more info is needed
+                # If AI has completion phrase and is not asking, it's complete
+                # If AI is asking questions, it needs more info (unless we've hit max turns)
+                needs_more_info = is_asking and not has_completion_phrase and updated_conversation["turn_number"] < profile.max_turns
+                is_complete = has_completion_phrase or (not needs_more_info) or updated_conversation["turn_number"] >= profile.max_turns
 
                 return DialogueResponse(
                     conversation_id=request.conversation_id,

@@ -115,9 +115,29 @@ class FlowDialogueMethods:
             response_text
         )
 
-        # Determine if more info is needed (simple heuristic: check for question marks)
-        needs_more_info = "?" in response_text or "please" in response_text.lower() or "could you" in response_text.lower()
-        is_complete = not needs_more_info or self.dialogue_manager.active_conversations[conversation_id]["turn_number"] >= profile.max_turns
+        # Determine if more info is needed - improved logic to detect when conversation is actually complete
+        response_lower = response_text.lower()
+        
+        # Check for completion indicators (AI is ready to proceed)
+        completion_phrases = [
+            "thank you", "i have all", "i have the", "i've got", "i've collected",
+            "ready to", "proceed", "all set", "complete", "finished", "done",
+            "i understand", "got it", "perfect", "that's all", "no more questions",
+            "sufficient information", "enough information", "all the information"
+        ]
+        has_completion_phrase = any(phrase in response_lower for phrase in completion_phrases)
+        
+        # Check for asking indicators (AI needs more info)
+        asking_phrases = ["?", "can you", "could you", "please provide", "i need", 
+                         "what", "which", "when", "where", "how", "tell me",
+                         "missing", "need more", "need additional", "require"]
+        is_asking = any(phrase in response_lower for phrase in asking_phrases)
+        
+        # Determine if more info is needed
+        # If AI has completion phrase and is not asking, it's complete
+        # If AI is asking questions, it needs more info (unless we've hit max turns)
+        needs_more_info = is_asking and not has_completion_phrase
+        is_complete = has_completion_phrase or (not needs_more_info) or self.dialogue_manager.active_conversations[conversation_id]["turn_number"] >= profile.max_turns
 
         # Get conversation history
         conversation = self.dialogue_manager.get_conversation(conversation_id)
@@ -259,9 +279,29 @@ class FlowDialogueMethods:
         self.dialogue_manager._increment_turn(request.conversation_id)
         conversation = self.dialogue_manager.get_conversation(request.conversation_id)
 
-        # Determine completion status
-        needs_more_info = "?" in response_text or "please" in response_text.lower() or "could you" in response_text.lower()
-        is_complete = not needs_more_info or conversation["turn_number"] >= conversation["max_turns"]
+        # Determine completion status - improved logic to detect when conversation is actually complete
+        response_lower = response_text.lower()
+        
+        # Check for completion indicators (AI is ready to proceed)
+        completion_phrases = [
+            "thank you", "i have all", "i have the", "i've got", "i've collected",
+            "ready to", "proceed", "all set", "complete", "finished", "done",
+            "i understand", "got it", "perfect", "that's all", "no more questions",
+            "sufficient information", "enough information", "all the information"
+        ]
+        has_completion_phrase = any(phrase in response_lower for phrase in completion_phrases)
+        
+        # Check for asking indicators (AI needs more info)
+        asking_phrases = ["?", "can you", "could you", "please provide", "i need", 
+                         "what", "which", "when", "where", "how", "tell me",
+                         "missing", "need more", "need additional", "require"]
+        is_asking = any(phrase in response_lower for phrase in asking_phrases)
+        
+        # Determine if more info is needed
+        # If AI has completion phrase and is not asking, it's complete
+        # If AI is asking questions, it needs more info (unless we've hit max turns)
+        needs_more_info = is_asking and not has_completion_phrase
+        is_complete = has_completion_phrase or (not needs_more_info) or conversation["turn_number"] >= conversation["max_turns"]
 
         # Get updated conversation history
         conversation_history = conversation["messages"] if conversation else []
