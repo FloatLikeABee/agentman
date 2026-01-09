@@ -41,6 +41,7 @@ import {
 import { Tabs, Tab } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
+import SystemPromptInput from '../components/SystemPromptInput';
 
 const Flow = () => {
   const queryClient = useQueryClient();
@@ -1850,12 +1851,11 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                     <AccordionDetails>
                       <Grid container spacing={2}>
                         <Grid item xs={12}>
-                          <TextField
+                          <SystemPromptInput
                             fullWidth
                             label="System Prompt"
                             value={formData.config.dialogue_config.system_prompt}
                             onChange={(e) => updateConfig('dialogue_config.system_prompt', e.target.value)}
-                            multiline
                             rows={4}
                             required
                             placeholder="Enter the system prompt for the dialogue..."
@@ -2007,12 +2007,11 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                     <AccordionDetails>
                       <Grid container spacing={2}>
                         <Grid item xs={12}>
-                          <TextField
+                          <SystemPromptInput
                             fullWidth
                             label="System Prompt"
                             value={formData.config.final_processing.system_prompt}
                             onChange={(e) => updateConfig('final_processing.system_prompt', e.target.value)}
-                            multiline
                             rows={4}
                             required
                             placeholder="Enter the system prompt for final processing..."

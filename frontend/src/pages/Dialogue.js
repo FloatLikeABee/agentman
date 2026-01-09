@@ -31,6 +31,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
+import SystemPromptInput from '../components/SystemPromptInput';
 
 const Dialogue = () => {
   const queryClient = useQueryClient();
