@@ -10,8 +10,9 @@ import time
 import threading
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set, List
 from urllib.parse import urljoin, urlparse
+from collections import deque
 
 import requests
 from bs4 import BeautifulSoup
@@ -50,13 +51,14 @@ class CrawlerService:
         self.data_dir = Path(settings.data_directory) / "scraped_content"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
-    def scrape_url(self, url: str, use_js: bool = False) -> Dict[str, Any]:
+    def scrape_url(self, url: str, use_js: bool = False, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Scrape a URL using the best available method.
         
         Args:
             url: URL to scrape
             use_js: Whether to use JavaScript rendering (Playwright/Selenium)
+            headers: Optional custom HTTP headers (e.g., for authentication)
         
         Returns:
             Dictionary with scraped content
@@ -66,25 +68,31 @@ class CrawlerService:
         # Try Playwright first if JS rendering is needed
         if use_js and PLAYWRIGHT_AVAILABLE:
             try:
-                return self._scrape_with_playwright(url)
+                return self._scrape_with_playwright(url, headers=headers)
             except Exception as e:
                 self.logger.warning(f"Playwright scraping failed: {e}, falling back to requests")
         
         # Try Selenium as alternative for JS rendering
         if use_js and SELENIUM_AVAILABLE:
             try:
-                return self._scrape_with_selenium(url)
+                return self._scrape_with_selenium(url, headers=headers)
             except Exception as e:
                 self.logger.warning(f"Selenium scraping failed: {e}, falling back to requests")
         
         # Fallback to requests + BeautifulSoup
-        return self._scrape_with_requests(url)
+        return self._scrape_with_requests(url, headers=headers)
     
-    def _scrape_with_playwright(self, url: str) -> Dict[str, Any]:
+    def _scrape_with_playwright(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Scrape using Playwright (handles JavaScript-rendered content)"""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            context = browser.new_context()
+            
+            # Set headers if provided
+            if headers:
+                context.set_extra_http_headers(headers)
+            
+            page = context.new_page()
             
             try:
                 page.goto(url, wait_until="networkidle", timeout=30000)
@@ -102,7 +110,7 @@ class CrawlerService:
                 browser.close()
                 raise
     
-    def _scrape_with_selenium(self, url: str) -> Dict[str, Any]:
+    def _scrape_with_selenium(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Scrape using Selenium (handles JavaScript-rendered content)"""
         options = ChromeOptions()
         options.add_argument('--headless')
@@ -113,6 +121,14 @@ class CrawlerService:
         
         driver = webdriver.Chrome(options=options)
         try:
+            # Set headers if provided (Selenium doesn't support custom headers directly,
+            # but we can use execute_cdp_cmd for Chrome DevTools Protocol)
+            if headers:
+                # Note: Selenium header support is limited, this is a workaround
+                driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                    "userAgent": headers.get('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+                })
+            
             driver.get(url)
             # Wait for page to load
             WebDriverWait(driver, 10).until(
@@ -127,9 +143,9 @@ class CrawlerService:
         finally:
             driver.quit()
     
-    def _scrape_with_requests(self, url: str) -> Dict[str, Any]:
+    def _scrape_with_requests(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Scrape using requests + BeautifulSoup (fast, but no JS rendering)"""
-        headers = {
+        default_headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
@@ -138,7 +154,11 @@ class CrawlerService:
             'Upgrade-Insecure-Requests': '1'
         }
         
-        response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+        # Merge custom headers with defaults (custom headers take precedence)
+        if headers:
+            default_headers.update(headers)
+        
+        response = requests.get(url, headers=default_headers, timeout=30, allow_redirects=True)
         response.raise_for_status()
         
         return self._parse_html(response.content, url)
@@ -433,6 +453,150 @@ IMPORTANT:
         
         return self.rag_system.add_data_to_collection(final_collection_name, rag_input)
     
+    def _crawl_recursively(
+        self,
+        start_url: str,
+        use_js: bool = False,
+        headers: Optional[Dict[str, str]] = None,
+        max_depth: int = 3,
+        max_pages: int = 50,
+        same_domain_only: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Recursively crawl a website following links.
+        
+        Returns:
+            List of scraped page data dictionaries
+        """
+        visited: Set[str] = set()
+        pages_data: List[Dict[str, Any]] = []
+        base_domain = urlparse(start_url).netloc
+        
+        # Queue: (url, depth)
+        queue = deque([(start_url, 0)])
+        visited.add(start_url)
+        
+        while queue and len(pages_data) < max_pages:
+            current_url, depth = queue.popleft()
+            
+            if depth > max_depth:
+                continue
+            
+            try:
+                self.logger.info(f"[Crawler] Crawling page {len(pages_data) + 1}/{max_pages}: {current_url} (depth: {depth})")
+                page_data = self.scrape_url(current_url, use_js=use_js, headers=headers)
+                pages_data.append(page_data)
+                
+                # Extract links for next level if not at max depth
+                if depth < max_depth and len(pages_data) < max_pages:
+                    links = page_data.get("links", [])
+                    for link_info in links:
+                        link_url = link_info.get("url", "")
+                        if not link_url:
+                            continue
+                        
+                        # Normalize URL
+                        parsed_link = urlparse(link_url)
+                        # Remove fragment and query params for comparison
+                        normalized_link = f"{parsed_link.scheme}://{parsed_link.netloc}{parsed_link.path}"
+                        
+                        # Check if we should follow this link
+                        if normalized_link in visited:
+                            continue
+                        
+                        # Check domain restriction
+                        if same_domain_only and parsed_link.netloc != base_domain:
+                            continue
+                        
+                        # Only follow http/https links
+                        if parsed_link.scheme not in ['http', 'https']:
+                            continue
+                        
+                        # Avoid common non-content URLs
+                        skip_patterns = [
+                            '.pdf', '.zip', '.jpg', '.jpeg', '.png', '.gif', '.svg',
+                            '.css', '.js', '.xml', '.rss', '.atom',
+                            'mailto:', 'tel:', 'javascript:', '#'
+                        ]
+                        if any(pattern in link_url.lower() for pattern in skip_patterns):
+                            continue
+                        
+                        visited.add(normalized_link)
+                        queue.append((link_url, depth + 1))
+                        
+                        if len(pages_data) >= max_pages:
+                            break
+                            
+            except Exception as e:
+                self.logger.warning(f"[Crawler] Failed to crawl {current_url}: {e}")
+                continue
+        
+        self.logger.info(f"[Crawler] Recursive crawl completed: {len(pages_data)} pages crawled, {len(visited)} URLs visited")
+        return pages_data
+    
+    def _merge_pages_data(self, pages_data: List[Dict[str, Any]], start_url: str) -> Dict[str, Any]:
+        """Merge data from multiple pages into a single structure"""
+        if not pages_data:
+            return {}
+        
+        if len(pages_data) == 1:
+            return pages_data[0]
+        
+        # Merge all pages
+        merged = {
+            "url": start_url,
+            "title": pages_data[0].get("title", "Multi-page Content"),
+            "headings": [],
+            "paragraphs": [],
+            "lists": [],
+            "links": [],
+            "main_content": "",
+            "scraped_at": datetime.now().isoformat(),
+            "pages_count": len(pages_data),
+            "pages": []
+        }
+        
+        all_links = set()
+        for page_data in pages_data:
+            # Collect headings
+            merged["headings"].extend(page_data.get("headings", []))
+            
+            # Collect paragraphs
+            merged["paragraphs"].extend(page_data.get("paragraphs", []))
+            
+            # Collect lists
+            merged["lists"].extend(page_data.get("lists", []))
+            
+            # Collect unique links
+            for link in page_data.get("links", []):
+                link_url = link.get("url", "")
+                if link_url:
+                    all_links.add(link_url)
+            
+            # Merge main content
+            page_content = page_data.get("main_content", "")
+            if page_content:
+                merged["main_content"] += f"\n\n--- Page: {page_data.get('url', 'Unknown')} ---\n\n{page_content}"
+            
+            # Store page metadata
+            merged["pages"].append({
+                "url": page_data.get("url", ""),
+                "title": page_data.get("title", ""),
+                "scraped_at": page_data.get("scraped_at", "")
+            })
+        
+        # Convert links set back to list format
+        merged["links"] = [{"url": url, "text": ""} for url in sorted(all_links)]
+        
+        # Limit sizes
+        merged["headings"] = merged["headings"][:200]
+        merged["paragraphs"] = merged["paragraphs"][:500]
+        merged["lists"] = merged["lists"][:100]
+        merged["links"] = merged["links"][:500]
+        merged["main_content"] = merged["main_content"][:500000]  # 500KB limit
+        
+        return merged
+    
     def crawl_and_save(
         self, 
         url: str, 
@@ -440,7 +604,12 @@ IMPORTANT:
         llm_provider: Optional[str] = None,
         model: Optional[str] = None,
         collection_name: Optional[str] = None,
-        collection_description: Optional[str] = None
+        collection_description: Optional[str] = None,
+        follow_links: bool = False,
+        max_depth: int = 3,
+        max_pages: int = 50,
+        same_domain_only: bool = True,
+        headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         Complete crawler workflow: scrape, extract with AI, save to files and RAG.
@@ -449,9 +618,23 @@ IMPORTANT:
             Dictionary with results including collection_name, file paths, etc.
         """
         try:
-            # Step 1: Scrape
-            self.logger.info(f"[Crawler] Step 1/4: Scraping {url}...")
-            raw_data = self.scrape_url(url, use_js=use_js)
+            # Step 1: Scrape (recursively if enabled)
+            if follow_links:
+                self.logger.info(f"[Crawler] Step 1/4: Recursively crawling {url} (max_depth={max_depth}, max_pages={max_pages})...")
+                pages_data = self._crawl_recursively(
+                    url, 
+                    use_js=use_js, 
+                    headers=headers,
+                    max_depth=max_depth, 
+                    max_pages=max_pages,
+                    same_domain_only=same_domain_only
+                )
+                raw_data = self._merge_pages_data(pages_data, url)
+                total_links_found = len(raw_data.get("links", []))
+            else:
+                self.logger.info(f"[Crawler] Step 1/4: Scraping {url}...")
+                raw_data = self.scrape_url(url, use_js=use_js, headers=headers)
+                total_links_found = len(raw_data.get("links", []))
             
             # Step 2: Save raw content
             self.logger.info(f"[Crawler] Step 2/4: Saving raw content...")
@@ -476,6 +659,8 @@ IMPORTANT:
                 collection_description=final_description
             )
             
+            pages_crawled = raw_data.get("pages_count", 1) if follow_links else 1
+            
             if success:
                 return {
                     "success": True,
@@ -489,7 +674,9 @@ IMPORTANT:
                         "summary": extracted_data.get("summary", ""),
                         "main_topics_count": len(extracted_data.get("main_topics", [])),
                         "key_points_count": len(extracted_data.get("key_points", []))
-                    }
+                    },
+                    "pages_crawled": pages_crawled,
+                    "total_links_found": total_links_found
                 }
             else:
                 return {
@@ -497,7 +684,9 @@ IMPORTANT:
                     "error": "Failed to save to RAG collection",
                     "url": url,
                     "raw_file": str(raw_file_path),
-                    "extracted_file": str(extracted_file_path)
+                    "extracted_file": str(extracted_file_path),
+                    "pages_crawled": pages_crawled,
+                    "total_links_found": total_links_found
                 }
                 
         except Exception as e:

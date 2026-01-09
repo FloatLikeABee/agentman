@@ -542,6 +542,11 @@ class CrawlerRequest(BaseModel):
     model: Optional[str] = Field(None, description="Model name to use")
     collection_name: Optional[str] = Field(None, description="Override AI-generated collection name")
     collection_description: Optional[str] = Field(None, description="Override AI-generated collection description")
+    follow_links: bool = Field(default=False, description="Follow links recursively to crawl entire site")
+    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum depth for recursive crawling (1-10)")
+    max_pages: int = Field(default=50, ge=1, le=1000, description="Maximum number of pages to crawl (1-1000)")
+    same_domain_only: bool = Field(default=True, description="Only follow links within the same domain")
+    headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers (e.g., Authorization tokens)")
 
 
 class CrawlerResponse(BaseModel):
@@ -553,6 +558,8 @@ class CrawlerResponse(BaseModel):
     extracted_file: Optional[str] = None
     extracted_data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    pages_crawled: Optional[int] = None
+    total_links_found: Optional[int] = None
 
 
 class FlowStepType(str, Enum):
@@ -681,7 +688,7 @@ class DialogueProfile(BaseModel):
         None,
         description="Optional model override for this dialogue",
     )
-    max_turns: int = Field(default=5, ge=1, le=10, description="Maximum number of conversation turns (default: 5)")
+    max_turns: int = Field(default=30, ge=1, le=30, description="Maximum number of conversation turns (default: 30)")
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata for this dialogue",
@@ -698,7 +705,7 @@ class DialogueCreateRequest(BaseModel):
     request_tools: List[str] = Field(default_factory=list, description="List of request tool IDs to use")
     llm_provider: Optional[LLMProviderType] = None
     model_name: Optional[str] = None
-    max_turns: int = Field(default=5, ge=1, le=10)
+    max_turns: int = Field(default=30, ge=1, le=30)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -712,7 +719,7 @@ class DialogueUpdateRequest(BaseModel):
     request_tools: List[str] = Field(default_factory=list, description="List of request tool IDs to use")
     llm_provider: Optional[LLMProviderType] = None
     model_name: Optional[str] = None
-    max_turns: int = Field(default=5, ge=1, le=10)
+    max_turns: int = Field(default=30, ge=1, le=30)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

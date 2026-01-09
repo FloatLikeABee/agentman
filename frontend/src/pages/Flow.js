@@ -887,7 +887,7 @@ const Flow = () => {
                       {dialogueWarning}
                     </Alert>
                   )}
-                  <Box sx={{ mb: 2, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Box sx={{ mb: 2, p: 1, bgcolor: 'background.paper', border: '1px solid', borderColor: 'primary.main', borderOpacity: 0.3, borderRadius: 1 }}>
                     <Typography variant="body2">
                       Current step: {currentStep.step_id || '(no ID)'} | {currentStep.step_name || '(no name)'} | {currentStep.resource_id || '(no resource)'}
                     </Typography>
@@ -996,11 +996,29 @@ const Flow = () => {
                             <Box
                               sx={{
                                 p: 2,
-                                bgcolor: 'grey.50',
+                                bgcolor: 'background.paper',
+                                border: '1px solid',
+                                borderColor: 'primary.main',
+                                borderOpacity: 0.3,
                                 borderRadius: 1,
                                 maxHeight: 300,
                                 overflow: 'auto',
                                 mb: 2,
+                                '&::-webkit-scrollbar': {
+                                  width: '8px',
+                                },
+                                '&::-webkit-scrollbar-track': {
+                                  bgcolor: 'background.default',
+                                  borderRadius: '4px',
+                                },
+                                '&::-webkit-scrollbar-thumb': {
+                                  bgcolor: 'primary.main',
+                                  bgcolorOpacity: 0.5,
+                                  borderRadius: '4px',
+                                  '&:hover': {
+                                    bgcolor: 'primary.light',
+                                  },
+                                },
                               }}
                             >
                               {step.metadata.dialogue_response.conversation_history?.map((msg, idx) => (
@@ -1017,7 +1035,10 @@ const Flow = () => {
                                       p: 1.5,
                                       borderRadius: 2,
                                       maxWidth: '80%',
-                                      bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                                      bgcolor: msg.role === 'user' ? 'primary.main' : 'background.default',
+                                      border: msg.role === 'assistant' ? '1px solid' : 'none',
+                                      borderColor: msg.role === 'assistant' ? 'primary.main' : 'transparent',
+                                      borderOpacity: msg.role === 'assistant' ? 0.3 : 1,
                                       color: msg.role === 'user' ? 'white' : 'text.primary',
                                     }}
                                   >
@@ -1070,11 +1091,29 @@ const Flow = () => {
                               variant="body2"
                               sx={{
                                 p: 1,
-                                bgcolor: 'grey.100',
+                                bgcolor: 'background.paper',
+                                border: '1px solid',
+                                borderColor: 'primary.main',
+                                borderOpacity: 0.3,
                                 borderRadius: 1,
                                 whiteSpace: 'pre-wrap',
                                 maxHeight: 200,
                                 overflow: 'auto',
+                                '&::-webkit-scrollbar': {
+                                  width: '8px',
+                                },
+                                '&::-webkit-scrollbar-track': {
+                                  bgcolor: 'background.default',
+                                  borderRadius: '4px',
+                                },
+                                '&::-webkit-scrollbar-thumb': {
+                                  bgcolor: 'primary.main',
+                                  bgcolorOpacity: 0.5,
+                                  borderRadius: '4px',
+                                  '&:hover': {
+                                    bgcolor: 'primary.light',
+                                  },
+                                },
                               }}
                             >
                               {typeof step.output === 'object'
@@ -1156,11 +1195,29 @@ const Flow = () => {
               <Box
                 sx={{
                   p: 2,
-                  bgcolor: 'grey.50',
+                  bgcolor: 'background.paper',
+                  border: '1px solid',
+                  borderColor: 'primary.main',
+                  borderOpacity: 0.3,
                   borderRadius: 1,
                   maxHeight: 400,
                   overflow: 'auto',
                   mb: 2,
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    bgcolor: 'background.default',
+                    borderRadius: '4px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: 'primary.main',
+                    bgcolorOpacity: 0.5,
+                    borderRadius: '4px',
+                    '&:hover': {
+                      bgcolor: 'primary.light',
+                    },
+                  },
                 }}
               >
                 {dialogueConversation.conversationHistory.length === 0 ? (
@@ -1182,7 +1239,10 @@ const Flow = () => {
                           p: 1.5,
                           borderRadius: 2,
                           maxWidth: '80%',
-                          bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                          bgcolor: msg.role === 'user' ? 'primary.main' : 'background.default',
+                          border: msg.role === 'assistant' ? '1px solid' : 'none',
+                          borderColor: msg.role === 'assistant' ? 'primary.main' : 'transparent',
+                          borderOpacity: msg.role === 'assistant' ? 0.3 : 1,
                           color: msg.role === 'user' ? 'white' : 'text.primary',
                         }}
                       >
@@ -2204,11 +2264,29 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
               <Box
                 sx={{
                   p: 2,
-                  bgcolor: 'grey.50',
+                  bgcolor: 'background.paper',
+                  border: '1px solid',
+                  borderColor: 'primary.main',
+                  borderOpacity: 0.3,
                   borderRadius: 1,
                   maxHeight: 400,
                   overflow: 'auto',
                   mb: 2,
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    bgcolor: 'background.default',
+                    borderRadius: '4px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: 'primary.main',
+                    bgcolorOpacity: 0.5,
+                    borderRadius: '4px',
+                    '&:hover': {
+                      bgcolor: 'primary.light',
+                    },
+                  },
                 }}
               >
                 {dialogueConversation.conversationHistory.length === 0 ? (
@@ -2230,7 +2308,10 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                           p: 1.5,
                           borderRadius: 2,
                           maxWidth: '80%',
-                          bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.200',
+                          bgcolor: msg.role === 'user' ? 'primary.main' : 'background.default',
+                          border: msg.role === 'assistant' ? '1px solid' : 'none',
+                          borderColor: msg.role === 'assistant' ? 'primary.main' : 'transparent',
+                          borderOpacity: msg.role === 'assistant' ? 0.3 : 1,
                           color: msg.role === 'user' ? 'white' : 'text.primary',
                         }}
                       >

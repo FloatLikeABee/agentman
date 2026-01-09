@@ -432,8 +432,13 @@ class FlowStepExecutors:
         model = step.metadata.get("model")
         collection_name = step.metadata.get("collection_name")
         collection_description = step.metadata.get("collection_description")
+        follow_links = step.metadata.get("follow_links", False)
+        max_depth = step.metadata.get("max_depth", 3)
+        max_pages = step.metadata.get("max_pages", 50)
+        same_domain_only = step.metadata.get("same_domain_only", True)
+        headers = step.metadata.get("headers")
 
-        print(f"[FLOW STEP EXECUTOR] Crawler params - use_js: {use_js}, provider: {llm_provider}, model: {model}")
+        print(f"[FLOW STEP EXECUTOR] Crawler params - use_js: {use_js}, provider: {llm_provider}, model: {model}, follow_links: {follow_links}")
 
         # Wrap in asyncio.to_thread to ensure proper sequential execution
         result = await asyncio.to_thread(
@@ -444,6 +449,11 @@ class FlowStepExecutors:
             model=model,
             collection_name=collection_name,
             collection_description=collection_description,
+            follow_links=follow_links,
+            max_depth=max_depth,
+            max_pages=max_pages,
+            same_domain_only=same_domain_only,
+            headers=headers,
         )
 
         print(f"[FLOW STEP EXECUTOR] CRAWLER step output keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")

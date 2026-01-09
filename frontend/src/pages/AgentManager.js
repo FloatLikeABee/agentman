@@ -630,10 +630,11 @@ const AgentManager = () => {
                 sx={{
                   mt: 1,
                   p: 2,
-                  bgcolor: 'grey.50',
+                  bgcolor: 'background.paper',
                   borderRadius: 1,
                   border: '1px solid',
-                  borderColor: 'grey.200',
+                  borderColor: 'primary.main',
+                  borderOpacity: 0.3,
                   flex: 1,
                   overflow: 'hidden',
                   display: 'flex',
@@ -648,14 +649,15 @@ const AgentManager = () => {
                       width: '8px',
                     },
                     '&::-webkit-scrollbar-track': {
-                      bgcolor: 'grey.100',
+                      bgcolor: 'background.default',
                       borderRadius: '4px',
                     },
                     '&::-webkit-scrollbar-thumb': {
-                      bgcolor: 'grey.400',
+                      bgcolor: 'primary.main',
+                      bgcolorOpacity: 0.5,
                       borderRadius: '4px',
                       '&:hover': {
-                        bgcolor: 'grey.500',
+                        bgcolor: 'primary.light',
                       },
                     },
                   }}
@@ -712,12 +714,16 @@ const AgentManager = () => {
                           <Box
                             component="code"
                             sx={{
-                              bgcolor: 'grey.200',
+                              bgcolor: 'background.default',
+                              color: 'text.primary',
                               px: 0.5,
                               py: 0.25,
                               borderRadius: 0.5,
                               fontFamily: 'monospace',
                               fontSize: '0.875rem',
+                              border: '1px solid',
+                              borderColor: 'primary.main',
+                              borderOpacity: 0.3,
                             }}
                           >
                             {children}
@@ -727,13 +733,17 @@ const AgentManager = () => {
                           <Box
                             component="pre"
                             sx={{
-                              bgcolor: 'grey.200',
+                              bgcolor: 'background.default',
+                              color: 'text.primary',
                               p: 1,
                               borderRadius: 1,
                               overflowX: 'auto',
                               fontFamily: 'monospace',
                               fontSize: '0.875rem',
                               mb: 1,
+                              border: '1px solid',
+                              borderColor: 'primary.main',
+                              borderOpacity: 0.3,
                             }}
                           >
                             {children}

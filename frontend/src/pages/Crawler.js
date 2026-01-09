@@ -47,6 +47,12 @@ const Crawler = () => {
   const [model, setModel] = useState('');
   const [collectionName, setCollectionName] = useState('');
   const [collectionDescription, setCollectionDescription] = useState('');
+  const [followLinks, setFollowLinks] = useState(false);
+  const [maxDepth, setMaxDepth] = useState(3);
+  const [maxPages, setMaxPages] = useState(50);
+  const [sameDomainOnly, setSameDomainOnly] = useState(true);
+  const [headersText, setHeadersText] = useState('');
+  const [headersError, setHeadersError] = useState('');
 
   const crawlMutation = useMutation(
     (data) => api.crawlWebsite(data),
@@ -63,19 +69,47 @@ const Crawler = () => {
     }
   );
 
+  const parseHeaders = () => {
+    if (!headersText.trim()) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(headersText);
+      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Headers must be a JSON object');
+      }
+      return parsed;
+    } catch (e) {
+      setHeadersError(`Invalid JSON: ${e.message}`);
+      throw e;
+    }
+  };
+
   const handleCrawl = () => {
     if (!url.trim()) {
       return;
     }
 
-    crawlMutation.mutate({
-      url: url.trim(),
-      use_js: useJs,
-      llm_provider: llmProvider || null,
-      model: model || null,
-      collection_name: collectionName || null,
-      collection_description: collectionDescription || null,
-    });
+    try {
+      setHeadersError('');
+      const headers = parseHeaders();
+
+      crawlMutation.mutate({
+        url: url.trim(),
+        use_js: useJs,
+        llm_provider: llmProvider || null,
+        model: model || null,
+        collection_name: collectionName || null,
+        collection_description: collectionDescription || null,
+        follow_links: followLinks,
+        max_depth: followLinks ? maxDepth : undefined,
+        max_pages: followLinks ? maxPages : undefined,
+        same_domain_only: followLinks ? sameDomainOnly : undefined,
+        headers: headers,
+      });
+    } catch (e) {
+      // Error already set in parseHeaders
+    }
   };
 
   return (
@@ -102,6 +136,12 @@ const Crawler = () => {
               {crawlMutation.isSuccess && (
                 <Alert severity="success" sx={{ mb: 2 }}>
                   Successfully crawled and saved to RAG collection!
+                  {crawlMutation.data?.pages_crawled && (
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                      Pages crawled: {crawlMutation.data.pages_crawled}
+                      {crawlMutation.data.total_links_found && ` | Links found: ${crawlMutation.data.total_links_found}`}
+                    </Typography>
+                  )}
                 </Alert>
               )}
 
@@ -127,6 +167,90 @@ const Crawler = () => {
                 label="Use JavaScript Rendering (for dynamic content)"
                 sx={{ mb: 2, display: 'block' }}
               />
+
+              <Divider sx={{ my: 2 }} />
+
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Recursive Crawling (Follow Links)
+              </Typography>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={followLinks}
+                    onChange={(e) => setFollowLinks(e.target.checked)}
+                  />
+                }
+                label="Follow links to crawl entire site"
+                sx={{ mb: 2, display: 'block' }}
+              />
+
+              {followLinks && (
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Max Depth"
+                      type="number"
+                      value={maxDepth}
+                      onChange={(e) => setMaxDepth(Math.max(1, Math.min(10, parseInt(e.target.value) || 3)))}
+                      inputProps={{ min: 1, max: 10 }}
+                      helperText="How many levels deep to crawl (1-10)"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Max Pages"
+                      type="number"
+                      value={maxPages}
+                      onChange={(e) => setMaxPages(Math.max(1, Math.min(1000, parseInt(e.target.value) || 50)))}
+                      inputProps={{ min: 1, max: 1000 }}
+                      helperText="Maximum pages to crawl (1-1000)"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={sameDomainOnly}
+                          onChange={(e) => setSameDomainOnly(e.target.checked)}
+                        />
+                      }
+                      label="Only follow links within the same domain"
+                    />
+                  </Grid>
+                </Grid>
+              )}
+
+              <Divider sx={{ my: 2 }} />
+
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Authentication Headers (Optional)
+              </Typography>
+
+              <TextField
+                fullWidth
+                label="Custom Headers (JSON)"
+                value={headersText}
+                onChange={(e) => {
+                  setHeadersText(e.target.value);
+                  setHeadersError('');
+                }}
+                multiline
+                rows={3}
+                sx={{ mb: 1 }}
+                placeholder='{"Authorization": "Bearer token", "X-API-Key": "your-key"}'
+                helperText="JSON object with HTTP headers for authentication"
+                error={!!headersError}
+              />
+              {headersError && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setHeadersError('')}>
+                  {headersError}
+                </Alert>
+              )}
+
+              <Divider sx={{ my: 2 }} />
 
               <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid item xs={12} sm={6}>
@@ -495,11 +619,35 @@ const RequestToolsPanel = () => {
                     sx={{ mb: 1, ml: 1 }}
                   />
                 )}
-                <Paper sx={{ p: 2, mt: 2, maxHeight: 300, overflow: 'auto' }}>
+                <Paper sx={{ 
+                  p: 2, 
+                  mt: 2, 
+                  maxHeight: 300, 
+                  overflow: 'auto',
+                  bgcolor: 'background.paper',
+                  border: '1px solid',
+                  borderColor: 'primary.main',
+                  borderOpacity: 0.3,
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    bgcolor: 'background.default',
+                    borderRadius: '4px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: 'primary.main',
+                    bgcolorOpacity: 0.5,
+                    borderRadius: '4px',
+                    '&:hover': {
+                      bgcolor: 'primary.light',
+                    },
+                  },
+                }}>
                   <Typography variant="caption" color="text.secondary">
                     Response Data:
                   </Typography>
-                  <pre style={{ margin: 0, fontSize: '0.875rem' }}>
+                  <pre style={{ margin: 0, fontSize: '0.875rem', color: 'inherit' }}>
                     {JSON.stringify(selectedRequest.last_response.response_data, null, 2)}
                   </pre>
                 </Paper>
@@ -666,8 +814,31 @@ const RequestToolsPanel = () => {
                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                       Response Headers
                     </Typography>
-                    <Paper sx={{ p: 2, bgcolor: 'grey.50', maxHeight: 200, overflow: 'auto' }}>
-                      <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>
+                    <Paper sx={{ 
+                      p: 2, 
+                      bgcolor: 'background.paper', 
+                      border: '1px solid',
+                      borderColor: 'primary.main',
+                      borderOpacity: 0.3,
+                      maxHeight: 200, 
+                      overflow: 'auto',
+                      '&::-webkit-scrollbar': {
+                        width: '8px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        bgcolor: 'background.default',
+                        borderRadius: '4px',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        bgcolor: 'primary.main',
+                        bgcolorOpacity: 0.5,
+                        borderRadius: '4px',
+                        '&:hover': {
+                          bgcolor: 'primary.light',
+                        },
+                      },
+                    }}>
+                      <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', color: 'inherit' }}>
                         {JSON.stringify(responseData.response_headers, null, 2)}
                       </pre>
                     </Paper>
@@ -697,7 +868,30 @@ const RequestToolsPanel = () => {
                       );
                     })()}
                   </Box>
-                  <Paper sx={{ p: 2, bgcolor: 'grey.50', maxHeight: 500, overflow: 'auto' }}>
+                  <Paper sx={{ 
+                    p: 2, 
+                    bgcolor: 'background.paper', 
+                    border: '1px solid',
+                    borderColor: 'primary.main',
+                    borderOpacity: 0.3,
+                    maxHeight: 500, 
+                    overflow: 'auto',
+                    '&::-webkit-scrollbar': {
+                      width: '8px',
+                    },
+                    '&::-webkit-scrollbar-track': {
+                      bgcolor: 'background.default',
+                      borderRadius: '4px',
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                      bgcolor: 'primary.main',
+                      bgcolorOpacity: 0.5,
+                      borderRadius: '4px',
+                      '&:hover': {
+                        bgcolor: 'primary.light',
+                      },
+                    },
+                  }}>
                     {(() => {
                       const data = responseData.response_data;
                       if (data === null || data === undefined) {

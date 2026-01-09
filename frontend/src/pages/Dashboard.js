@@ -117,7 +117,7 @@ const Dashboard = () => {
               </Typography>
               <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
                 {collections?.slice(0, 5).map((collection) => (
-                  <Box key={collection.name} sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 'grey.50' }}>
+                  <Box key={collection.name} sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 'background.paper', border: '1px solid', borderColor: 'primary.main', borderOpacity: 0.3 }}>
                     <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
                       {collection.name}
                     </Typography>
@@ -145,7 +145,7 @@ const Dashboard = () => {
               </Typography>
               <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
                 {agents?.slice(0, 5).map((agent) => (
-                  <Box key={agent.id} sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 'grey.50' }}>
+                  <Box key={agent.id} sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 'background.paper', border: '1px solid', borderColor: 'primary.main', borderOpacity: 0.3 }}>
                     <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
                       {agent.name}
                     </Typography>

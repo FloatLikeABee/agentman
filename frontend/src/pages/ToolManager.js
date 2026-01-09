@@ -117,11 +117,22 @@ const ToolManager = () => {
           return (
             <Grid item xs={12} md={6} lg={4} key={tool.id}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, gap: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
                       {getToolIcon(tool.tool_type)}
-                      <Typography variant="h6">{tool.name}</Typography>
+                      <Typography 
+                        variant="h6"
+                        sx={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1
+                        }}
+                        title={tool.name}
+                      >
+                        {tool.name}
+                      </Typography>
                     </Box>
                     <Button
                       size="small"
@@ -132,11 +143,27 @@ const ToolManager = () => {
                         setJsonError('');
                         setOpenConfigDialog(true);
                       }}
+                      sx={{ flexShrink: 0 }}
                     >
                       Config
                     </Button>
                   </Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                      mb: 1.5,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                      minHeight: '4.5em',
+                      maxHeight: '4.5em',
+                      lineHeight: 1.5
+                    }}
+                    title={tool.description}
+                  >
                     {tool.description}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, mb: usageExample ? 1.5 : 0, flexWrap: 'wrap' }}>
@@ -152,7 +179,15 @@ const ToolManager = () => {
                     />
                   </Box>
                   {usageExample && (
-                    <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
+                    <Box sx={{ 
+                      mt: 'auto',
+                      p: 1.5, 
+                      bgcolor: 'background.paper', 
+                      borderRadius: 1, 
+                      border: '1px solid', 
+                      borderColor: 'primary.main', 
+                      borderOpacity: 0.3 
+                    }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
                         Usage Example:
                       </Typography>
@@ -161,10 +196,16 @@ const ToolManager = () => {
                         sx={{ 
                           fontFamily: 'monospace', 
                           fontSize: '0.75rem',
-                          wordBreak: 'break-all',
-                          display: 'block',
-                          color: 'text.primary'
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                          color: 'text.primary',
+                          lineHeight: 1.4,
+                          maxHeight: '3.6em'
                         }}
+                        title={usageExample}
                       >
                         {usageExample}
                       </Typography>

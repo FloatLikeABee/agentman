@@ -2251,6 +2251,11 @@ Question: {{input}}
             - `model`: Specific model to use (optional)
             - `collection_name`: Target RAG collection name (auto-generated if not provided)
             - `collection_description`: Collection description (auto-generated if not provided)
+            - `follow_links`: Follow links recursively to crawl entire site (default: false)
+            - `max_depth`: Maximum depth for recursive crawling, 1-10 (default: 3)
+            - `max_pages`: Maximum number of pages to crawl, 1-1000 (default: 50)
+            - `same_domain_only`: Only follow links within the same domain (default: true)
+            - `headers`: Custom HTTP headers as JSON object (e.g., {"Authorization": "Bearer token"})
             
             **AI Processing:**
             The AI automatically:
@@ -2298,7 +2303,12 @@ Question: {{input}}
                     llm_provider=request.llm_provider,
                     model=request.model,
                     collection_name=request.collection_name,
-                    collection_description=request.collection_description
+                    collection_description=request.collection_description,
+                    follow_links=request.follow_links,
+                    max_depth=request.max_depth,
+                    max_pages=request.max_pages,
+                    same_domain_only=request.same_domain_only,
+                    headers=request.headers
                 )
                 
                 if result.get("success"):
@@ -2309,7 +2319,9 @@ Question: {{input}}
                         collection_description=result.get("collection_description"),
                         raw_file=result.get("raw_file"),
                         extracted_file=result.get("extracted_file"),
-                        extracted_data=result.get("extracted_data")
+                        extracted_data=result.get("extracted_data"),
+                        pages_crawled=result.get("pages_crawled"),
+                        total_links_found=result.get("total_links_found")
                     )
                 else:
                     raise HTTPException(

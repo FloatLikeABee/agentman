@@ -342,12 +342,30 @@ const Customizations = () => {
                       <Box
                         sx={{
                           whiteSpace: 'pre-wrap',
-                          border: '1px solid rgba(0,0,0,0.12)',
+                          border: '1px solid',
+                          borderColor: 'primary.main',
+                          borderOpacity: 0.3,
                           borderRadius: 1,
                           p: 2,
                           maxHeight: 260,
                           overflowY: 'auto',
-                          bgColor: 'grey.50',
+                          bgcolor: 'background.paper',
+                          color: 'text.primary',
+                          '&::-webkit-scrollbar': {
+                            width: '8px',
+                          },
+                          '&::-webkit-scrollbar-track': {
+                            bgcolor: 'background.default',
+                            borderRadius: '4px',
+                          },
+                          '&::-webkit-scrollbar-thumb': {
+                            bgcolor: 'primary.main',
+                            bgcolorOpacity: 0.5,
+                            borderRadius: '4px',
+                            '&:hover': {
+                              bgcolor: 'primary.light',
+                            },
+                          },
                         }}
                       >
                         {queryResult}
