@@ -549,6 +549,60 @@ class CrawlerRequest(BaseModel):
     headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers (e.g., Authorization tokens)")
 
 
+class CrawlerProfile(BaseModel):
+    """Crawler profile configuration"""
+    id: str = Field(..., description="Unique profile ID")
+    name: str = Field(..., description="Profile name")
+    description: Optional[str] = Field(None, description="Profile description")
+    url: str = Field(..., description="URL to crawl")
+    use_js: bool = Field(default=False, description="Use JavaScript rendering")
+    llm_provider: Optional[str] = Field(None, description="LLM provider for extraction")
+    model: Optional[str] = Field(None, description="Model name")
+    collection_name: Optional[str] = Field(None, description="RAG collection name")
+    collection_description: Optional[str] = Field(None, description="RAG collection description")
+    follow_links: bool = Field(default=False, description="Follow links recursively")
+    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum crawl depth")
+    max_pages: int = Field(default=50, ge=1, le=1000, description="Maximum pages to crawl")
+    same_domain_only: bool = Field(default=True, description="Only follow same domain links")
+    headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers")
+    created_at: Optional[str] = Field(None, description="Creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+
+
+class CrawlerCreateRequest(BaseModel):
+    """Request to create a crawler profile"""
+    name: str = Field(..., description="Profile name")
+    description: Optional[str] = Field(None, description="Profile description")
+    url: str = Field(..., description="URL to crawl")
+    use_js: bool = Field(default=False, description="Use JavaScript rendering")
+    llm_provider: Optional[str] = Field(None, description="LLM provider for extraction")
+    model: Optional[str] = Field(None, description="Model name")
+    collection_name: Optional[str] = Field(None, description="RAG collection name")
+    collection_description: Optional[str] = Field(None, description="RAG collection description")
+    follow_links: bool = Field(default=False, description="Follow links recursively")
+    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum crawl depth")
+    max_pages: int = Field(default=50, ge=1, le=1000, description="Maximum pages to crawl")
+    same_domain_only: bool = Field(default=True, description="Only follow same domain links")
+    headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers")
+
+
+class CrawlerUpdateRequest(BaseModel):
+    """Request to update a crawler profile"""
+    name: Optional[str] = Field(None, description="Profile name")
+    description: Optional[str] = Field(None, description="Profile description")
+    url: Optional[str] = Field(None, description="URL to crawl")
+    use_js: Optional[bool] = Field(None, description="Use JavaScript rendering")
+    llm_provider: Optional[str] = Field(None, description="LLM provider for extraction")
+    model: Optional[str] = Field(None, description="Model name")
+    collection_name: Optional[str] = Field(None, description="RAG collection name")
+    collection_description: Optional[str] = Field(None, description="RAG collection description")
+    follow_links: Optional[bool] = Field(None, description="Follow links recursively")
+    max_depth: Optional[int] = Field(None, ge=1, le=10, description="Maximum crawl depth")
+    max_pages: Optional[int] = Field(None, ge=1, le=1000, description="Maximum pages to crawl")
+    same_domain_only: Optional[bool] = Field(None, description="Only follow same domain links")
+    headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers")
+
+
 class CrawlerResponse(BaseModel):
     success: bool
     url: str
@@ -895,3 +949,69 @@ class SpecialFlow1ExecuteResponse(BaseModel):
     total_execution_time: float = Field(..., description="Total execution time in seconds")
     error: Optional[str] = Field(None, description="Error message if flow failed")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+# Conversation Models (Multi-AI Conversation Module)
+class ModelConversationConfig(BaseModel):
+    """Configuration for a single AI model in the conversation"""
+    provider: LLMProviderType = Field(..., description="LLM provider for this model")
+    model_name: str = Field(..., description="Model name for this model")
+    system_prompt: str = Field(..., description="System prompt for this model")
+    rag_collection: Optional[str] = Field(None, description="Optional RAG collection to use for this model")
+
+
+class ConversationConfig(BaseModel):
+    """Configuration for a conversation between two AI models"""
+    model1_config: ModelConversationConfig = Field(..., description="Configuration for first AI model")
+    model2_config: ModelConversationConfig = Field(..., description="Configuration for second AI model")
+    max_turns: int = Field(default=10, ge=5, le=100, description="Maximum number of turns (must be between 5 and 100)")
+
+
+class ConversationCreateRequest(BaseModel):
+    """Request to create a conversation configuration"""
+    name: str = Field(..., description="Name for this conversation configuration")
+    description: Optional[str] = Field(None, description="Description of the conversation")
+    config: ConversationConfig = Field(..., description="Conversation configuration")
+
+
+class ConversationStartRequest(BaseModel):
+    """Request to start a new conversation session"""
+    config_id: str = Field(..., description="Conversation configuration ID")
+    topic: str = Field(..., description="Initial topic or prompt to start the conversation")
+
+
+class ConversationMessage(BaseModel):
+    """A single message in the conversation"""
+    role: str = Field(..., description="Role: 'user', 'model1', or 'model2'")
+    content: str = Field(..., description="Message content")
+    timestamp: str = Field(..., description="ISO timestamp of the message")
+    turn_number: int = Field(..., description="Turn number in the conversation")
+
+
+class ConversationTurnRequest(BaseModel):
+    """Request to continue a conversation turn"""
+    session_id: str = Field(..., description="Session ID from conversation start")
+    user_message: Optional[str] = Field(None, description="Optional user message to inject into conversation")
+
+
+class ConversationResponse(BaseModel):
+    """Response from a conversation turn"""
+    session_id: str = Field(..., description="Unique session ID")
+    turn_number: int = Field(..., description="Current turn number")
+    max_turns: int = Field(..., description="Maximum turns allowed")
+    is_complete: bool = Field(..., description="Whether conversation has reached max turns")
+    messages: List[ConversationMessage] = Field(..., description="Messages from this turn")
+    conversation_history: List[ConversationMessage] = Field(..., description="Full conversation history")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
+
+
+class ConversationHistoryResponse(BaseModel):
+    """Response for retrieving conversation history"""
+    session_id: str = Field(..., description="Session ID")
+    config_id: str = Field(..., description="Configuration ID used")
+    config_name: str = Field(..., description="Configuration name")
+    started_at: str = Field(..., description="ISO timestamp when conversation started")
+    ended_at: Optional[str] = Field(None, description="ISO timestamp when conversation ended")
+    total_turns: int = Field(..., description="Total number of turns")
+    conversation_history: List[ConversationMessage] = Field(..., description="Full conversation history")
+    saved_file_path: Optional[str] = Field(None, description="Path to saved conversation file")

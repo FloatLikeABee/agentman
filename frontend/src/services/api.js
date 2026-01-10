@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.9.136:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -176,6 +176,37 @@ export const crawlWebsite = async (payload) => {
   return response.data;
 };
 
+// Crawler Profiles
+export const getCrawlerProfiles = async () => {
+  const response = await api.get('/crawler/profiles');
+  return response.data;
+};
+
+export const getCrawlerProfile = async (profileId) => {
+  const response = await api.get(`/crawler/profiles/${profileId}`);
+  return response.data;
+};
+
+export const createCrawlerProfile = async (payload) => {
+  const response = await api.post('/crawler/profiles', payload);
+  return response.data;
+};
+
+export const updateCrawlerProfile = async (profileId, payload) => {
+  const response = await api.put(`/crawler/profiles/${profileId}`, payload);
+  return response.data;
+};
+
+export const deleteCrawlerProfile = async (profileId) => {
+  const response = await api.delete(`/crawler/profiles/${profileId}`);
+  return response.data;
+};
+
+export const executeCrawlerProfile = async (profileId) => {
+  const response = await api.post(`/crawler/profiles/${profileId}/execute`);
+  return response.data;
+};
+
 // Database Tools
 export const getDBTools = async () => {
   const response = await api.get('/db-tools');
@@ -247,6 +278,57 @@ export const executeRequestTool = async (requestId) => {
   return response.data;
 };
 
+// Conversations
+export const getConversations = async () => {
+  const response = await api.get('/conversations');
+  return response.data;
+};
+
+export const getConversation = async (configId) => {
+  const response = await api.get(`/conversations/${configId}`);
+  return response.data;
+};
+
+export const createConversation = async (payload) => {
+  const response = await api.post('/conversations', payload);
+  return response.data;
+};
+
+export const updateConversation = async (configId, payload) => {
+  const response = await api.put(`/conversations/${configId}`, payload);
+  return response.data;
+};
+
+export const deleteConversation = async (configId) => {
+  const response = await api.delete(`/conversations/${configId}`);
+  return response.data;
+};
+
+export const startConversation = async (payload) => {
+  const response = await api.post('/conversations/start', payload);
+  return response.data;
+};
+
+export const continueConversation = async (payload) => {
+  const response = await api.post('/conversations/continue', payload);
+  return response.data;
+};
+
+export const getConversationHistory = async (sessionId) => {
+  const response = await api.get(`/conversations/history/${sessionId}`);
+  return response.data;
+};
+
+export const listSavedConversations = async () => {
+  const response = await api.get('/conversations/saved');
+  return response.data;
+};
+
+export const getSavedConversationContent = async (filename) => {
+  const response = await api.get(`/conversations/saved/${encodeURIComponent(filename)}`);
+  return response.data;
+};
+
 // Export all functions
 const apiService = {
   getStatus,
@@ -279,6 +361,12 @@ const apiService = {
   startDialogue,
   continueDialogue,
   crawlWebsite,
+  getCrawlerProfiles,
+  getCrawlerProfile,
+  createCrawlerProfile,
+  updateCrawlerProfile,
+  deleteCrawlerProfile,
+  executeCrawlerProfile,
   getDBTools,
   getDBTool,
   createDBTool,
@@ -343,6 +431,17 @@ const apiService = {
     const response = await api.post(`/special-flows-1/${flowId}/execute`, payload);
     return response.data;
   },
+  // Conversations
+  getConversations,
+  getConversation,
+  createConversation,
+  updateConversation,
+  deleteConversation,
+  startConversation,
+  continueConversation,
+  getConversationHistory,
+  listSavedConversations,
+  getSavedConversationContent,
 };
 
 export default apiService; 

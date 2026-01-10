@@ -41,6 +41,7 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import api from '../services/api';
 
 const Crawler = () => {
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState('');
   const [useJs, setUseJs] = useState(false);
   const [llmProvider, setLlmProvider] = useState('');
@@ -53,6 +54,28 @@ const Crawler = () => {
   const [sameDomainOnly, setSameDomainOnly] = useState(true);
   const [headersText, setHeadersText] = useState('');
   const [headersError, setHeadersError] = useState('');
+  
+  // Profile management state
+  const [openProfileDialog, setOpenProfileDialog] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, profileId: null });
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    description: '',
+    url: '',
+    use_js: false,
+    llm_provider: '',
+    model: '',
+    collection_name: '',
+    collection_description: '',
+    follow_links: false,
+    max_depth: 3,
+    max_pages: 50,
+    same_domain_only: true,
+    headers: '',
+  });
+
+  const { data: profiles = [] } = useQuery('crawler-profiles', api.getCrawlerProfiles, { staleTime: 5 * 60 * 1000 });
 
   const crawlMutation = useMutation(
     (data) => api.crawlWebsite(data),
@@ -112,10 +135,184 @@ const Crawler = () => {
     }
   };
 
+  const createProfileMutation = useMutation(api.createCrawlerProfile, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('crawler-profiles');
+      setOpenProfileDialog(false);
+      resetProfileForm();
+    },
+  });
+
+  const updateProfileMutation = useMutation(
+    ({ profileId, payload }) => api.updateCrawlerProfile(profileId, payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('crawler-profiles');
+        setOpenProfileDialog(false);
+        setEditingProfileId(null);
+        resetProfileForm();
+      },
+    }
+  );
+
+  const deleteProfileMutation = useMutation(api.deleteCrawlerProfile, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('crawler-profiles');
+      setDeleteConfirmDialog({ open: false, profileId: null });
+    },
+  });
+
+  const executeProfileMutation = useMutation(api.executeCrawlerProfile, {
+    onSuccess: (data) => {
+      queryClient.invalidateQueries('collections');
+      if (data.collection_name && !collectionName) {
+        setCollectionName(data.collection_name);
+      }
+      if (data.collection_description && !collectionDescription) {
+        setCollectionDescription(data.collection_description);
+      }
+    },
+  });
+
+  const resetProfileForm = () => {
+    setProfileForm({
+      name: '',
+      description: '',
+      url: '',
+      use_js: false,
+      llm_provider: '',
+      model: '',
+      collection_name: '',
+      collection_description: '',
+      follow_links: false,
+      max_depth: 3,
+      max_pages: 50,
+      same_domain_only: true,
+      headers: '',
+    });
+  };
+
+  const handleCreateProfile = () => {
+    try {
+      setHeadersError('');
+      const headers = profileForm.headers.trim() ? JSON.parse(profileForm.headers) : null;
+      createProfileMutation.mutate({
+        ...profileForm,
+        headers: headers,
+        llm_provider: profileForm.llm_provider || null,
+        model: profileForm.model || null,
+        collection_name: profileForm.collection_name || null,
+        collection_description: profileForm.collection_description || null,
+      });
+    } catch (e) {
+      setHeadersError(`Invalid JSON: ${e.message}`);
+    }
+  };
+
+  const handleUpdateProfile = () => {
+    try {
+      setHeadersError('');
+      const headers = profileForm.headers.trim() ? JSON.parse(profileForm.headers) : null;
+      updateProfileMutation.mutate({
+        profileId: editingProfileId,
+        payload: {
+          ...profileForm,
+          headers: headers,
+          llm_provider: profileForm.llm_provider || null,
+          model: profileForm.model || null,
+          collection_name: profileForm.collection_name || null,
+          collection_description: profileForm.collection_description || null,
+        },
+      });
+    } catch (e) {
+      setHeadersError(`Invalid JSON: ${e.message}`);
+    }
+  };
+
+  const handleEditProfile = (profile) => {
+    setEditingProfileId(profile.id);
+    setProfileForm({
+      name: profile.name,
+      description: profile.description || '',
+      url: profile.url,
+      use_js: profile.use_js,
+      llm_provider: profile.llm_provider || '',
+      model: profile.model || '',
+      collection_name: profile.collection_name || '',
+      collection_description: profile.collection_description || '',
+      follow_links: profile.follow_links,
+      max_depth: profile.max_depth,
+      max_pages: profile.max_pages,
+      same_domain_only: profile.same_domain_only,
+      headers: profile.headers ? JSON.stringify(profile.headers, null, 2) : '',
+    });
+    setOpenProfileDialog(true);
+  };
+
+  const handleLoadProfile = (profile) => {
+    setUrl(profile.url);
+    setUseJs(profile.use_js);
+    setLlmProvider(profile.llm_provider || '');
+    setModel(profile.model || '');
+    setCollectionName(profile.collection_name || '');
+    setCollectionDescription(profile.collection_description || '');
+    setFollowLinks(profile.follow_links);
+    setMaxDepth(profile.max_depth);
+    setMaxPages(profile.max_pages);
+    setSameDomainOnly(profile.same_domain_only);
+    setHeadersText(profile.headers ? JSON.stringify(profile.headers, null, 2) : '');
+  };
+
+  const handleSaveCurrentConfig = () => {
+    // Populate form with current configuration
+    try {
+      const headers = headersText.trim() ? JSON.parse(headersText) : null;
+      setProfileForm({
+        name: '',
+        description: '',
+        url: url,
+        use_js: useJs,
+        llm_provider: llmProvider || '',
+        model: model || '',
+        collection_name: collectionName || '',
+        collection_description: collectionDescription || '',
+        follow_links: followLinks,
+        max_depth: maxDepth,
+        max_pages: maxPages,
+        same_domain_only: sameDomainOnly,
+        headers: headers ? JSON.stringify(headers, null, 2) : '',
+      });
+      setEditingProfileId(null);
+      setOpenProfileDialog(true);
+    } catch (e) {
+      setHeadersError(`Invalid JSON in headers: ${e.message}`);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Web Crawler</Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={handleSaveCurrentConfig}
+          >
+            Save Current Config
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              resetProfileForm();
+              setEditingProfileId(null);
+              setOpenProfileDialog(true);
+            }}
+          >
+            Create Profile
+          </Button>
+        </Box>
       </Box>
 
       <Grid container spacing={3}>
@@ -334,6 +531,239 @@ const Crawler = () => {
           <RequestToolsPanel />
         </Grid>
       </Grid>
+
+      {/* Saved Profiles Section */}
+      {profiles.length > 0 && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Saved Crawler Profiles
+            </Typography>
+            <Grid container spacing={2}>
+              {profiles.map((profile) => (
+                <Grid item xs={12} sm={6} md={4} key={profile.id}>
+                  <Paper sx={{ p: 2, border: '1px solid', borderColor: 'primary.main', borderOpacity: 0.3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
+                      <Box>
+                        <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                          {profile.name}
+                        </Typography>
+                        {profile.description && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            {profile.description}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          {profile.url}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <IconButton size="small" onClick={() => handleEditProfile(profile)}>
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => setDeleteConfirmDialog({ open: true, profileId: profile.id })} color="error">
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleLoadProfile(profile)}
+                        fullWidth
+                      >
+                        Load
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<PlayIcon />}
+                        onClick={() => executeProfileMutation.mutate(profile.id)}
+                        disabled={executeProfileMutation.isLoading}
+                        fullWidth
+                      >
+                        Execute
+                      </Button>
+                    </Box>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Create/Edit Profile Dialog */}
+      <Dialog open={openProfileDialog} onClose={() => setOpenProfileDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>{editingProfileId ? 'Edit Profile' : 'Create Profile'}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <TextField
+              fullWidth
+              label="Name"
+              value={profileForm.name}
+              onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Description"
+              value={profileForm.description}
+              onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+              multiline
+              rows={2}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="URL"
+              value={profileForm.url}
+              onChange={(e) => setProfileForm({ ...profileForm, url: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={profileForm.use_js}
+                  onChange={(e) => setProfileForm({ ...profileForm, use_js: e.target.checked })}
+                />
+              }
+              label="Use JavaScript"
+              sx={{ mb: 2 }}
+            />
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel>LLM Provider</InputLabel>
+                  <Select
+                    value={profileForm.llm_provider}
+                    onChange={(e) => setProfileForm({ ...profileForm, llm_provider: e.target.value })}
+                    label="LLM Provider"
+                  >
+                    <MenuItem value="">Default</MenuItem>
+                    <MenuItem value="gemini">Gemini</MenuItem>
+                    <MenuItem value="qwen">Qwen</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="Model"
+                  value={profileForm.model}
+                  onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })}
+                />
+              </Grid>
+            </Grid>
+            <TextField
+              fullWidth
+              label="Collection Name"
+              value={profileForm.collection_name}
+              onChange={(e) => setProfileForm({ ...profileForm, collection_name: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Collection Description"
+              value={profileForm.collection_description}
+              onChange={(e) => setProfileForm({ ...profileForm, collection_description: e.target.value })}
+              multiline
+              rows={2}
+              sx={{ mb: 2 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={profileForm.follow_links}
+                  onChange={(e) => setProfileForm({ ...profileForm, follow_links: e.target.checked })}
+                />
+              }
+              label="Follow Links"
+              sx={{ mb: 2 }}
+            />
+            {profileForm.follow_links && (
+              <>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Max Depth"
+                      value={profileForm.max_depth}
+                      onChange={(e) => setProfileForm({ ...profileForm, max_depth: parseInt(e.target.value) || 3 })}
+                      inputProps={{ min: 1, max: 10 }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Max Pages"
+                      value={profileForm.max_pages}
+                      onChange={(e) => setProfileForm({ ...profileForm, max_pages: parseInt(e.target.value) || 50 })}
+                      inputProps={{ min: 1, max: 1000 }}
+                    />
+                  </Grid>
+                </Grid>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={profileForm.same_domain_only}
+                      onChange={(e) => setProfileForm({ ...profileForm, same_domain_only: e.target.checked })}
+                    />
+                  }
+                  label="Same Domain Only"
+                  sx={{ mb: 2 }}
+                />
+              </>
+            )}
+            <TextField
+              fullWidth
+              label="Headers (JSON)"
+              value={profileForm.headers}
+              onChange={(e) => setProfileForm({ ...profileForm, headers: e.target.value })}
+              multiline
+              rows={3}
+              sx={{ mb: 2 }}
+              placeholder='{"Authorization": "Bearer token"}'
+              error={!!headersError}
+              helperText={headersError || "JSON object with key-value pairs"}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenProfileDialog(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={editingProfileId ? handleUpdateProfile : handleCreateProfile}
+            disabled={(createProfileMutation.isLoading || updateProfileMutation.isLoading) || !profileForm.name.trim() || !profileForm.url.trim()}
+          >
+            {editingProfileId ? (updateProfileMutation.isLoading ? 'Updating...' : 'Update') : (createProfileMutation.isLoading ? 'Creating...' : 'Create')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmDialog.open} onClose={() => setDeleteConfirmDialog({ open: false, profileId: null })}>
+        <DialogTitle>Delete Profile</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to delete this crawler profile? This action cannot be undone.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, profileId: null })}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => {
+              deleteProfileMutation.mutate(deleteConfirmDialog.profileId);
+            }}
+            disabled={deleteProfileMutation.isLoading}
+          >
+            {deleteProfileMutation.isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

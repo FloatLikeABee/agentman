@@ -21,6 +21,8 @@ import {
   InputLabel,
   Paper,
   Divider,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,9 +34,11 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
 import SystemPromptInput from '../components/SystemPromptInput';
+import Conversation from '../components/Conversation';
 
 const Dialogue = () => {
   const queryClient = useQueryClient();
+  const [tabValue, setTabValue] = useState(0);
   const { data: dialogues = [], isLoading, error } = useQuery('dialogues', api.getDialogues, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
   const { data: models = [] } = useQuery('models', api.getModels, { enabled: true, staleTime: 5 * 60 * 1000 });
   const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true, staleTime: 5 * 60 * 1000 });
@@ -257,15 +261,25 @@ const Dialogue = () => {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Dialogue</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setOpenCreateDialog(true)}
-        >
-          New Dialogue
-        </Button>
+        <Typography variant="h4">Dialogue & Conversation Manager</Typography>
       </Box>
+
+      <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 3 }}>
+        <Tab label="Dialogues" />
+        <Tab label="Conversations" />
+      </Tabs>
+
+      {tabValue === 0 && (
+        <Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenCreateDialog(true)}
+            >
+              New Dialogue
+            </Button>
+          </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -901,6 +915,12 @@ const Dialogue = () => {
           </Button>
         </DialogActions>
       </Dialog>
+        </Box>
+      )}
+
+      {tabValue === 1 && (
+        <Conversation />
+      )}
     </Box>
   );
 };

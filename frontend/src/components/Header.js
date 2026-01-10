@@ -8,6 +8,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Tooltip,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
@@ -66,7 +67,7 @@ const Header = () => {
   };
 
   return (
-    <AppBar position="static" sx={{ mb: 2 }}>
+    <AppBar position="sticky" sx={{ top: 0, zIndex: 1300, mb: 2 }}>
       <Toolbar>
         <Typography 
           variant="h6" 
@@ -150,41 +151,34 @@ const Header = () => {
             </Menu>
           </>
         ) : (
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
             {navItems.map((item) => (
-              <Button
-                key={item.path}
-                color="inherit"
-                startIcon={item.icon}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  color: location.pathname === item.path ? '#9d4edd' : '#b0b0b0',
-                  backgroundColor: location.pathname === item.path 
-                    ? 'rgba(157, 78, 221, 0.15)' 
-                    : 'transparent',
-                  border: location.pathname === item.path 
-                    ? '1px solid rgba(157, 78, 221, 0.4)' 
-                    : '1px solid transparent',
-                  borderRadius: '8px',
-                  fontFamily: '"Orbitron", "Roboto", sans-serif',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  fontWeight: 600,
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    color: '#9d4edd',
-                    backgroundColor: 'rgba(157, 78, 221, 0.2)',
-                    border: '1px solid rgba(157, 78, 221, 0.5)',
-                    boxShadow: '0 0 15px rgba(157, 78, 221, 0.3)',
-                    transform: 'translateY(-2px)',
-                  },
-                  '& .MuiSvgIcon-root': {
+              <Tooltip key={item.path} title={item.label} arrow placement="bottom">
+                <IconButton
+                  color="inherit"
+                  onClick={() => navigate(item.path)}
+                  sx={{
                     color: location.pathname === item.path ? '#9d4edd' : '#b0b0b0',
-                  },
-                }}
-              >
-                {item.label}
-              </Button>
+                    backgroundColor: location.pathname === item.path 
+                      ? 'rgba(157, 78, 221, 0.15)' 
+                      : 'transparent',
+                    border: location.pathname === item.path 
+                      ? '1px solid rgba(157, 78, 221, 0.4)' 
+                      : '1px solid transparent',
+                    borderRadius: '8px',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      color: '#9d4edd',
+                      backgroundColor: 'rgba(157, 78, 221, 0.2)',
+                      border: '1px solid rgba(157, 78, 221, 0.5)',
+                      boxShadow: '0 0 15px rgba(157, 78, 221, 0.3)',
+                      transform: 'translateY(-2px)',
+                    },
+                  }}
+                >
+                  {item.icon}
+                </IconButton>
+              </Tooltip>
             ))}
           </Box>
         )}

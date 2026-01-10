@@ -29,6 +29,9 @@ from .models import (
     CustomizationQueryResponse,
     CrawlerRequest,
     CrawlerResponse,
+    CrawlerProfile,
+    CrawlerCreateRequest,
+    CrawlerUpdateRequest,
     DatabaseToolProfile,
     DatabaseToolCreateRequest,
     DatabaseToolUpdateRequest,
@@ -48,6 +51,13 @@ from .models import (
     DialogueContinueRequest,
     DialogueResponse,
     DialogueMessage,
+    ConversationConfig,
+    ConversationCreateRequest,
+    ConversationStartRequest,
+    ConversationMessage,
+    ConversationResponse,
+    ConversationHistoryResponse,
+    ConversationTurnRequest,
     SpecialFlow1Profile,
     SpecialFlow1CreateRequest,
     SpecialFlow1UpdateRequest,
@@ -64,7 +74,9 @@ from .llm_factory import LLMFactory, LLMProvider
 from .llm_langchain_wrapper import LangChainLLMWrapper
 from .customization import CustomizationManager
 from .dialogue import DialogueManager
+from .conversation import ConversationManager
 from .crawler import CrawlerService
+from .crawler_manager import CrawlerManager
 from .db_tools import DatabaseToolsManager
 from .request_tools import RequestToolsManager
 
@@ -268,9 +280,15 @@ class RAGAPI:
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
+        self.crawler_manager = CrawlerManager()
         self.db_tools_manager = DatabaseToolsManager()
         self.request_tools_manager = RequestToolsManager(api_instance=self)
         self.dialogue_manager = DialogueManager(
+            rag_system=self.rag_system,
+            db_tools_manager=self.db_tools_manager,
+            request_tools_manager=self.request_tools_manager
+        )
+        self.conversation_manager = ConversationManager(
             rag_system=self.rag_system,
             db_tools_manager=self.db_tools_manager,
             request_tools_manager=self.request_tools_manager
@@ -2360,6 +2378,150 @@ Question: {{input}}
                 self.logger.error(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=str(e))
 
+        # Crawler Profile Management Endpoints
+        @self.app.get(
+            "/crawler/profiles",
+            tags=["Crawler"],
+            summary="List Crawler Profiles",
+            description="List all saved crawler profiles.",
+            response_model=List[Dict[str, Any]]
+        )
+        async def list_crawler_profiles():
+            """List all crawler profiles."""
+            try:
+                return self.crawler_manager.list_profiles()
+            except Exception as e:
+                self.logger.error(f"Error listing crawler profiles: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/crawler/profiles/{profile_id}",
+            tags=["Crawler"],
+            summary="Get Crawler Profile",
+            description="Get a specific crawler profile by ID.",
+            response_model=CrawlerProfile
+        )
+        async def get_crawler_profile(profile_id: str):
+            """Get a crawler profile by ID."""
+            try:
+                profile = self.crawler_manager.get_profile(profile_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Crawler profile not found")
+                return profile
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting crawler profile: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/crawler/profiles",
+            tags=["Crawler"],
+            summary="Create Crawler Profile",
+            description="Create a new crawler profile with configuration.",
+            response_model=CrawlerProfile
+        )
+        async def create_crawler_profile(request: CrawlerCreateRequest):
+            """Create a new crawler profile."""
+            try:
+                return self.crawler_manager.create_profile(request)
+            except Exception as e:
+                self.logger.error(f"Error creating crawler profile: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/crawler/profiles/{profile_id}",
+            tags=["Crawler"],
+            summary="Update Crawler Profile",
+            description="Update an existing crawler profile.",
+            response_model=CrawlerProfile
+        )
+        async def update_crawler_profile(profile_id: str, request: CrawlerUpdateRequest):
+            """Update a crawler profile."""
+            try:
+                profile = self.crawler_manager.update_profile(profile_id, request)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Crawler profile not found")
+                return profile
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating crawler profile: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/crawler/profiles/{profile_id}",
+            tags=["Crawler"],
+            summary="Delete Crawler Profile",
+            description="Delete a crawler profile.",
+            response_model=Dict[str, str]
+        )
+        async def delete_crawler_profile(profile_id: str):
+            """Delete a crawler profile."""
+            try:
+                success = self.crawler_manager.delete_profile(profile_id)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Crawler profile not found")
+                return {"message": "Crawler profile deleted successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting crawler profile: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/crawler/profiles/{profile_id}/execute",
+            tags=["Crawler"],
+            summary="Execute Crawler Profile",
+            description="Execute a saved crawler profile to crawl the configured URL.",
+            response_model=CrawlerResponse
+        )
+        async def execute_crawler_profile(profile_id: str):
+            """Execute a crawler profile."""
+            try:
+                profile = self.crawler_manager.get_profile(profile_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Crawler profile not found")
+                
+                result = self.crawler_service.crawl_and_save(
+                    url=profile.url,
+                    use_js=profile.use_js,
+                    llm_provider=profile.llm_provider,
+                    model=profile.model,
+                    collection_name=profile.collection_name,
+                    collection_description=profile.collection_description,
+                    follow_links=profile.follow_links,
+                    max_depth=profile.max_depth,
+                    max_pages=profile.max_pages,
+                    same_domain_only=profile.same_domain_only,
+                    headers=profile.headers
+                )
+                
+                if result.get("success"):
+                    return CrawlerResponse(
+                        success=True,
+                        url=result["url"],
+                        collection_name=result.get("collection_name"),
+                        collection_description=result.get("collection_description"),
+                        raw_file=result.get("raw_file"),
+                        extracted_file=result.get("extracted_file"),
+                        extracted_data=result.get("extracted_data"),
+                        pages_crawled=result.get("pages_crawled"),
+                        total_links_found=result.get("total_links_found")
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Crawling failed")
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error executing crawler profile: {e}")
+                import traceback
+                self.logger.error(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=str(e))
+
         # Database Tools Endpoints
         @self.app.post(
             "/db-tools",
@@ -4040,6 +4202,239 @@ Question: {{input}}
                 raise
             except Exception as e:
                 self.logger.error(f"Error continuing dialogue {dialogue_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Conversation Endpoints (Multi-AI Conversation Module)
+        @self.app.post(
+            "/conversations",
+            tags=["Conversations"],
+            summary="Create Conversation Configuration",
+            description="""
+            **Create a new conversation configuration profile**
+            
+            Creates a configuration for multi-AI conversations where two AI models can converse with each other and the user.
+            
+            **Features:**
+            - Two AI models (can be different providers/models)
+            - RAG collection support for context
+            - Database and Request tool integration
+            - Customizable system prompt
+            - Configurable maximum turns (5-100)
+            
+            **Request Parameters:**
+            - `name`: Name for the conversation configuration
+            - `description`: Optional description
+            - `config`: Conversation configuration including:
+              - `model1_provider`: LLM provider for first model (gemini, qwen, mistral)
+              - `model1_name`: Model name for first model
+              - `model2_provider`: LLM provider for second model
+              - `model2_name`: Model name for second model
+              - `rag_collection`: Optional RAG collection name
+              - `db_tools`: List of DB tool IDs to enable
+              - `request_tools`: List of Request tool IDs to enable
+              - `system_prompt`: System prompt for the conversation
+              - `max_turns`: Maximum turns (5-100, default: 10)
+            """,
+            response_model=Dict[str, Any],
+        )
+        async def create_conversation(req: ConversationCreateRequest):
+            """Create a new conversation configuration."""
+            try:
+                config_id = self.conversation_manager.create_profile(req)
+                return {"id": config_id, "message": "Conversation configuration created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating conversation: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/conversations",
+            tags=["Conversations"],
+            summary="List All Conversation Configurations",
+            description="Retrieve all conversation configuration profiles.",
+            response_model=List[Dict[str, Any]],
+        )
+        async def list_conversations():
+            """List all conversation configurations."""
+            try:
+                return self.conversation_manager.list_profiles()
+            except Exception as e:
+                self.logger.error(f"Error listing conversations: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/conversations/saved",
+            tags=["Conversations"],
+            summary="List Saved Conversations",
+            description="List all saved conversation history files.",
+            response_model=List[Dict[str, Any]],
+        )
+        async def list_saved_conversations():
+            """List all saved conversation files."""
+            try:
+                return self.conversation_manager.list_saved_conversations()
+            except Exception as e:
+                self.logger.error(f"Error listing saved conversations: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/conversations/saved/{filename:path}",
+            tags=["Conversations"],
+            summary="Get Saved Conversation Content",
+            description="Get the content of a saved conversation file by filename.",
+            response_model=Dict[str, Any]
+        )
+        async def get_saved_conversation_content(filename: str):
+            """Get the content of a saved conversation file."""
+            try:
+                content = self.conversation_manager.get_saved_conversation_content(filename)
+                if content is None:
+                    raise HTTPException(status_code=404, detail="Conversation file not found")
+                return {"filename": filename, "content": content}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting saved conversation content: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/conversations/{config_id}",
+            tags=["Conversations"],
+            summary="Get Conversation Configuration",
+            description="Retrieve a specific conversation configuration by ID.",
+            response_model=Dict[str, Any],
+        )
+        async def get_conversation(config_id: str):
+            """Get a conversation configuration."""
+            try:
+                config = self.conversation_manager.get_profile(config_id)
+                if not config:
+                    raise HTTPException(status_code=404, detail="Conversation configuration not found")
+                return config
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting conversation {config_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/conversations/{config_id}",
+            tags=["Conversations"],
+            summary="Update Conversation Configuration",
+            description="Update an existing conversation configuration.",
+            response_model=Dict[str, Any],
+        )
+        async def update_conversation(config_id: str, req: ConversationCreateRequest):
+            """Update a conversation configuration."""
+            try:
+                success = self.conversation_manager.update_profile(config_id, req)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Conversation configuration not found")
+                return {"message": "Conversation configuration updated successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating conversation {config_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/conversations/{config_id}",
+            tags=["Conversations"],
+            summary="Delete Conversation Configuration",
+            description="Delete a conversation configuration.",
+            response_model=Dict[str, Any],
+        )
+        async def delete_conversation(config_id: str):
+            """Delete a conversation configuration."""
+            try:
+                success = self.conversation_manager.delete_profile(config_id)
+                if not success:
+                    raise HTTPException(status_code=404, detail="Conversation configuration not found")
+                return {"message": "Conversation configuration deleted successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting conversation {config_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/conversations/start",
+            tags=["Conversations"],
+            summary="Start Conversation Session",
+            description="""
+            **Start a new conversation session**
+            
+            Starts a multi-AI conversation with the specified configuration. The two AI models will alternate turns,
+            responding to each other and the user's input.
+            
+            **Request Parameters:**
+            - `config_id`: Conversation configuration ID
+            - `topic`: Initial topic or prompt to start the conversation
+            
+            **Response:**
+            - `session_id`: Unique session identifier
+            - `turn_number`: Current turn number
+            - `max_turns`: Maximum turns allowed
+            - `is_complete`: Whether conversation is complete
+            - `messages`: Messages from this turn
+            - `conversation_history`: Full conversation history
+            """,
+            response_model=ConversationResponse,
+        )
+        async def start_conversation(req: ConversationStartRequest):
+            """Start a new conversation session."""
+            try:
+                return self.conversation_manager.start_conversation(req)
+            except Exception as e:
+                import traceback
+                self.logger.error(f"Error starting conversation: {e}")
+                self.logger.error(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/conversations/continue",
+            tags=["Conversations"],
+            summary="Continue Conversation Session",
+            description="""
+            **Continue an existing conversation session**
+            
+            Continues a conversation session. The AI models will continue their dialogue,
+            optionally with a user message injected.
+            
+            **Request Parameters:**
+            - `session_id`: Session ID from conversation start
+            - `user_message`: Optional user message to inject
+            
+            **Response:**
+            - Updated conversation state with new messages
+            """,
+            response_model=ConversationResponse,
+        )
+        async def continue_conversation(req: ConversationTurnRequest):
+            """Continue a conversation session."""
+            try:
+                return self.conversation_manager.continue_conversation(req)
+            except Exception as e:
+                self.logger.error(f"Error continuing conversation: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/conversations/history/{session_id}",
+            tags=["Conversations"],
+            summary="Get Conversation History",
+            description="Retrieve the full conversation history for a session.",
+            response_model=ConversationHistoryResponse,
+        )
+        async def get_conversation_history(session_id: str):
+            """Get conversation history for a session."""
+            try:
+                history = self.conversation_manager.get_conversation_history(session_id)
+                if not history:
+                    raise HTTPException(status_code=404, detail="Session not found")
+                return history
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting conversation history: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Flow Endpoints
