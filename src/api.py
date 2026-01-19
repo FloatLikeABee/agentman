@@ -356,6 +356,9 @@ class RAGAPI:
         # Setup routes
         self._setup_routes()
         
+        # Setup image generation routes
+        self._setup_image_generation_routes()
+        
         # Setup static file handlers for common browser requests
         self._setup_static_handlers()
 
@@ -4863,6 +4866,249 @@ Question: {{input}}
                 raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error executing dialogue-driven flow {flow_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+    def _setup_image_generation_routes(self):
+        """Setup image generation routes"""
+        import requests
+        from urllib.parse import quote_plus
+        from datetime import datetime
+        import json
+        import uuid
+        
+        # Create images directory if it doesn't exist
+        images_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'generated_images')
+        os.makedirs(images_dir, exist_ok=True)
+        
+        # Images metadata file
+        images_meta_file = os.path.join(images_dir, 'images_metadata.json')
+        
+        def load_images_metadata():
+            if os.path.exists(images_meta_file):
+                with open(images_meta_file, 'r') as f:
+                    return json.load(f)
+            return []
+        
+        def save_images_metadata(metadata):
+            with open(images_meta_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        
+        @self.app.post(
+            "/images/generate",
+            tags=["Image Generation"],
+            summary="Generate Image",
+            description="Generate an image from a text prompt using Pollinations API",
+        )
+        async def generate_image(request: dict):
+            """Generate an image from text prompt"""
+            try:
+                prompt = request.get('prompt', '')
+                save_image = request.get('save', True)
+                
+                if not prompt:
+                    raise HTTPException(status_code=400, detail="Prompt is required")
+                
+                # URL encode the prompt
+                encoded_prompt = quote_plus(prompt)
+                
+                # Build the Pollinations API URL
+                image_url = f"https://gen.pollinations.ai/image/{encoded_prompt}?model=flux"
+                
+                result = {
+                    "image_url": image_url,
+                    "prompt": prompt,
+                }
+                
+                # Save the image if requested
+                if save_image:
+                    try:
+                        # Generate unique filename
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        unique_id = str(uuid.uuid4())[:8]
+                        filename = f"img_{timestamp}_{unique_id}.png"
+                        filepath = os.path.join(images_dir, filename)
+                        
+                        # Download and save the image
+                        headers = {
+                            'Authorization': 'Bearer pk_gzM6GGeMB1HQWKgW',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                        response = requests.get(image_url, headers=headers, timeout=60)
+                        
+                        if response.status_code == 200:
+                            with open(filepath, 'wb') as f:
+                                f.write(response.content)
+                            
+                            # Update metadata
+                            metadata = load_images_metadata()
+                            metadata.insert(0, {
+                                "filename": filename,
+                                "prompt": prompt,
+                                "created_at": datetime.now().isoformat(),
+                                "url": image_url,
+                            })
+                            save_images_metadata(metadata)
+                            
+                            result["saved"] = True
+                            result["filename"] = filename
+                        else:
+                            result["saved"] = False
+                            result["save_error"] = f"Failed to download image: {response.status_code}"
+                    except Exception as e:
+                        result["saved"] = False
+                        result["save_error"] = str(e)
+                
+                return result
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error generating image: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post(
+            "/images/polish-prompt",
+            tags=["Image Generation"],
+            summary="Polish Image Prompt",
+            description="Use AI to enhance and polish an image generation prompt",
+        )
+        async def polish_image_prompt(request: dict):
+            """Polish/enhance an image prompt using AI"""
+            try:
+                prompt = request.get('prompt', '')
+                provider_str = request.get('provider', 'qwen').lower().strip()
+                model = request.get('model', '')
+                
+                if not prompt:
+                    raise HTTPException(status_code=400, detail="Prompt is required")
+                
+                # Get LLM caller with proper provider, api_key, and model
+                if provider_str == "gemini":
+                    provider = LLMProvider.GEMINI
+                    api_key = settings.gemini_api_key
+                    if not model:
+                        model = settings.gemini_default_model
+                elif provider_str == "qwen":
+                    provider = LLMProvider.QWEN
+                    api_key = settings.qwen_api_key
+                    if not model:
+                        model = settings.qwen_default_model
+                elif provider_str == "mistral":
+                    provider = LLMProvider.MISTRAL
+                    api_key = settings.mistral_api_key
+                    if not model:
+                        model = settings.mistral_default_model
+                else:
+                    # Default to Qwen
+                    provider = LLMProvider.QWEN
+                    api_key = settings.qwen_api_key
+                    model = model or settings.qwen_default_model
+                
+                llm_caller = LLMFactory.create_caller(provider=provider, api_key=api_key, model=model)
+                
+                polish_prompt = f"""You are an expert at creating detailed image generation prompts. 
+Take the user's basic idea and transform it into a detailed, vivid prompt optimized for AI image generation.
+
+Add details about:
+- Subject specifics (appearance, pose, expression)
+- Setting/environment (location, time of day, weather)
+- Lighting (type, direction, mood)
+- Art style (photorealistic, digital art, oil painting, anime, etc.)
+- Composition (angle, framing, perspective)
+- Mood/atmosphere
+- Colors and textures
+
+User's idea: {prompt}
+
+Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concise (2-4 sentences max)."""
+
+                polished = llm_caller.generate(polish_prompt)
+                
+                # Clean up the response
+                polished = polished.strip()
+                if polished.startswith('"') and polished.endswith('"'):
+                    polished = polished[1:-1]
+                
+                return {
+                    "original_prompt": prompt,
+                    "polished_prompt": polished,
+                    "provider": provider,
+                    "model": model,
+                }
+                
+            except Exception as e:
+                self.logger.error(f"Error polishing prompt: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get(
+            "/images",
+            tags=["Image Generation"],
+            summary="Get Generated Images",
+            description="Get list of all saved generated images",
+        )
+        async def get_generated_images():
+            """Get all saved generated images"""
+            try:
+                metadata = load_images_metadata()
+                
+                # Add full URLs for each image
+                for img in metadata:
+                    img['url'] = f"/images/file/{img['filename']}"
+                
+                return metadata
+                
+            except Exception as e:
+                self.logger.error(f"Error getting images: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get(
+            "/images/file/{filename}",
+            tags=["Image Generation"],
+            summary="Get Image File",
+            description="Get a specific generated image file",
+        )
+        async def get_image_file(filename: str):
+            """Get a specific image file"""
+            from fastapi.responses import FileResponse
+            
+            try:
+                filepath = os.path.join(images_dir, filename)
+                
+                if not os.path.exists(filepath):
+                    raise HTTPException(status_code=404, detail="Image not found")
+                
+                return FileResponse(filepath, media_type="image/png")
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting image file: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.delete(
+            "/images/{filename}",
+            tags=["Image Generation"],
+            summary="Delete Generated Image",
+            description="Delete a saved generated image",
+        )
+        async def delete_generated_image(filename: str):
+            """Delete a generated image"""
+            try:
+                filepath = os.path.join(images_dir, filename)
+                
+                # Delete file if exists
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                
+                # Update metadata
+                metadata = load_images_metadata()
+                metadata = [img for img in metadata if img['filename'] != filename]
+                save_images_metadata(metadata)
+                
+                return {"message": "Image deleted successfully"}
+                
+            except Exception as e:
+                self.logger.error(f"Error deleting image: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
     def _setup_static_handlers(self):

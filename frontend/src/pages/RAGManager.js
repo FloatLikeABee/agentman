@@ -19,16 +19,131 @@ import {
   List,
   ListItem,
   Alert,
+  Collapse,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
   UploadFile as UploadFileIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
 import ReactJson from 'react-json-view';
+
+// Expandable Result Item Component
+const ExpandableResultItem = ({ result, index }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLongContent = result.content && result.content.length > 300;
+  
+  return (
+    <ListItem 
+      divider 
+      sx={{ 
+        flexDirection: 'column', 
+        alignItems: 'flex-start',
+        cursor: isLongContent ? 'pointer' : 'default',
+        '&:hover': isLongContent ? {
+          bgcolor: 'action.hover',
+        } : {},
+        transition: 'background-color 0.2s',
+      }}
+      onClick={() => isLongContent && setExpanded(!expanded)}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mb: 1 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+          Result {index + 1}
+        </Typography>
+        {isLongContent && (
+          <IconButton 
+            size="small" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            sx={{ ml: 1 }}
+          >
+            {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          </IconButton>
+        )}
+      </Box>
+      
+      {/* Preview (always visible) */}
+      {!expanded && (
+        <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
+          {isLongContent ? `${result.content.substring(0, 300)}...` : result.content}
+          {isLongContent && (
+            <Typography 
+              component="span" 
+              variant="body2" 
+              color="primary" 
+              sx={{ ml: 1, fontWeight: 'medium' }}
+            >
+              (Click to expand)
+            </Typography>
+          )}
+        </Typography>
+      )}
+      
+      {/* Full content (when expanded) */}
+      <Collapse in={expanded} timeout="auto" unmountOnExit sx={{ width: '100%' }}>
+        <Box 
+          sx={{ 
+            mb: 2, 
+            p: 2, 
+            bgcolor: 'background.paper', 
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            maxHeight: 400,
+            overflowY: 'auto',
+          }}
+        >
+          <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
+            {result.content}
+          </Typography>
+        </Box>
+      </Collapse>
+      
+      {result.metadata && (
+        <Box sx={{ width: '100%', mt: 1 }} onClick={(e) => e.stopPropagation()}>
+          <ReactJson
+            src={result.metadata}
+            name="Metadata"
+            collapsed={true}
+            displayDataTypes={false}
+            theme={{
+              base00: 'transparent',
+              base01: '#1a0d2e',
+              base02: '#0f0519',
+              base03: '#b0b0b0',
+              base04: '#9d4edd',
+              base05: '#e0e0e0',
+              base06: '#c77dff',
+              base07: '#e0e0e0',
+              base08: '#ff6b35',
+              base09: '#ff6b35',
+              base0A: '#c77dff',
+              base0B: '#00ff88',
+              base0C: '#9d4edd',
+              base0D: '#9d4edd',
+              base0E: '#c77dff',
+              base0F: '#ff6b35',
+            }}
+            style={{ 
+              backgroundColor: 'transparent',
+              fontSize: '0.875rem'
+            }}
+            iconStyle="circle"
+            enableClipboard={false}
+          />
+        </Box>
+      )}
+    </ListItem>
+  );
+};
 
 const RAGManager = () => {
   const [openAddDialog, setOpenAddDialog] = useState(false);
@@ -527,50 +642,9 @@ const RAGManager = () => {
                 <SearchIcon color="primary" />
                 Results ({queryResults.length})
               </Typography>
-              <List sx={{ maxHeight: 400, overflowY: 'auto' }}>
+              <List sx={{ maxHeight: 500, overflowY: 'auto' }}>
                 {queryResults.map((result, index) => (
-                  <ListItem key={index} divider sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                    <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'medium' }}>
-                      Result {index + 1}
-                    </Typography>
-                    <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                      {result.content.length > 300 ? `${result.content.substring(0, 300)}...` : result.content}
-                    </Typography>
-                    {result.metadata && (
-                      <Box sx={{ width: '100%', mt: 1 }}>
-                        <ReactJson
-                          src={result.metadata}
-                          name="Metadata"
-                          collapsed={true}
-                          displayDataTypes={false}
-                          theme={{
-                            base00: 'transparent',
-                            base01: '#1a0d2e',
-                            base02: '#0f0519',
-                            base03: '#b0b0b0',
-                            base04: '#9d4edd',
-                            base05: '#e0e0e0',
-                            base06: '#c77dff',
-                            base07: '#e0e0e0',
-                            base08: '#ff6b35',
-                            base09: '#ff6b35',
-                            base0A: '#c77dff',
-                            base0B: '#00ff88',
-                            base0C: '#9d4edd',
-                            base0D: '#9d4edd',
-                            base0E: '#c77dff',
-                            base0F: '#ff6b35',
-                          }}
-                          style={{ 
-                            backgroundColor: 'transparent',
-                            fontSize: '0.875rem'
-                          }}
-                          iconStyle="circle"
-                          enableClipboard={false}
-                        />
-                      </Box>
-                    )}
-                  </ListItem>
+                  <ExpandableResultItem key={index} result={result} index={index} />
                 ))}
               </List>
             </Box>

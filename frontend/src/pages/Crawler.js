@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -22,43 +22,76 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Tabs,
-  Tab,
   Paper,
+  InputAdornment,
+  Tooltip,
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   Send as SendIcon,
   Http as HttpIcon,
-  Storage as StorageIcon,
+  Language as WebIcon,
+  Search as SearchIcon,
+  Api as ApiIcon,
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import api from '../services/api';
 
 const Crawler = () => {
+  const [activeTab, setActiveTab] = useState('crawlers'); // 'crawlers' or 'requests'
+
+  return (
+    <Box>
+      <Typography variant="h4" sx={{ mb: 3 }}>Data Sources</Typography>
+      
+      <Grid container spacing={3}>
+        {/* Web Crawlers Tab */}
+        <Grid item xs={12} md={6}>
+          <Paper 
+            sx={{ 
+              p: 2, 
+              height: '100%',
+              border: '2px solid',
+              borderColor: activeTab === 'crawlers' ? 'primary.main' : 'transparent',
+              transition: 'border-color 0.2s',
+            }}
+            onClick={() => setActiveTab('crawlers')}
+          >
+            <WebCrawlersPanel isActive={activeTab === 'crawlers'} />
+          </Paper>
+        </Grid>
+
+        {/* REST API Requests Tab */}
+        <Grid item xs={12} md={6}>
+          <Paper 
+            sx={{ 
+              p: 2, 
+              height: '100%',
+              border: '2px solid',
+              borderColor: activeTab === 'requests' ? 'primary.main' : 'transparent',
+              transition: 'border-color 0.2s',
+            }}
+            onClick={() => setActiveTab('requests')}
+          >
+            <RequestToolsPanel isActive={activeTab === 'requests'} />
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+};
+
+// Web Crawlers Panel Component
+const WebCrawlersPanel = ({ isActive }) => {
   const queryClient = useQueryClient();
-  const [url, setUrl] = useState('');
-  const [useJs, setUseJs] = useState(false);
-  const [llmProvider, setLlmProvider] = useState('');
-  const [model, setModel] = useState('');
-  const [collectionName, setCollectionName] = useState('');
-  const [collectionDescription, setCollectionDescription] = useState('');
-  const [followLinks, setFollowLinks] = useState(false);
-  const [maxDepth, setMaxDepth] = useState(3);
-  const [maxPages, setMaxPages] = useState(50);
-  const [sameDomainOnly, setSameDomainOnly] = useState(true);
-  const [headersText, setHeadersText] = useState('');
-  const [headersError, setHeadersError] = useState('');
-  
-  // Profile management state
+  const [searchQuery, setSearchQuery] = useState('');
   const [openProfileDialog, setOpenProfileDialog] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, profileId: null });
+  const [headersError, setHeadersError] = useState('');
   const [profileForm, setProfileForm] = useState({
     name: '',
     description: '',
@@ -75,65 +108,17 @@ const Crawler = () => {
     headers: '',
   });
 
-  const { data: profiles = [] } = useQuery('crawler-profiles', api.getCrawlerProfiles, { staleTime: 5 * 60 * 1000 });
+  const { data: profiles = [], isLoading } = useQuery('crawler-profiles', api.getCrawlerProfiles, { staleTime: 5 * 60 * 1000 });
 
-  const crawlMutation = useMutation(
-    (data) => api.crawlWebsite(data),
-    {
-      onSuccess: (data) => {
-        // Auto-fill collection name/description if AI generated them
-        if (data.collection_name && !collectionName) {
-          setCollectionName(data.collection_name);
-        }
-        if (data.collection_description && !collectionDescription) {
-          setCollectionDescription(data.collection_description);
-        }
-      },
-    }
-  );
-
-  const parseHeaders = () => {
-    if (!headersText.trim()) {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(headersText);
-      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Headers must be a JSON object');
-      }
-      return parsed;
-    } catch (e) {
-      setHeadersError(`Invalid JSON: ${e.message}`);
-      throw e;
-    }
-  };
-
-  const handleCrawl = () => {
-    if (!url.trim()) {
-      return;
-    }
-
-    try {
-      setHeadersError('');
-      const headers = parseHeaders();
-
-      crawlMutation.mutate({
-        url: url.trim(),
-        use_js: useJs,
-        llm_provider: llmProvider || null,
-        model: model || null,
-        collection_name: collectionName || null,
-        collection_description: collectionDescription || null,
-        follow_links: followLinks,
-        max_depth: followLinks ? maxDepth : undefined,
-        max_pages: followLinks ? maxPages : undefined,
-        same_domain_only: followLinks ? sameDomainOnly : undefined,
-        headers: headers,
-      });
-    } catch (e) {
-      // Error already set in parseHeaders
-    }
-  };
+  const filteredProfiles = useMemo(() => {
+    if (!searchQuery.trim()) return profiles;
+    const query = searchQuery.toLowerCase();
+    return profiles.filter(p => 
+      p.name?.toLowerCase().includes(query) || 
+      p.description?.toLowerCase().includes(query) ||
+      p.url?.toLowerCase().includes(query)
+    );
+  }, [profiles, searchQuery]);
 
   const createProfileMutation = useMutation(api.createCrawlerProfile, {
     onSuccess: () => {
@@ -163,14 +148,9 @@ const Crawler = () => {
   });
 
   const executeProfileMutation = useMutation(api.executeCrawlerProfile, {
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries('collections');
-      if (data.collection_name && !collectionName) {
-        setCollectionName(data.collection_name);
-      }
-      if (data.collection_description && !collectionDescription) {
-        setCollectionDescription(data.collection_description);
-      }
+      queryClient.invalidateQueries('crawler-profiles');
     },
   });
 
@@ -190,6 +170,7 @@ const Crawler = () => {
       same_domain_only: true,
       headers: '',
     });
+    setHeadersError('');
   };
 
   const handleCreateProfile = () => {
@@ -249,354 +230,172 @@ const Crawler = () => {
     setOpenProfileDialog(true);
   };
 
-  const handleLoadProfile = (profile) => {
-    setUrl(profile.url);
-    setUseJs(profile.use_js);
-    setLlmProvider(profile.llm_provider || '');
-    setModel(profile.model || '');
-    setCollectionName(profile.collection_name || '');
-    setCollectionDescription(profile.collection_description || '');
-    setFollowLinks(profile.follow_links);
-    setMaxDepth(profile.max_depth);
-    setMaxPages(profile.max_pages);
-    setSameDomainOnly(profile.same_domain_only);
-    setHeadersText(profile.headers ? JSON.stringify(profile.headers, null, 2) : '');
-  };
-
-  const handleSaveCurrentConfig = () => {
-    // Populate form with current configuration
-    try {
-      const headers = headersText.trim() ? JSON.parse(headersText) : null;
-      setProfileForm({
-        name: '',
-        description: '',
-        url: url,
-        use_js: useJs,
-        llm_provider: llmProvider || '',
-        model: model || '',
-        collection_name: collectionName || '',
-        collection_description: collectionDescription || '',
-        follow_links: followLinks,
-        max_depth: maxDepth,
-        max_pages: maxPages,
-        same_domain_only: sameDomainOnly,
-        headers: headers ? JSON.stringify(headers, null, 2) : '',
-      });
-      setEditingProfileId(null);
-      setOpenProfileDialog(true);
-    } catch (e) {
-      setHeadersError(`Invalid JSON in headers: ${e.message}`);
-    }
-  };
-
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Web Crawler</Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={handleSaveCurrentConfig}
-          >
-            Save Current Config
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              resetProfileForm();
-              setEditingProfileId(null);
-              setOpenProfileDialog(true);
-            }}
-          >
-            Create Profile
-          </Button>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WebIcon color="primary" />
+          <Typography variant="h6" color="primary">Web Crawlers</Typography>
         </Box>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            resetProfileForm();
+            setEditingProfileId(null);
+            setOpenProfileDialog(true);
+          }}
+        >
+          Add New
+        </Button>
       </Box>
 
-      <Grid container spacing={3}>
-        {/* Crawler Section */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom color="primary">
-                Crawl Configuration
-              </Typography>
+      {/* Search */}
+      <TextField
+        fullWidth
+        size="small"
+        placeholder="Search crawlers by name..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        sx={{ mb: 2 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon color="action" />
+            </InputAdornment>
+          ),
+        }}
+      />
 
-              {crawlMutation.isError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {crawlMutation.error?.response?.data?.detail || crawlMutation.error?.message || 'Failed to crawl website. Please try again.'}
-                </Alert>
-              )}
+      {/* Loading */}
+      {isLoading && <LinearProgress sx={{ mb: 2 }} />}
 
-              {crawlMutation.isSuccess && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  Successfully crawled and saved to RAG collection!
-                  {crawlMutation.data?.pages_crawled && (
-                    <Typography variant="body2" sx={{ mt: 1 }}>
-                      Pages crawled: {crawlMutation.data.pages_crawled}
-                      {crawlMutation.data.total_links_found && ` | Links found: ${crawlMutation.data.total_links_found}`}
-                    </Typography>
-                  )}
-                </Alert>
-              )}
-
-              <TextField
-                fullWidth
-                label="Website URL"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com"
-                sx={{ mb: 2 }}
-                required
-                error={!url.trim()}
-                helperText={!url.trim() ? 'URL is required' : 'Enter the website URL to crawl'}
-              />
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={useJs}
-                    onChange={(e) => setUseJs(e.target.checked)}
-                  />
-                }
-                label="Use JavaScript Rendering (for dynamic content)"
-                sx={{ mb: 2, display: 'block' }}
-              />
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Recursive Crawling (Follow Links)
-              </Typography>
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={followLinks}
-                    onChange={(e) => setFollowLinks(e.target.checked)}
-                  />
-                }
-                label="Follow links to crawl entire site"
-                sx={{ mb: 2, display: 'block' }}
-              />
-
-              {followLinks && (
-                <Grid container spacing={2} sx={{ mb: 2 }}>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Max Depth"
-                      type="number"
-                      value={maxDepth}
-                      onChange={(e) => setMaxDepth(Math.max(1, Math.min(10, parseInt(e.target.value) || 3)))}
-                      inputProps={{ min: 1, max: 10 }}
-                      helperText="How many levels deep to crawl (1-10)"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Max Pages"
-                      type="number"
-                      value={maxPages}
-                      onChange={(e) => setMaxPages(Math.max(1, Math.min(1000, parseInt(e.target.value) || 50)))}
-                      inputProps={{ min: 1, max: 1000 }}
-                      helperText="Maximum pages to crawl (1-1000)"
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={sameDomainOnly}
-                          onChange={(e) => setSameDomainOnly(e.target.checked)}
-                        />
-                      }
-                      label="Only follow links within the same domain"
-                    />
-                  </Grid>
-                </Grid>
-              )}
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Authentication Headers (Optional)
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="Custom Headers (JSON)"
-                value={headersText}
-                onChange={(e) => {
-                  setHeadersText(e.target.value);
-                  setHeadersError('');
-                }}
-                multiline
-                rows={3}
-                sx={{ mb: 1 }}
-                placeholder='{"Authorization": "Bearer token", "X-API-Key": "your-key"}'
-                helperText="JSON object with HTTP headers for authentication"
-                error={!!headersError}
-              />
-              {headersError && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setHeadersError('')}>
-                  {headersError}
-                </Alert>
-              )}
-
-              <Divider sx={{ my: 2 }} />
-
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>LLM Provider (Optional)</InputLabel>
-                    <Select
-                      value={llmProvider}
-                      onChange={(e) => setLlmProvider(e.target.value)}
-                      label="LLM Provider (Optional)"
-                    >
-                      <MenuItem value="">Auto (Use Default)</MenuItem>
-                      <MenuItem value="gemini">Gemini</MenuItem>
-                      <MenuItem value="qwen">Qwen</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Model (Optional)"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder="Leave empty for default"
-                  />
-                </Grid>
-              </Grid>
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Collection Settings (Optional - AI will generate if left empty)
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="Collection Name (Optional)"
-                value={collectionName}
-                onChange={(e) => setCollectionName(e.target.value)}
-                placeholder="AI will generate a name if left empty"
-                sx={{ mb: 2 }}
-                helperText="Leave empty to let AI generate a collection name"
-              />
-
-              <TextField
-                fullWidth
-                label="Collection Description (Optional)"
-                value={collectionDescription}
-                onChange={(e) => setCollectionDescription(e.target.value)}
-                placeholder="AI will generate a description if left empty"
-                multiline
-                rows={2}
-                sx={{ mb: 2 }}
-                helperText="Leave empty to let AI generate a description"
-              />
-
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<PlayIcon />}
-                onClick={handleCrawl}
-                disabled={crawlMutation.isLoading || !url.trim()}
-                fullWidth
-              >
-                {crawlMutation.isLoading ? 'Crawling...' : 'Start Crawling'}
-              </Button>
-
-              {crawlMutation.isLoading && (
-                <Box sx={{ mt: 2 }}>
-                  <LinearProgress />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
-                    This may take 1-2 minutes. Please wait...
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Request Tools Section */}
-        <Grid item xs={12} md={6}>
-          <RequestToolsPanel />
-        </Grid>
-      </Grid>
-
-      {/* Saved Profiles Section */}
-      {profiles.length > 0 && (
-        <Card sx={{ mt: 3 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Saved Crawler Profiles
+      {/* Tiles Grid */}
+      <Box sx={{ maxHeight: 500, overflowY: 'auto', pr: 1 }}>
+        {filteredProfiles.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <Typography variant="body2" color="text.secondary">
+              {searchQuery ? 'No crawlers found matching your search.' : 'No crawlers configured. Click "Add New" to create one.'}
             </Typography>
-            <Grid container spacing={2}>
-              {profiles.map((profile) => (
-                <Grid item xs={12} sm={6} md={4} key={profile.id}>
-                  <Paper sx={{ p: 2, border: '1px solid', borderColor: 'primary.main', borderOpacity: 0.3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
-                      <Box>
-                        <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                          {profile.name}
-                        </Typography>
-                        {profile.description && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                            {profile.description}
-                          </Typography>
-                        )}
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          {profile.url}
-                        </Typography>
-                      </Box>
-                      <Box>
-                        <IconButton size="small" onClick={() => handleEditProfile(profile)}>
-                          <EditIcon />
-                        </IconButton>
-                        <IconButton size="small" onClick={() => setDeleteConfirmDialog({ open: true, profileId: profile.id })} color="error">
-                          <DeleteIcon />
-                        </IconButton>
+          </Box>
+        ) : (
+          <Grid container spacing={2}>
+            {filteredProfiles.map((profile) => (
+              <Grid item xs={12} sm={6} key={profile.id}>
+                <Card 
+                  sx={{ 
+                    height: '100%',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      boxShadow: 2,
+                    },
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', flex: 1, mr: 1 }} noWrap>
+                        {profile.name}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Execute">
+                          <IconButton 
+                            size="small" 
+                            color="success"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              executeProfileMutation.mutate(profile.id);
+                            }}
+                            disabled={executeProfileMutation.isLoading}
+                          >
+                            <PlayIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Edit">
+                          <IconButton 
+                            size="small" 
+                            color="primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditProfile(profile);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton 
+                            size="small" 
+                            color="error"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmDialog({ open: true, profileId: profile.id });
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleLoadProfile(profile)}
-                        fullWidth
-                      >
-                        Load
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        startIcon={<PlayIcon />}
-                        onClick={() => executeProfileMutation.mutate(profile.id)}
-                        disabled={executeProfileMutation.isLoading}
-                        fullWidth
-                      >
-                        Execute
-                      </Button>
+                    
+                    {profile.description && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} noWrap>
+                        {profile.description}
+                      </Typography>
+                    )}
+                    
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }} noWrap>
+                      {profile.url}
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                      {profile.use_js && (
+                        <Chip label="JS" size="small" color="info" variant="outlined" />
+                      )}
+                      {profile.follow_links && (
+                        <Chip label="Recursive" size="small" color="secondary" variant="outlined" />
+                      )}
+                      {profile.collection_name && (
+                        <Chip label={profile.collection_name} size="small" variant="outlined" />
+                      )}
                     </Box>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-          </CardContent>
-        </Card>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Box>
+
+      {/* Execution status */}
+      {executeProfileMutation.isLoading && (
+        <Box sx={{ mt: 2 }}>
+          <LinearProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
+            Crawling in progress...
+          </Typography>
+        </Box>
+      )}
+
+      {executeProfileMutation.isSuccess && (
+        <Alert severity="success" sx={{ mt: 2 }}>
+          Crawl completed successfully!
+        </Alert>
+      )}
+
+      {executeProfileMutation.isError && (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          {executeProfileMutation.error?.response?.data?.detail || 'Crawl failed'}
+        </Alert>
       )}
 
       {/* Create/Edit Profile Dialog */}
       <Dialog open={openProfileDialog} onClose={() => setOpenProfileDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{editingProfileId ? 'Edit Profile' : 'Create Profile'}</DialogTitle>
+        <DialogTitle>{editingProfileId ? 'Edit Crawler' : 'Create New Crawler'}</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2 }}>
             <TextField
@@ -605,6 +404,7 @@ const Crawler = () => {
               value={profileForm.name}
               onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
               sx={{ mb: 2 }}
+              required
             />
             <TextField
               fullWidth
@@ -621,6 +421,8 @@ const Crawler = () => {
               value={profileForm.url}
               onChange={(e) => setProfileForm({ ...profileForm, url: e.target.value })}
               sx={{ mb: 2 }}
+              required
+              placeholder="https://example.com"
             />
             <FormControlLabel
               control={
@@ -629,9 +431,66 @@ const Crawler = () => {
                   onChange={(e) => setProfileForm({ ...profileForm, use_js: e.target.checked })}
                 />
               }
-              label="Use JavaScript"
-              sx={{ mb: 2 }}
+              label="Use JavaScript Rendering"
+              sx={{ mb: 2, display: 'block' }}
             />
+            
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Recursive Crawling
+            </Typography>
+            
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={profileForm.follow_links}
+                  onChange={(e) => setProfileForm({ ...profileForm, follow_links: e.target.checked })}
+                />
+              }
+              label="Follow Links"
+              sx={{ mb: 2, display: 'block' }}
+            />
+            {profileForm.follow_links && (
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Max Depth"
+                    value={profileForm.max_depth}
+                    onChange={(e) => setProfileForm({ ...profileForm, max_depth: parseInt(e.target.value) || 3 })}
+                    inputProps={{ min: 1, max: 10 }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Max Pages"
+                    value={profileForm.max_pages}
+                    onChange={(e) => setProfileForm({ ...profileForm, max_pages: parseInt(e.target.value) || 50 })}
+                    inputProps={{ min: 1, max: 1000 }}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={profileForm.same_domain_only}
+                        onChange={(e) => setProfileForm({ ...profileForm, same_domain_only: e.target.checked })}
+                      />
+                    }
+                    label="Same Domain Only"
+                  />
+                </Grid>
+              </Grid>
+            )}
+            
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              LLM Settings (Optional)
+            </Typography>
+            
             <Grid container spacing={2} sx={{ mb: 2 }}>
               <Grid item xs={6}>
                 <FormControl fullWidth>
@@ -656,12 +515,19 @@ const Crawler = () => {
                 />
               </Grid>
             </Grid>
+            
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Collection Settings
+            </Typography>
+            
             <TextField
               fullWidth
               label="Collection Name"
               value={profileForm.collection_name}
               onChange={(e) => setProfileForm({ ...profileForm, collection_name: e.target.value })}
               sx={{ mb: 2 }}
+              helperText="Leave empty to auto-generate"
             />
             <TextField
               fullWidth
@@ -672,52 +538,7 @@ const Crawler = () => {
               rows={2}
               sx={{ mb: 2 }}
             />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={profileForm.follow_links}
-                  onChange={(e) => setProfileForm({ ...profileForm, follow_links: e.target.checked })}
-                />
-              }
-              label="Follow Links"
-              sx={{ mb: 2 }}
-            />
-            {profileForm.follow_links && (
-              <>
-                <Grid container spacing={2} sx={{ mb: 2 }}>
-                  <Grid item xs={6}>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      label="Max Depth"
-                      value={profileForm.max_depth}
-                      onChange={(e) => setProfileForm({ ...profileForm, max_depth: parseInt(e.target.value) || 3 })}
-                      inputProps={{ min: 1, max: 10 }}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      label="Max Pages"
-                      value={profileForm.max_pages}
-                      onChange={(e) => setProfileForm({ ...profileForm, max_pages: parseInt(e.target.value) || 50 })}
-                      inputProps={{ min: 1, max: 1000 }}
-                    />
-                  </Grid>
-                </Grid>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={profileForm.same_domain_only}
-                      onChange={(e) => setProfileForm({ ...profileForm, same_domain_only: e.target.checked })}
-                    />
-                  }
-                  label="Same Domain Only"
-                  sx={{ mb: 2 }}
-                />
-              </>
-            )}
+            
             <TextField
               fullWidth
               label="Headers (JSON)"
@@ -728,7 +549,7 @@ const Crawler = () => {
               sx={{ mb: 2 }}
               placeholder='{"Authorization": "Bearer token"}'
               error={!!headersError}
-              helperText={headersError || "JSON object with key-value pairs"}
+              helperText={headersError || "Optional JSON object with HTTP headers"}
             />
           </Box>
         </DialogContent>
@@ -746,7 +567,7 @@ const Crawler = () => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmDialog.open} onClose={() => setDeleteConfirmDialog({ open: false, profileId: null })}>
-        <DialogTitle>Delete Profile</DialogTitle>
+        <DialogTitle>Delete Crawler</DialogTitle>
         <DialogContent>
           <Typography>Are you sure you want to delete this crawler profile? This action cannot be undone.</Typography>
         </DialogContent>
@@ -755,9 +576,7 @@ const Crawler = () => {
           <Button
             variant="contained"
             color="error"
-            onClick={() => {
-              deleteProfileMutation.mutate(deleteConfirmDialog.profileId);
-            }}
+            onClick={() => deleteProfileMutation.mutate(deleteConfirmDialog.profileId)}
             disabled={deleteProfileMutation.isLoading}
           >
             {deleteProfileMutation.isLoading ? 'Deleting...' : 'Delete'}
@@ -769,14 +588,13 @@ const Crawler = () => {
 };
 
 // Request Tools Panel Component
-const RequestToolsPanel = () => {
+const RequestToolsPanel = ({ isActive }) => {
   const queryClient = useQueryClient();
-  const { data: requests = [], isLoading } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
-  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const { data: requests = [], isLoading } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 });
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState(null);
-  const [tabValue, setTabValue] = useState(0);
   const [openResponseModal, setOpenResponseModal] = useState(false);
   const [responseData, setResponseData] = useState(null);
   const [validationError, setValidationError] = useState('');
@@ -795,6 +613,16 @@ const RequestToolsPanel = () => {
   });
   const [headersText, setHeadersText] = useState('');
   const [paramsText, setParamsText] = useState('');
+
+  const filteredRequests = useMemo(() => {
+    if (!searchQuery.trim()) return requests;
+    const query = searchQuery.toLowerCase();
+    return requests.filter(r => 
+      r.name?.toLowerCase().includes(query) || 
+      r.description?.toLowerCase().includes(query) ||
+      r.url?.toLowerCase().includes(query)
+    );
+  }, [requests, searchQuery]);
 
   const createMutation = useMutation(api.createRequestTool, {
     onSuccess: () => {
@@ -820,16 +648,12 @@ const RequestToolsPanel = () => {
     onSuccess: () => {
       queryClient.invalidateQueries('request-tools');
       setDeleteConfirmDialog({ open: false, requestId: null });
-      if (selectedRequest) {
-        setSelectedRequest(null);
-      }
     },
   });
 
   const executeMutation = useMutation(api.executeRequestTool, {
     onSuccess: (data) => {
       queryClient.invalidateQueries('request-tools');
-      // Store response data and open modal
       setResponseData(data);
       setOpenResponseModal(true);
     },
@@ -850,6 +674,7 @@ const RequestToolsPanel = () => {
     });
     setHeadersText('');
     setParamsText('');
+    setValidationError('');
   };
 
   const handleCreate = () => {
@@ -901,22 +726,16 @@ const RequestToolsPanel = () => {
     }
   };
 
-  const handleExecute = (requestId) => {
-    executeMutation.mutate(requestId);
-  };
-
   const parseJsonOrEmpty = (text) => {
     if (!text || !text.trim()) return {};
     try {
       const parsed = JSON.parse(text);
-      // Ensure it's an object
       if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Headers and params must be JSON objects, not arrays or primitives');
+        throw new Error('Must be a JSON object');
       }
       return parsed;
     } catch (e) {
-      // Re-throw with more context
-      throw new Error(`Invalid JSON format: ${e.message}. Please check your syntax (e.g., missing commas, colons, or quotes).`);
+      throw new Error(`Invalid JSON: ${e.message}`);
     }
   };
 
@@ -928,81 +747,104 @@ const RequestToolsPanel = () => {
     }
   };
 
+  const getMethodColor = (method) => {
+    const colors = {
+      GET: 'success',
+      POST: 'primary',
+      PUT: 'warning',
+      DELETE: 'error',
+      PATCH: 'info',
+    };
+    return colors[method] || 'default';
+  };
+
   return (
-    <Card>
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" color="primary">
-            Request Tools
-          </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              resetForm();
-              setOpenCreateDialog(true);
-            }}
-          >
-            New Request
-          </Button>
+    <Box>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ApiIcon color="primary" />
+          <Typography variant="h6" color="primary">REST API Requests</Typography>
         </Box>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            resetForm();
+            setOpenCreateDialog(true);
+          }}
+        >
+          Add New
+        </Button>
+      </Box>
 
-        <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 2 }}>
-          <Tab label="Requests" icon={<HttpIcon />} iconPosition="start" />
-          <Tab label="Response" icon={<StorageIcon />} iconPosition="start" />
-        </Tabs>
+      {/* Search */}
+      <TextField
+        fullWidth
+        size="small"
+        placeholder="Search requests by name..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        sx={{ mb: 2 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon color="action" />
+            </InputAdornment>
+          ),
+        }}
+      />
 
-        {tabValue === 0 && (
-          <Box>
-            {requests.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-                No requests configured. Create one to get started.
-              </Typography>
-            ) : (
-              <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
-                {requests.map((req) => (
-                  <Card
-                    key={req.id}
-                    sx={{
-                      mb: 1,
-                      cursor: 'pointer',
-                      border: selectedRequest?.id === req.id ? '2px solid #1976d2' : '1px solid rgba(0,0,0,0.12)',
-                    }}
-                    onClick={() => setSelectedRequest(req)}
-                  >
-                    <CardContent sx={{ p: 1.5 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="subtitle1">{req.name}</Typography>
-                          <Chip
-                            size="small"
-                            label={req.request_type.toUpperCase()}
-                            color={req.request_type === 'http' ? 'primary' : 'secondary'}
-                            sx={{ mt: 0.5, mr: 0.5 }}
-                          />
-                          {req.method && (
-                            <Chip size="small" label={req.method} variant="outlined" sx={{ mt: 0.5, mr: 0.5 }} />
-                          )}
-                          {req.last_executed_at && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Last: {new Date(req.last_executed_at).toLocaleString()}
-                            </Typography>
-                          )}
-                        </Box>
-                        <Box>
-                          <IconButton
-                            size="small"
-                            color="primary"
+      {/* Loading */}
+      {isLoading && <LinearProgress sx={{ mb: 2 }} />}
+
+      {/* Tiles Grid */}
+      <Box sx={{ maxHeight: 500, overflowY: 'auto', pr: 1 }}>
+        {filteredRequests.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <Typography variant="body2" color="text.secondary">
+              {searchQuery ? 'No requests found matching your search.' : 'No requests configured. Click "Add New" to create one.'}
+            </Typography>
+          </Box>
+        ) : (
+          <Grid container spacing={2}>
+            {filteredRequests.map((req) => (
+              <Grid item xs={12} sm={6} key={req.id}>
+                <Card 
+                  sx={{ 
+                    height: '100%',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      boxShadow: 2,
+                    },
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', flex: 1, mr: 1 }} noWrap>
+                        {req.name}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Execute">
+                          <IconButton 
+                            size="small" 
+                            color="success"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleExecute(req.id);
+                              executeMutation.mutate(req.id);
                             }}
+                            disabled={executeMutation.isLoading}
                           >
                             <SendIcon fontSize="small" />
                           </IconButton>
-                          <IconButton
-                            size="small"
+                        </Tooltip>
+                        <Tooltip title="Edit">
+                          <IconButton 
+                            size="small" 
                             color="primary"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1011,8 +853,10 @@ const RequestToolsPanel = () => {
                           >
                             <EditIcon fontSize="small" />
                           </IconButton>
-                          <IconButton
-                            size="small"
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton 
+                            size="small" 
                             color="error"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1021,388 +865,217 @@ const RequestToolsPanel = () => {
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
-                        </Box>
+                        </Tooltip>
                       </Box>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            )}
-          </Box>
-        )}
-
-        {tabValue === 1 && selectedRequest && (
-          <Box>
-            <Typography variant="subtitle1" gutterBottom>
-              {selectedRequest.name}
-            </Typography>
-            {selectedRequest.last_response ? (
-              <Box>
-                <Chip
-                  label={selectedRequest.last_response.success ? 'Success' : 'Failed'}
-                  color={selectedRequest.last_response.success ? 'success' : 'error'}
-                  sx={{ mb: 1 }}
-                />
-                {selectedRequest.last_response.status_code && (
-                  <Chip
-                    label={`Status: ${selectedRequest.last_response.status_code}`}
-                    sx={{ mb: 1, ml: 1 }}
-                  />
-                )}
-                <Paper sx={{ 
-                  p: 2, 
-                  mt: 2, 
-                  maxHeight: 300, 
-                  overflow: 'auto',
-                  bgcolor: 'background.paper',
-                  border: '1px solid',
-                  borderColor: 'primary.main',
-                  borderOpacity: 0.3,
-                  '&::-webkit-scrollbar': {
-                    width: '8px',
-                  },
-                  '&::-webkit-scrollbar-track': {
-                    bgcolor: 'background.default',
-                    borderRadius: '4px',
-                  },
-                  '&::-webkit-scrollbar-thumb': {
-                    bgcolor: 'primary.main',
-                    bgcolorOpacity: 0.5,
-                    borderRadius: '4px',
-                    '&:hover': {
-                      bgcolor: 'primary.light',
-                    },
-                  },
-                }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Response Data:
-                  </Typography>
-                  <pre style={{ margin: 0, fontSize: '0.875rem', color: 'inherit' }}>
-                    {JSON.stringify(selectedRequest.last_response.response_data, null, 2)}
-                  </pre>
-                </Paper>
-                {selectedRequest.last_response.error && (
-                  <Alert severity="error" sx={{ mt: 1 }}>
-                    {selectedRequest.last_response.error}
-                  </Alert>
-                )}
-              </Box>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No response yet. Execute the request to see results.
-              </Typography>
-            )}
-          </Box>
-        )}
-
-        {executeMutation.isLoading && (
-          <Box sx={{ mt: 2 }}>
-            <LinearProgress />
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
-              Executing request...
-            </Typography>
-          </Box>
-        )}
-
-        {executeMutation.isError && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {executeMutation.error?.response?.data?.detail || executeMutation.error?.message || 'Execution failed'}
-          </Alert>
-        )}
-
-        {executeMutation.isSuccess && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            Request executed successfully!
-          </Alert>
-        )}
-
-        {/* Create Dialog */}
-        <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
-          <DialogTitle>Create Request Configuration</DialogTitle>
-          <DialogContent>
-            <RequestForm
-              form={createForm}
-              setForm={setCreateForm}
-              headersText={headersText}
-              setHeadersText={setHeadersText}
-              paramsText={paramsText}
-              setParamsText={setParamsText}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
-            <Button
-              variant="contained"
-              onClick={handleCreate}
-              disabled={createMutation.isLoading || !createForm.name.trim()}
-            >
-              {createMutation.isLoading ? 'Creating...' : 'Create'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Edit Dialog */}
-        <Dialog open={openEditDialog} onClose={() => {
-          setOpenEditDialog(false);
-          setValidationError('');
-        }} maxWidth="md" fullWidth>
-          <DialogTitle>Edit Request Configuration</DialogTitle>
-          <DialogContent>
-            {validationError && (
-              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setValidationError('')}>
-                {validationError}
-              </Alert>
-            )}
-            <RequestForm
-              form={createForm}
-              setForm={setCreateForm}
-              headersText={headersText}
-              setHeadersText={setHeadersText}
-              paramsText={paramsText}
-              setParamsText={setParamsText}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
-            <Button
-              variant="contained"
-              onClick={handleUpdate}
-              disabled={updateMutation.isLoading || !createForm.name.trim()}
-            >
-              {updateMutation.isLoading ? 'Updating...' : 'Update'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Response Modal */}
-        <Dialog 
-          open={openResponseModal} 
-          onClose={() => setOpenResponseModal(false)} 
-          maxWidth="lg" 
-          fullWidth
-        >
-          <DialogTitle>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">Response Details</Typography>
-              {responseData && (
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                  <Chip
-                    label={responseData.success ? 'Success' : 'Failed'}
-                    color={responseData.success ? 'success' : 'error'}
-                    size="small"
-                  />
-                  {responseData.status_code && (
-                    <Chip
-                      label={`Status: ${responseData.status_code}`}
-                      size="small"
-                      variant="outlined"
-                    />
-                  )}
-                </Box>
-              )}
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            {responseData && (
-              <Box>
-                {/* Request Info */}
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Request Information
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-                    <Typography variant="body2">
-                      <strong>Name:</strong> {responseData.request_name}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>ID:</strong> {responseData.request_id}
-                    </Typography>
-                    {responseData.executed_at && (
-                      <Typography variant="body2">
-                        <strong>Executed:</strong> {new Date(responseData.executed_at).toLocaleString()}
-                      </Typography>
-                    )}
-                    {responseData.execution_time !== undefined && (
-                      <Typography variant="body2">
-                        <strong>Execution Time:</strong> {responseData.execution_time.toFixed(3)}s
-                      </Typography>
-                    )}
-                  </Box>
-                </Box>
-
-                {/* Error Section */}
-                {responseData.error && (
-                  <Alert severity="error" sx={{ mb: 3 }}>
-                    <Typography variant="subtitle2" gutterBottom>Error</Typography>
-                    <Typography variant="body2">{responseData.error}</Typography>
-                  </Alert>
-                )}
-
-                {/* Response Headers */}
-                {responseData.response_headers && Object.keys(responseData.response_headers).length > 0 && (
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Response Headers
-                    </Typography>
-                    <Paper sx={{ 
-                      p: 2, 
-                      bgcolor: 'background.paper', 
-                      border: '1px solid',
-                      borderColor: 'primary.main',
-                      borderOpacity: 0.3,
-                      maxHeight: 200, 
-                      overflow: 'auto',
-                      '&::-webkit-scrollbar': {
-                        width: '8px',
-                      },
-                      '&::-webkit-scrollbar-track': {
-                        bgcolor: 'background.default',
-                        borderRadius: '4px',
-                      },
-                      '&::-webkit-scrollbar-thumb': {
-                        bgcolor: 'primary.main',
-                        bgcolorOpacity: 0.5,
-                        borderRadius: '4px',
-                        '&:hover': {
-                          bgcolor: 'primary.light',
-                        },
-                      },
-                    }}>
-                      <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', color: 'inherit' }}>
-                        {JSON.stringify(responseData.response_headers, null, 2)}
-                      </pre>
-                    </Paper>
-                  </Box>
-                )}
-
-                {/* Response Body */}
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Response Body
-                    </Typography>
-                    {(() => {
-                      const isJson = responseData.response_data !== null && 
-                                     responseData.response_data !== undefined &&
-                                     (typeof responseData.response_data === 'object' || 
-                                      (typeof responseData.response_data === 'string' && 
-                                       (responseData.response_data.trim().startsWith('{') || 
-                                        responseData.response_data.trim().startsWith('['))));
-                      return (
-                        <Chip
-                          label={isJson ? 'JSON' : 'Plain Text'}
-                          size="small"
-                          color={isJson ? 'primary' : 'default'}
-                          variant="outlined"
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', gap: 0.5, mb: 1, alignItems: 'center' }}>
+                      <Chip 
+                        label={req.request_type?.toUpperCase() || 'HTTP'} 
+                        size="small" 
+                        color={req.request_type === 'http' ? 'primary' : 'secondary'}
+                        variant="outlined"
+                      />
+                      {req.method && (
+                        <Chip 
+                          label={req.method} 
+                          size="small" 
+                          color={getMethodColor(req.method)}
                         />
-                      );
-                    })()}
-                  </Box>
-                  <Paper sx={{ 
-                    p: 2, 
-                    bgcolor: 'background.paper', 
-                    border: '1px solid',
-                    borderColor: 'primary.main',
-                    borderOpacity: 0.3,
-                    maxHeight: 500, 
-                    overflow: 'auto',
-                    '&::-webkit-scrollbar': {
-                      width: '8px',
-                    },
-                    '&::-webkit-scrollbar-track': {
-                      bgcolor: 'background.default',
-                      borderRadius: '4px',
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                      bgcolor: 'primary.main',
-                      bgcolorOpacity: 0.5,
-                      borderRadius: '4px',
-                      '&:hover': {
-                        bgcolor: 'primary.light',
-                      },
-                    },
-                  }}>
-                    {(() => {
-                      const data = responseData.response_data;
-                      if (data === null || data === undefined) {
-                        return (
-                          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                            No response body
-                          </Typography>
-                        );
-                      }
-                      
-                      // Check if it's JSON
-                      let displayData = data;
-                      let isJson = false;
-                      
-                      if (typeof data === 'object') {
-                        // Already an object, format as JSON
-                        displayData = JSON.stringify(data, null, 2);
-                        isJson = true;
-                      } else if (typeof data === 'string') {
-                        // Try to parse as JSON
-                        try {
-                          const parsed = JSON.parse(data);
-                          displayData = JSON.stringify(parsed, null, 2);
-                          isJson = true;
-                        } catch {
-                          // Not JSON, display as-is
-                          displayData = data;
-                          isJson = false;
-                        }
-                      }
-                      
-                      return (
-                        <pre style={{ 
-                          margin: 0, 
-                          fontSize: '0.875rem', 
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          fontFamily: isJson ? 'monospace' : 'inherit'
-                        }}>
-                          {displayData}
-                        </pre>
-                      );
-                    })()}
-                  </Paper>
-                </Box>
+                      )}
+                    </Box>
+                    
+                    {req.last_executed_at && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        Last: {new Date(req.last_executed_at).toLocaleString()}
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Box>
+
+      {/* Execution status */}
+      {executeMutation.isLoading && (
+        <Box sx={{ mt: 2 }}>
+          <LinearProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
+            Executing request...
+          </Typography>
+        </Box>
+      )}
+
+      {executeMutation.isError && (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          {executeMutation.error?.response?.data?.detail || 'Execution failed'}
+        </Alert>
+      )}
+
+      {/* Create Dialog */}
+      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Create New Request</DialogTitle>
+        <DialogContent>
+          {validationError && (
+            <Alert severity="error" sx={{ mb: 2, mt: 1 }} onClose={() => setValidationError('')}>
+              {validationError}
+            </Alert>
+          )}
+          <RequestForm
+            form={createForm}
+            setForm={setCreateForm}
+            headersText={headersText}
+            setHeadersText={setHeadersText}
+            paramsText={paramsText}
+            setParamsText={setParamsText}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCreate}
+            disabled={createMutation.isLoading || !createForm.name.trim()}
+          >
+            {createMutation.isLoading ? 'Creating...' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={openEditDialog} onClose={() => {
+        setOpenEditDialog(false);
+        setValidationError('');
+      }} maxWidth="md" fullWidth>
+        <DialogTitle>Edit Request</DialogTitle>
+        <DialogContent>
+          {validationError && (
+            <Alert severity="error" sx={{ mb: 2, mt: 1 }} onClose={() => setValidationError('')}>
+              {validationError}
+            </Alert>
+          )}
+          <RequestForm
+            form={createForm}
+            setForm={setCreateForm}
+            headersText={headersText}
+            setHeadersText={setHeadersText}
+            paramsText={paramsText}
+            setParamsText={setParamsText}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleUpdate}
+            disabled={updateMutation.isLoading || !createForm.name.trim()}
+          >
+            {updateMutation.isLoading ? 'Updating...' : 'Update'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Response Modal */}
+      <Dialog 
+        open={openResponseModal} 
+        onClose={() => setOpenResponseModal(false)} 
+        maxWidth="lg" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Response Details</Typography>
+            {responseData && (
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <Chip
+                  label={responseData.success ? 'Success' : 'Failed'}
+                  color={responseData.success ? 'success' : 'error'}
+                  size="small"
+                />
+                {responseData.status_code && (
+                  <Chip
+                    label={`Status: ${responseData.status_code}`}
+                    size="small"
+                    variant="outlined"
+                  />
+                )}
               </Box>
             )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenResponseModal(false)}>Close</Button>
-          </DialogActions>
-        </Dialog>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {responseData && (
+            <Box>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  <strong>Request:</strong> {responseData.request_name}
+                </Typography>
+                {responseData.execution_time !== undefined && (
+                  <Typography variant="body2">
+                    <strong>Execution Time:</strong> {responseData.execution_time.toFixed(3)}s
+                  </Typography>
+                )}
+              </Box>
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog
-          open={deleteConfirmDialog.open}
-          onClose={() => setDeleteConfirmDialog({ open: false, requestId: null })}
-        >
-          <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogContent>
-            <Typography>
-              Are you sure you want to delete this request? This action cannot be undone.
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteConfirmDialog({ open: false, requestId: null })}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => {
-                deleteMutation.mutate(deleteConfirmDialog.requestId);
-              }} 
-              color="error" 
-              variant="contained"
-            >
-              Delete
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </CardContent>
-    </Card>
+              {responseData.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {responseData.error}
+                </Alert>
+              )}
+
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Response Body
+              </Typography>
+              <Paper sx={{ 
+                p: 2, 
+                bgcolor: 'background.paper', 
+                border: '1px solid',
+                borderColor: 'divider',
+                maxHeight: 400, 
+                overflow: 'auto',
+              }}>
+                <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {typeof responseData.response_data === 'object' 
+                    ? JSON.stringify(responseData.response_data, null, 2)
+                    : responseData.response_data || 'No response body'}
+                </pre>
+              </Paper>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenResponseModal(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, requestId: null })}
+      >
+        <DialogTitle>Delete Request</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this request? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, requestId: null })}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => deleteMutation.mutate(deleteConfirmDialog.requestId)} 
+            color="error" 
+            variant="contained"
+            disabled={deleteMutation.isLoading}
+          >
+            {deleteMutation.isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 };
 
@@ -1412,7 +1085,7 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
     <Box sx={{ mt: 1 }}>
       <TextField
         fullWidth
-        label="Request Name (Unique)"
+        label="Request Name"
         value={form.name}
         onChange={(e) => setForm({ ...form, name: e.target.value })}
         sx={{ mb: 2 }}
@@ -1452,8 +1125,6 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
               <MenuItem value="PUT">PUT</MenuItem>
               <MenuItem value="DELETE">DELETE</MenuItem>
               <MenuItem value="PATCH">PATCH</MenuItem>
-              <MenuItem value="HEAD">HEAD</MenuItem>
-              <MenuItem value="OPTIONS">OPTIONS</MenuItem>
             </Select>
           </FormControl>
           <TextField
@@ -1485,7 +1156,7 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         multiline
         rows={3}
         sx={{ mb: 2 }}
-        placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'
+        placeholder='{"Content-Type": "application/json"}'
         helperText="JSON object with key-value pairs"
       />
       <TextField
@@ -1494,9 +1165,9 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         value={paramsText}
         onChange={(e) => setParamsText(e.target.value)}
         multiline
-        rows={3}
+        rows={2}
         sx={{ mb: 2 }}
-        placeholder='{"param1": "value1", "param2": "value2"}'
+        placeholder='{"param1": "value1"}'
         helperText="JSON object with key-value pairs"
       />
       <TextField
@@ -1516,11 +1187,9 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         value={form.timeout}
         onChange={(e) => setForm({ ...form, timeout: parseFloat(e.target.value) || 30 })}
         inputProps={{ min: 1, max: 300 }}
-        sx={{ mb: 2 }}
       />
     </Box>
   );
 };
 
 export default Crawler;
-

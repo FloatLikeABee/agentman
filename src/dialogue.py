@@ -53,6 +53,9 @@ class DialogueManager:
                         data["db_tools"] = []
                     if "request_tools" not in data:
                         data["request_tools"] = []
+                    # Remove 'id' from data if present to avoid duplicate argument
+                    if 'id' in data:
+                        del data['id']
                     profile = DialogueProfile(id=dialogue_id, **data)
                     self.dialogues[dialogue_id] = profile
                 except Exception as e:

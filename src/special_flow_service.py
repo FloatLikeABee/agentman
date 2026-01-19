@@ -54,6 +54,9 @@ class SpecialFlow1Service:
                 try:
                     flow_id = doc.get("id")
                     data = doc.get("profile", {})
+                    # Remove 'id' from data if present to avoid duplicate argument
+                    if 'id' in data:
+                        del data['id']
                     profile = SpecialFlow1Profile(id=flow_id, **data)
                     self.flows[flow_id] = profile
                 except Exception as e:

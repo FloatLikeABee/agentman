@@ -33,6 +33,9 @@ class CustomizationManager:
                 try:
                     profile_id = doc.get("id")
                     data = doc.get("profile", {})
+                    # Remove 'id' from data if present to avoid duplicate argument
+                    if 'id' in data:
+                        del data['id']
                     profile = CustomizationProfile(id=profile_id, **data)
                     self.customizations[profile_id] = profile
                 except Exception as e:

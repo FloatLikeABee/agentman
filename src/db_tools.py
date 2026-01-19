@@ -45,6 +45,9 @@ class DatabaseToolsManager:
                 try:
                     tool_id = doc.get("id")
                     data = doc.get("profile", {})
+                    # Remove 'id' from data if present to avoid duplicate argument
+                    if 'id' in data:
+                        del data['id']
                     profile = DatabaseToolProfile(id=tool_id, **data)
                     self.db_tools[tool_id] = profile
                 except Exception as e:

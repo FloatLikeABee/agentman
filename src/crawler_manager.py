@@ -39,6 +39,9 @@ class CrawlerManager:
                 try:
                     profile_id = doc.get("id")
                     data = doc.get("profile", {})
+                    # Remove 'id' from data if present to avoid duplicate argument
+                    if 'id' in data:
+                        del data['id']
                     profile = CrawlerProfile(id=profile_id, **data)
                     self.profiles[profile_id] = profile
                 except Exception as e:

@@ -26,6 +26,16 @@ class ToolType(str, Enum):
     WIKIPEDIA = "wikipedia"
     CRAWLER = "crawler"
     EQUALIZER = "equalizer"
+    DOCUMENT_READER = "document_reader"
+    YOUTUBE_SUMMARIZER = "youtube_summarizer"
+    ACADEMIC_SEARCH = "academic_search"
+    MIND_MAP = "mind_map"
+    DEBATE_ANALYZER = "debate_analyzer"
+    FIRST_PRINCIPLES = "first_principles"
+    IMAGE_GENERATOR = "image_generator"
+    STORY_GENERATOR = "story_generator"
+    TASK_PLANNER = "task_planner"
+    MULTI_AGENT = "multi_agent"
     CUSTOM = "custom"
 
 

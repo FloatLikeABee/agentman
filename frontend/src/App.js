@@ -13,6 +13,7 @@ import Crawler from './pages/Crawler';
 import DBTools from './pages/DBTools';
 import Dialogue from './pages/Dialogue';
 import Flow from './pages/Flow';
+import ImageGenerator from './pages/ImageGenerator';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
               <Route path="/rag" element={<RAGManager />} />
               <Route path="/agents" element={<AgentManager />} />
               <Route path="/tools" element={<ToolManager />} />
+              <Route path="/images" element={<ImageGenerator />} />
               <Route path="/customizations" element={<Customizations />} />
               <Route path="/crawler" element={<Crawler />} />
               <Route path="/db-tools" element={<DBTools />} />

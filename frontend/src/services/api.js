@@ -329,6 +329,27 @@ export const getSavedConversationContent = async (filename) => {
   return response.data;
 };
 
+// Image Generation
+export const generateImage = async (payload) => {
+  const response = await api.post('/images/generate', payload);
+  return response.data;
+};
+
+export const polishImagePrompt = async (payload) => {
+  const response = await api.post('/images/polish-prompt', payload);
+  return response.data;
+};
+
+export const getGeneratedImages = async () => {
+  const response = await api.get('/images');
+  return response.data;
+};
+
+export const deleteGeneratedImage = async (filename) => {
+  const response = await api.delete(`/images/${encodeURIComponent(filename)}`);
+  return response.data;
+};
+
 // Export all functions
 const apiService = {
   getStatus,
@@ -442,6 +463,11 @@ const apiService = {
   getConversationHistory,
   listSavedConversations,
   getSavedConversationContent,
+  // Image Generation
+  generateImage,
+  polishImagePrompt,
+  getGeneratedImages,
+  deleteGeneratedImage,
 };
 
 export default apiService; 
