@@ -23,7 +23,8 @@ class FlowDialogueMethods:
     async def start_dialogue_internal(
         self,
         dialogue_id: str,
-        request: "DialogueStartRequest"
+        request: "DialogueStartRequest",
+        flow_context_formatted: Optional[str] = None
     ) -> Dict[str, Any]:
         """Internal method to start a dialogue conversation (replicates API logic)"""
         print(f"[FLOW DIALOGUE] Starting dialogue: {dialogue_id}")
@@ -93,16 +94,29 @@ class FlowDialogueMethods:
 
         print(f"[FLOW DIALOGUE] Created conversation: {conversation_id}")
 
-        # Build prompt
+        # Build prompt with flow context, system prompt, RAG context, and user message
         system_prompt = profile.system_prompt
-        if context:
-            full_prompt = (
-                f"{system_prompt}\n\n"
-                f"Context (from knowledge base '{rag_used}'):\n{context}\n\n"
-                f"User message:\n{request.initial_message}"
-            )
+        prompt_parts = []
+        
+        # Start with flow context if available
+        if flow_context_formatted:
+            print(f"[FLOW DIALOGUE] 📋 Prepending flow context to dialogue system prompt ({len(flow_context_formatted)} chars)")
+            prompt_parts.append(flow_context_formatted)
+            print(f"[FLOW DIALOGUE] ✅ Flow context prepended to dialogue prompt")
         else:
-            full_prompt = f"{system_prompt}\n\nUser message:\n{request.initial_message}"
+            print(f"[FLOW DIALOGUE] ℹ️  No flow context available for dialogue start")
+        
+        # Add system prompt
+        prompt_parts.append(system_prompt)
+        
+        # Add RAG context if available
+        if context:
+            prompt_parts.append(f"Context (from knowledge base '{rag_used}'):\n{context}")
+        
+        # Add user message
+        prompt_parts.append(f"User message:\n{request.initial_message}")
+        
+        full_prompt = "\n\n".join(prompt_parts)
 
         # Call LLM
         response_text = await llm.ainvoke(full_prompt)
@@ -165,7 +179,8 @@ class FlowDialogueMethods:
     async def continue_dialogue_internal(
         self,
         dialogue_id: str,
-        request: "DialogueContinueRequest"
+        request: "DialogueContinueRequest",
+        flow_context_formatted: Optional[str] = None
     ) -> Dict[str, Any]:
         """Internal method to continue a dialogue conversation (replicates API logic)"""
         print(f"[FLOW DIALOGUE] Continuing dialogue: {dialogue_id}, conversation: {request.conversation_id}")
@@ -248,21 +263,32 @@ class FlowDialogueMethods:
             for msg in conversation["messages"]
         ])
 
-        # Build prompt
+        # Build prompt with flow context, system prompt, RAG context, conversation history, and user message
         system_prompt = profile.system_prompt
-        if context:
-            full_prompt = (
-                f"{system_prompt}\n\n"
-                f"Context (from knowledge base '{rag_used}'):\n{context}\n\n"
-                f"Conversation history:\n{conversation_history_str}\n\n"
-                f"User message:\n{request.user_message}"
-            )
+        prompt_parts = []
+        
+        # Start with flow context if available
+        if flow_context_formatted:
+            print(f"[FLOW DIALOGUE] 📋 Prepending flow context to dialogue system prompt ({len(flow_context_formatted)} chars)")
+            prompt_parts.append(flow_context_formatted)
+            print(f"[FLOW DIALOGUE] ✅ Flow context prepended to dialogue continue prompt")
         else:
-            full_prompt = (
-                f"{system_prompt}\n\n"
-                f"Conversation history:\n{conversation_history_str}\n\n"
-                f"User message:\n{request.user_message}"
-            )
+            print(f"[FLOW DIALOGUE] ℹ️  No flow context available for dialogue continue")
+        
+        # Add system prompt
+        prompt_parts.append(system_prompt)
+        
+        # Add RAG context if available
+        if context:
+            prompt_parts.append(f"Context (from knowledge base '{rag_used}'):\n{context}")
+        
+        # Add conversation history
+        prompt_parts.append(f"Conversation history:\n{conversation_history_str}")
+        
+        # Add user message
+        prompt_parts.append(f"User message:\n{request.user_message}")
+        
+        full_prompt = "\n\n".join(prompt_parts)
 
         # Call LLM
         response_text = await llm.ainvoke(full_prompt)

@@ -491,7 +491,11 @@ Question: {input}
             print(f"⚙️ Actual Provider: {actual_provider} | Model: {actual_model}")
 
             # Add context to query if provided
+            flow_context_formatted = None
             if context:
+                # Check for flow context (from flow execution)
+                flow_context_formatted = context.get("flow_context_formatted")
+                
                 # Check if system_prompt_data is in context (from flow execution)
                 system_prompt_data = context.get("system_prompt_data")
                 if system_prompt_data:
@@ -512,10 +516,19 @@ Question: {input}
                         # Note: This won't update the stored agent, but will affect this execution
                         # For permanent updates, the agent config should be updated
                 
-                context_str = "\n".join([f"{k}: {v}" for k, v in context.items() if k != "system_prompt_data"])
+                # Build context string excluding special keys
+                context_items = {k: v for k, v in context.items() 
+                               if k not in ["system_prompt_data", "flow_context_formatted", "flow_context"]}
+                context_str = "\n".join([f"{k}: {v}" for k, v in context_items.items()])
                 full_query = f"Context: {context_str}\n\nQuery: {query}" if context_str else query
             else:
                 full_query = query
+            
+            # Prepend flow context to query if available (for both agent and direct LLM calls)
+            if flow_context_formatted:
+                print(f"[AGENT MANAGER] 📋 Prepending flow context to agent query ({len(flow_context_formatted)} chars)")
+                full_query = f"{flow_context_formatted}\n\n{full_query}"
+                print(f"[AGENT MANAGER] ✅ Flow context prepended - full query length: {len(full_query)} chars")
 
             # Check if agent has tools and agent executor is available
             has_tools = agent_data.get('has_tools', False)

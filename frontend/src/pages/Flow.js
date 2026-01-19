@@ -40,6 +40,7 @@ import {
 } from '@mui/icons-material';
 import { Tabs, Tab } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
 import SystemPromptInput from '../components/SystemPromptInput';
 import GraphicalFlowEditor from '../components/GraphicalFlowEditor';
@@ -1095,7 +1096,31 @@ const Flow = () => {
                                     <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                       {msg.role === 'user' ? 'You' : 'Assistant'}
                                     </Typography>
-                                    <Typography variant="body2">{msg.content}</Typography>
+                                    <Box
+                                      sx={{
+                                        '& p': {
+                                          margin: '0.25em 0',
+                                        },
+                                        '& code': {
+                                          bgcolor: msg.role === 'user' ? 'rgba(255,255,255,0.2)' : 'background.default',
+                                          padding: '2px 4px',
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.9em',
+                                        },
+                                        '& pre': {
+                                          bgcolor: msg.role === 'user' ? 'rgba(255,255,255,0.1)' : 'background.default',
+                                          padding: '8px',
+                                          borderRadius: '4px',
+                                          overflow: 'auto',
+                                          '& code': {
+                                            padding: 0,
+                                          },
+                                        },
+                                      }}
+                                    >
+                                      <ReactMarkdown>{msg.content || ''}</ReactMarkdown>
+                                    </Box>
                                   </Box>
                                 </Box>
                               ))}
@@ -1137,8 +1162,7 @@ const Flow = () => {
                             <Typography variant="body2" sx={{ mb: 1 }}>
                               <strong>Output:</strong>
                             </Typography>
-                            <Typography
-                              variant="body2"
+                            <Box
                               sx={{
                                 p: 1,
                                 bgcolor: 'background.paper',
@@ -1146,7 +1170,6 @@ const Flow = () => {
                                 borderColor: 'primary.main',
                                 borderOpacity: 0.3,
                                 borderRadius: 1,
-                                whiteSpace: 'pre-wrap',
                                 maxHeight: 200,
                                 overflow: 'auto',
                                 '&::-webkit-scrollbar': {
@@ -1164,12 +1187,49 @@ const Flow = () => {
                                     bgcolor: 'primary.light',
                                   },
                                 },
+                                '& p': {
+                                  margin: '0.5em 0',
+                                },
+                                '& h1, & h2, & h3, & h4, & h5, & h6': {
+                                  marginTop: '1em',
+                                  marginBottom: '0.5em',
+                                },
+                                '& code': {
+                                  bgcolor: 'background.default',
+                                  padding: '2px 4px',
+                                  borderRadius: '4px',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.9em',
+                                },
+                                '& pre': {
+                                  bgcolor: 'background.default',
+                                  padding: '12px',
+                                  borderRadius: '4px',
+                                  overflow: 'auto',
+                                  '& code': {
+                                    padding: 0,
+                                  },
+                                },
+                                '& ul, & ol': {
+                                  paddingLeft: '1.5em',
+                                },
+                                '& blockquote': {
+                                  borderLeft: '4px solid',
+                                  borderColor: 'primary.main',
+                                  paddingLeft: '1em',
+                                  marginLeft: 0,
+                                  fontStyle: 'italic',
+                                },
                               }}
                             >
-                              {typeof step.output === 'object'
-                                ? JSON.stringify(step.output, null, 2)
-                                : step.output}
-                            </Typography>
+                              {typeof step.output === 'object' ? (
+                                <ReactMarkdown>
+                                  {`\`\`\`json\n${JSON.stringify(step.output, null, 2)}\n\`\`\``}
+                                </ReactMarkdown>
+                              ) : (
+                                <ReactMarkdown>{String(step.output || '')}</ReactMarkdown>
+                              )}
+                            </Box>
                           </>
                         )}
                       </Box>
@@ -1184,19 +1244,85 @@ const Flow = () => {
                   <Typography variant="h6" sx={{ mb: 1 }}>
                     Final Output
                   </Typography>
-                  <Typography
-                    variant="body2"
+                  <Box
                     sx={{
                       p: 2,
                       bgcolor: 'primary.light',
                       borderRadius: 1,
-                      whiteSpace: 'pre-wrap',
+                      maxHeight: 500,
+                      overflow: 'auto',
+                      '&::-webkit-scrollbar': {
+                        width: '8px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        bgcolor: 'background.default',
+                        borderRadius: '4px',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        bgcolor: 'primary.main',
+                        bgcolorOpacity: 0.5,
+                        borderRadius: '4px',
+                        '&:hover': {
+                          bgcolor: 'primary.light',
+                        },
+                      },
+                      '& p': {
+                        margin: '0.5em 0',
+                      },
+                      '& h1, & h2, & h3, & h4, & h5, & h6': {
+                        marginTop: '1em',
+                        marginBottom: '0.5em',
+                      },
+                      '& code': {
+                        bgcolor: 'background.paper',
+                        padding: '2px 4px',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '0.9em',
+                      },
+                      '& pre': {
+                        bgcolor: 'background.paper',
+                        padding: '12px',
+                        borderRadius: '4px',
+                        overflow: 'auto',
+                        '& code': {
+                          padding: 0,
+                        },
+                      },
+                      '& ul, & ol': {
+                        paddingLeft: '1.5em',
+                      },
+                      '& blockquote': {
+                        borderLeft: '4px solid',
+                        borderColor: 'primary.main',
+                        paddingLeft: '1em',
+                        marginLeft: 0,
+                        fontStyle: 'italic',
+                      },
+                      '& table': {
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        margin: '1em 0',
+                      },
+                      '& th, & td': {
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        padding: '8px',
+                      },
+                      '& th': {
+                        bgcolor: 'background.paper',
+                        fontWeight: 'bold',
+                      },
                     }}
                   >
-                    {typeof executeResult.final_output === 'object'
-                      ? JSON.stringify(executeResult.final_output, null, 2)
-                      : executeResult.final_output}
-                  </Typography>
+                    {typeof executeResult.final_output === 'object' ? (
+                      <ReactMarkdown>
+                        {`\`\`\`json\n${JSON.stringify(executeResult.final_output, null, 2)}\n\`\`\``}
+                      </ReactMarkdown>
+                    ) : (
+                      <ReactMarkdown>{String(executeResult.final_output)}</ReactMarkdown>
+                    )}
+                  </Box>
                 </Box>
               )}
             </Box>

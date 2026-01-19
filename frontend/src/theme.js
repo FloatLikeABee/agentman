@@ -125,6 +125,19 @@ const theme = createTheme({
             zIndex: 0,
           },
         },
+        // Global fix for InputLabel clipping issue
+        '.MuiFormControl-root': {
+          overflow: 'visible !important',
+          '& .MuiInputLabel-root': {
+            overflow: 'visible !important',
+          },
+        },
+        '.MuiTextField-root': {
+          overflow: 'visible !important',
+          '& .MuiInputLabel-root': {
+            overflow: 'visible !important',
+          },
+        },
       },
     },
     MuiAppBar: {
@@ -211,8 +224,18 @@ const theme = createTheme({
     MuiTextField: {
       styleOverrides: {
         root: {
+          // Ensure TextField container doesn't clip labels
+          overflow: 'visible',
+          // Add padding-top to accommodate label when not shrunk (for multiline)
+          '& .MuiInputBase-root': {
+            overflow: 'visible',
+            '& .MuiInputLabel-root': {
+              overflow: 'visible !important',
+            },
+          },
           '& .MuiOutlinedInput-root': {
             borderRadius: '8px',
+            overflow: 'visible',
             '& fieldset': {
               borderColor: `${colors.accent}40`,
               borderWidth: '2px',
@@ -233,6 +256,7 @@ const theme = createTheme({
           },
           '& .MuiInputLabel-root': {
             color: colors.textSecondary,
+            overflow: 'visible !important',
             '&.Mui-focused': {
               color: colors.accent,
             },
@@ -366,6 +390,52 @@ const theme = createTheme({
           '&.MuiTypography-body1, &.MuiTypography-body2, &.MuiTypography-caption, &.MuiTypography-overline': {
             fontFamily: '"Roboto", "Inter", sans-serif',
           },
+        },
+      },
+    },
+    MuiFormControl: {
+      styleOverrides: {
+        root: {
+          // Ensure FormControl doesn't clip labels
+          overflow: 'visible !important',
+          '& .MuiInputLabel-root': {
+            overflow: 'visible !important',
+            whiteSpace: 'nowrap',
+            textOverflow: 'ellipsis',
+          },
+        },
+      },
+    },
+    MuiInputBase: {
+      styleOverrides: {
+        root: {
+          '&.MuiInputBase-formControl': {
+            // Ensure formControl wrapper doesn't clip labels
+            overflow: 'visible',
+            '& .MuiInputLabel-root': {
+              overflow: 'visible !important',
+            },
+          },
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          // Ensure label is fully visible and not clipped
+          overflow: 'visible !important',
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis',
+          // Ensure label has proper z-index
+          zIndex: 1,
+          // Ensure proper line-height so text doesn't get cut off
+          lineHeight: '1.4375em',
+        },
+        outlined: {
+          // Ensure outlined variant label is fully visible
+          overflow: 'visible !important',
+          lineHeight: '1.4375em',
+          // Let Material-UI handle default positioning, just ensure it's not clipped
         },
       },
     },

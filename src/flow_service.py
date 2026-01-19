@@ -98,6 +98,159 @@ class FlowService:
         except Exception as e:
             self.logger.error(f"Error saving flows: {e}")
 
+    def _format_flow_context(self, flow_context: List[Dict[str, Any]]) -> str:
+        """
+        Format accumulated flow context for inclusion in system prompts.
+        
+        Args:
+            flow_context: List of context entries from previous steps
+            
+        Returns:
+            Formatted context string with instructional header
+        """
+        if not flow_context:
+            print(f"[FLOW CONTEXT] ⚠️  No flow context to format (empty)")
+            return ""
+        
+        print(f"[FLOW CONTEXT] 🔨 Formatting flow context with {len(flow_context)} entries")
+        
+        context_parts = []
+        context_parts.append("=" * 80)
+        context_parts.append("FLOW CONTEXT - TASK HISTORY SO FAR")
+        context_parts.append("=" * 80)
+        context_parts.append("")
+        context_parts.append("The following is the complete context of what has happened in this flow so far.")
+        context_parts.append("This includes all conversations, AI responses, and key outputs from previous steps.")
+        context_parts.append("You should use this context to understand the full picture of the task being performed.")
+        context_parts.append("Even if some parts may not seem directly relevant to your current step, this context")
+        context_parts.append("helps you understand the overall flow and make better decisions.")
+        context_parts.append("")
+        context_parts.append("-" * 80)
+        context_parts.append("")
+        
+        for idx, entry in enumerate(flow_context, 1):
+            step_name = entry.get("step_name", f"Step {idx}")
+            step_type = entry.get("step_type", "unknown")
+            context_parts.append(f"[{idx}] {step_name} ({step_type})")
+            context_parts.append("-" * 80)
+            
+            # Format based on step type
+            if step_type == "dialogue":
+                # Format dialogue conversation
+                conv_history = entry.get("conversation_history", [])
+                if conv_history:
+                    context_parts.append("Conversation:")
+                    for msg in conv_history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        if role == "user":
+                            context_parts.append(f"  User: {content}")
+                        elif role == "assistant":
+                            context_parts.append(f"  Assistant: {content}")
+                    context_parts.append("")
+                response = entry.get("response", "")
+                if response:
+                    context_parts.append(f"Final Response: {response}")
+                    context_parts.append("")
+            
+            elif step_type in ["customization", "agent"]:
+                # Format AI response
+                response = entry.get("response", entry.get("output", ""))
+                if response:
+                    context_parts.append(f"AI Response: {response}")
+                    context_parts.append("")
+            
+            elif step_type in ["db_tool", "request", "crawler"]:
+                # Format tool output summary
+                output = entry.get("output", {})
+                if isinstance(output, dict):
+                    # Create a summary
+                    summary_keys = list(output.keys())[:5]  # First 5 keys
+                    context_parts.append(f"Output Summary: {', '.join(summary_keys)}")
+                    if "success" in output:
+                        context_parts.append(f"Success: {output.get('success')}")
+                else:
+                    output_str = str(output)[:200]
+                    context_parts.append(f"Output: {output_str}...")
+                context_parts.append("")
+            
+            context_parts.append("")
+        
+        context_parts.append("=" * 80)
+        context_parts.append("END OF FLOW CONTEXT")
+        context_parts.append("=" * 80)
+        context_parts.append("")
+        
+        formatted_context = "\n".join(context_parts)
+        print(f"[FLOW CONTEXT] ✅ Formatted flow context: {len(formatted_context)} characters")
+        print(f"[FLOW CONTEXT] 📊 Context breakdown:")
+        for idx, entry in enumerate(flow_context, 1):
+            step_type = entry.get("step_type", "unknown")
+            step_name = entry.get("step_name", f"Step {idx}")
+            print(f"[FLOW CONTEXT]   {idx}. {step_name} ({step_type})")
+        
+        return formatted_context
+    
+    def _add_to_flow_context(
+        self,
+        flow_context: List[Dict[str, Any]],
+        step: FlowStepConfig,
+        output: Union[str, Dict[str, Any]],
+    ) -> None:
+        """
+        Add step output to flow context if it involves AI or dialogue.
+        
+        Args:
+            flow_context: List to append to
+            step: The step that was executed
+            output: The output from the step
+        """
+        # Only add context for AI-involved steps
+        if step.step_type not in [FlowStepType.CUSTOMIZATION, FlowStepType.AGENT, FlowStepType.DIALOGUE]:
+            return
+        
+        context_entry = {
+            "step_id": step.step_id,
+            "step_name": step.step_name or step.step_id,
+            "step_type": step.step_type.value if hasattr(step.step_type, 'value') else str(step.step_type),
+        }
+        
+        if step.step_type == FlowStepType.DIALOGUE and isinstance(output, dict):
+            # Extract dialogue information
+            context_entry["conversation_history"] = output.get("conversation_history", [])
+            context_entry["response"] = output.get("response", "")
+            context_entry["is_complete"] = output.get("is_complete", False)
+        elif step.step_type in [FlowStepType.CUSTOMIZATION, FlowStepType.AGENT]:
+            # Extract AI response
+            if isinstance(output, str):
+                context_entry["response"] = output
+            elif isinstance(output, dict):
+                context_entry["response"] = output.get("response", output.get("output", str(output)))
+            else:
+                context_entry["response"] = str(output)
+        else:
+            # For other types, just store the output
+            context_entry["output"] = output
+        
+        flow_context.append(context_entry)
+        self.logger.info(
+            f"[FLOW CONTEXT] Added {step.step_type.value} step '{step.step_id}' to flow context"
+        )
+        print(f"[FLOW CONTEXT] ✅ Added {step.step_type.value} step '{step.step_id}' ({step.step_name or step.step_id}) to flow context")
+        print(f"[FLOW CONTEXT] 📊 Flow context now has {len(flow_context)} entries")
+        
+        # Print summary of what was added
+        if step.step_type == FlowStepType.DIALOGUE and isinstance(output, dict):
+            conv_history = context_entry.get("conversation_history", [])
+            print(f"[FLOW CONTEXT]   - Dialogue conversation with {len(conv_history)} messages")
+            response = context_entry.get("response", "")
+            if response:
+                print(f"[FLOW CONTEXT]   - Final response: {response[:100]}...")
+        elif step.step_type in [FlowStepType.CUSTOMIZATION, FlowStepType.AGENT]:
+            response = context_entry.get("response", "")
+            if response:
+                print(f"[FLOW CONTEXT]   - AI response: {response[:100]}...")
+
     def _generate_id(self, name: str) -> str:
         """Generate a stable, URL-friendly id from the flow name."""
         base_id = name.strip().lower().replace(" ", "_")
@@ -220,6 +373,20 @@ class FlowService:
         start_time = time.time()
         step_results: List[FlowStepResult] = request.previous_step_results.copy() if request.previous_step_results else []
         previous_output: Optional[Union[str, Dict[str, Any]]] = None
+        
+        # Initialize flow context accumulator for AI-involved steps
+        flow_context: List[Dict[str, Any]] = []
+        print(f"[FLOW CONTEXT] Initialized flow context accumulator for flow: {flow_id}")
+        
+        # If resuming, rebuild flow context from previous step results
+        if request.previous_step_results:
+            print(f"[FLOW CONTEXT] Rebuilding flow context from {len(request.previous_step_results)} previous step results")
+            for result in request.previous_step_results:
+                # Find the corresponding step
+                step = next((s for s in flow.steps if s.step_id == result.step_id), None)
+                if step and result.success and result.output:
+                    self._add_to_flow_context(flow_context, step, result.output)
+            print(f"[FLOW CONTEXT] Rebuilt flow context with {len(flow_context)} entries")
 
         # Log step_results when resuming
         if request.resume_from_step:
@@ -566,9 +733,30 @@ class FlowService:
                     self.logger.info(
                         f"[FLOW {flow_id}] Executing step {step_index}/{len(flow.steps)}: {step.step_id} - waiting for completion..."
                     )
+                    
+                    # Prepare context with flow context for AI steps
+                    step_context = request.context.copy() if request.context else {}
+                    step_context["flow_context"] = flow_context
+                    flow_context_formatted = self._format_flow_context(flow_context)
+                    step_context["flow_context_formatted"] = flow_context_formatted
+                    
+                    # Print flow context info for AI-involved steps
+                    if step.step_type in [FlowStepType.CUSTOMIZATION, FlowStepType.AGENT, FlowStepType.DIALOGUE]:
+                        print(f"[FLOW CONTEXT] 🔄 Step {step_index} ({step.step_id}) is AI-involved - flow context available")
+                        print(f"[FLOW CONTEXT] 📝 Flow context has {len(flow_context)} entries")
+                        if flow_context_formatted:
+                            context_preview = flow_context_formatted[:300] + "..." if len(flow_context_formatted) > 300 else flow_context_formatted
+                            print(f"[FLOW CONTEXT] 📄 Formatted context preview ({len(flow_context_formatted)} chars):\n{context_preview}")
+                        else:
+                            print(f"[FLOW CONTEXT] ℹ️  No flow context yet (this is the first AI step)")
+                    
                     output = await self._execute_step(
-                        step, step_input, request.context or {}
+                        step, step_input, step_context
                     )
+                    
+                    # Add step output to flow context if it's AI-involved
+                    if output:
+                        self._add_to_flow_context(flow_context, step, output)
                     # Ensure step is fully complete before proceeding
                     self.logger.info(
                         f"[FLOW {flow_id}] Step {step_index}/{len(flow.steps)}: {step.step_id} completed successfully"
@@ -840,7 +1028,7 @@ class FlowService:
     ) -> Union[str, Dict[str, Any]]:
         """Execute a single flow step."""
         if step.step_type == FlowStepType.CUSTOMIZATION:
-            return await self.step_executors.execute_customization_step(step, step_input)
+            return await self.step_executors.execute_customization_step(step, step_input, context)
 
         elif step.step_type == FlowStepType.AGENT:
             return await self.step_executors.execute_agent_step(step, step_input, context)

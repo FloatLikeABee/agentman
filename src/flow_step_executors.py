@@ -32,7 +32,7 @@ class FlowStepExecutors:
         self.dialogue_manager = dialogue_manager
 
     async def execute_customization_step(
-        self, step: FlowStepConfig, step_input: Optional[Union[str, Dict[str, Any]]]
+        self, step: FlowStepConfig, step_input: Optional[Union[str, Dict[str, Any]]], context: Optional[Dict[str, Any]] = None
     ) -> str:
         """Execute a customization step."""
         print(f"[FLOW STEP EXECUTOR] Executing CUSTOMIZATION step: {step.step_id}")
@@ -98,7 +98,7 @@ class FlowStepExecutors:
         llm = LangChainLLMWrapper(llm_caller=llm_caller)
 
         # Build context from RAG collection if specified
-        context = ""
+        rag_context = ""
         if profile.rag_collection and self.rag_system:
             results = self.rag_system.query_collection(
                 profile.rag_collection,
@@ -106,19 +106,39 @@ class FlowStepExecutors:
                 n_results=3,
             )
             if results:
-                context = "\n\n".join(r["content"] for r in results[:3])
-                print(f"[FLOW STEP EXECUTOR] RAG context retrieved: {len(context)} chars")
+                rag_context = "\n\n".join(r["content"] for r in results[:3])
+                print(f"[FLOW STEP EXECUTOR] RAG context retrieved: {len(rag_context)} chars")
 
         # Build final prompt
         system_prompt = profile.system_prompt
-        if context:
-            full_prompt = (
-                f"{system_prompt}\n\n"
-                f"Context (from knowledge base '{profile.rag_collection}'):\n{context}\n\n"
-                f"User query:\n{query}"
-            )
+        
+        # Prepend flow context if available
+        flow_context_formatted = ""
+        if context and "flow_context_formatted" in context:
+            flow_context_formatted = context["flow_context_formatted"]
+            print(f"[FLOW STEP EXECUTOR] 📋 CUSTOMIZATION step using flow context ({len(flow_context_formatted)} chars)")
         else:
-            full_prompt = f"{system_prompt}\n\nUser query:\n{query}"
+            print(f"[FLOW STEP EXECUTOR] ℹ️  CUSTOMIZATION step has no flow context (first step or not in flow)")
+        
+        # Build prompt with flow context, RAG context, and user query
+        prompt_parts = []
+        
+        # Start with flow context if available
+        if flow_context_formatted:
+            prompt_parts.append(flow_context_formatted)
+            print(f"[FLOW STEP EXECUTOR] ✅ Prepended flow context to system prompt")
+        
+        # Add system prompt
+        prompt_parts.append(system_prompt)
+        
+        # Add RAG context if available
+        if rag_context:
+            prompt_parts.append(f"Context (from knowledge base '{profile.rag_collection}'):\n{rag_context}")
+        
+        # Add user query
+        prompt_parts.append(f"User query:\n{query}")
+        
+        full_prompt = "\n\n".join(prompt_parts)
 
         # Direct LLM call
         response_text = await llm.ainvoke(full_prompt)
@@ -152,6 +172,17 @@ class FlowStepExecutors:
             query = ""
 
         print(f"[FLOW STEP EXECUTOR] Extracted query: {query[:200]}...")
+
+        # Check for flow context
+        if context and "flow_context_formatted" in context:
+            flow_context_formatted = context.get("flow_context_formatted", "")
+            if flow_context_formatted:
+                print(f"[FLOW STEP EXECUTOR] 📋 AGENT step using flow context ({len(flow_context_formatted)} chars)")
+                print(f"[FLOW STEP EXECUTOR] ✅ Flow context will be prepended to agent query")
+            else:
+                print(f"[FLOW STEP EXECUTOR] ℹ️  AGENT step has no flow context (first step or not in flow)")
+        else:
+            print(f"[FLOW STEP EXECUTOR] ℹ️  AGENT step has no flow context (not in flow execution)")
 
         # Check if we need to inject data into system prompt
         agent_config = agent_data.get("config")
@@ -550,6 +581,15 @@ class FlowStepExecutors:
             rag_system=self.rag_system
         )
         
+        # Extract flow context if available
+        flow_context_formatted = context.get("flow_context_formatted", "") if context else ""
+        
+        if flow_context_formatted:
+            print(f"[FLOW STEP EXECUTOR] 📋 DIALOGUE step using flow context ({len(flow_context_formatted)} chars)")
+            print(f"[FLOW STEP EXECUTOR] ✅ Flow context will be prepended to dialogue system prompt")
+        else:
+            print(f"[FLOW STEP EXECUTOR] ℹ️  DIALOGUE step has no flow context (first step or not in flow)")
+        
         if conversation_id:
             # Check if conversation is already complete
             if self.dialogue_manager:
@@ -605,7 +645,9 @@ class FlowStepExecutors:
                 user_message=initial_message,
                 conversation_id=conversation_id
             )
-            result = await dialogue_methods.continue_dialogue_internal(step.resource_id, request)
+            result = await dialogue_methods.continue_dialogue_internal(
+                step.resource_id, request, flow_context_formatted=flow_context_formatted
+            )
         else:
             # Start new conversation
             from .models import DialogueStartRequest
@@ -613,7 +655,9 @@ class FlowStepExecutors:
                 initial_message=initial_message,
                 n_results=3,
             )
-            result = await dialogue_methods.start_dialogue_internal(step.resource_id, request)
+            result = await dialogue_methods.start_dialogue_internal(
+                step.resource_id, request, flow_context_formatted=flow_context_formatted
+            )
             # Store conversation_id in context for next steps
             if result and "conversation_id" in result:
                 context["conversation_id"] = result["conversation_id"]
