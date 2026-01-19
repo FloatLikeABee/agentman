@@ -114,25 +114,30 @@ class RAGAPI:
                         try:
                             results = await asyncio.wait_for(
                                 asyncio.gather(*tasks, return_exceptions=True),
-                                timeout=2.0
+                                timeout=1.0  # Reduced timeout for faster shutdown
                             )
                             # Log any non-CancelledError exceptions
                             for i, result in enumerate(results):
                                 if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                                     logger.warning(f"Task {i} raised exception during shutdown: {result}")
                         except asyncio.TimeoutError:
-                            logger.warning("Some tasks did not complete cancellation within timeout")
+                            # Timeout is expected during fast shutdown - don't log as warning
+                            logger.debug("Shutdown timeout (expected during fast shutdown)")
                         except asyncio.CancelledError:
                             # This is expected if the shutdown itself is cancelled
-                            logger.info("Shutdown cancelled (expected during fast shutdown)")
+                            logger.debug("Shutdown cancelled (expected during fast shutdown)")
                     
                     logger.info("Shutdown complete")
                 except asyncio.CancelledError:
-                    # CancelledError is expected during shutdown, just log it
-                    logger.info("Shutdown process cancelled (expected during fast shutdown)")
+                    # CancelledError is expected during shutdown - suppress traceback
+                    logger.debug("Shutdown process cancelled (expected during fast shutdown)")
                 except Exception as e:
                     # Log but don't raise - shutdown should be graceful
-                    logger.warning(f"Error during shutdown: {e}")
+                    # Only log non-CancelledError exceptions
+                    if not isinstance(e, asyncio.CancelledError):
+                        logger.warning(f"Error during shutdown: {e}")
+                    else:
+                        logger.debug("Shutdown cancelled (expected)")
         
         self.app = FastAPI(
             title="Ground Control API",

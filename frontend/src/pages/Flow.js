@@ -42,6 +42,7 @@ import { Tabs, Tab } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
 import SystemPromptInput from '../components/SystemPromptInput';
+import GraphicalFlowEditor from '../components/GraphicalFlowEditor';
 
 const Flow = () => {
   const queryClient = useQueryClient();
@@ -76,6 +77,7 @@ const Flow = () => {
   });
   const [doneSteps, setDoneSteps] = useState(new Set());
   const [dialogueWarning, setDialogueWarning] = useState('');
+  const [editorMode, setEditorMode] = useState('form'); // 'form' or 'graphical'
   // Use ref to track latest formData for event handlers
   const formDataRef = useRef(formData);
   
@@ -149,6 +151,7 @@ const Flow = () => {
     });
     setDoneSteps(new Set());
     setDialogueWarning('');
+    setEditorMode('form');
     setCurrentStep({
       step_id: '',
       step_type: 'customization',
@@ -677,7 +680,15 @@ const Flow = () => {
       </Grid>
 
       {/* Create/Edit Flow Dialog */}
-      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
+      <Dialog 
+        open={openCreateDialog} 
+        onClose={() => setOpenCreateDialog(false)} 
+        maxWidth={editorMode === 'graphical' ? 'lg' : 'md'} 
+        fullWidth
+        PaperProps={{
+          sx: { height: editorMode === 'graphical' ? '90vh' : 'auto' }
+        }}
+      >
         <DialogTitle>{editingFlowId ? 'Edit Flow' : 'Create Flow'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -713,81 +724,116 @@ const Flow = () => {
             </Grid>
             <Grid item xs={12}>
               <Divider sx={{ my: 2 }} />
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                Steps ({formData.steps.length})
-              </Typography>
-              {formData.steps.length === 0 && (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  No steps added yet. Add steps below.
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">
+                  Steps ({formData.steps.length})
                 </Typography>
-              )}
-              {formData.steps.map((step, idx) => (
-                <Accordion key={idx} sx={{ mb: 1 }}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                      <Chip label={step.step_type} size="small" />
-                      <Typography>{step.step_name}</Typography>
-                      {doneSteps.has(idx) && (
-                        <CheckCircleIcon fontSize="small" color="success" />
-                      )}
-                      <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
-                        {!doneSteps.has(idx) && (
-                          <Button
-                            size="small"
-                            variant="contained"
-                            color="success"
-                            startIcon={<CheckCircleIcon />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStepDone(idx);
-                            }}
-                            sx={{ minWidth: 'auto', px: 1 }}
-                          >
-                            Done
-                          </Button>
-                        )}
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveStep(idx);
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </Box>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Typography variant="body2">Resource: {step.resource_id}</Typography>
-                      {step.use_previous_output && (
-                        <Typography variant="body2" color="primary">
-                          Uses previous step output
-                        </Typography>
-                      )}
-                      {step.input_query && !step.use_previous_output && (
-                        <Typography variant="body2">
-                          Input Query: {step.input_query}
-                        </Typography>
-                      )}
-                      {doneSteps.has(idx) && (
-                        <Chip
-                          label="Done"
-                          size="small"
-                          color="success"
-                          icon={<CheckCircleIcon />}
-                          sx={{ alignSelf: 'flex-start' }}
-                        />
-                      )}
-                    </Box>
-                  </AccordionDetails>
-                </Accordion>
-              ))}
-            </Grid>
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="h6" sx={{ mb: 2 }}>Add Step</Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant={editorMode === 'form' ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setEditorMode('form')}
+                  >
+                    Form Editor
+                  </Button>
+                  <Button
+                    variant={editorMode === 'graphical' ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setEditorMode('graphical')}
+                  >
+                    Graphical Editor
+                  </Button>
+                </Box>
+              </Box>
+              {editorMode === 'graphical' ? (
+                <Box sx={{ height: 'calc(90vh - 300px)', minHeight: '600px', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                  <GraphicalFlowEditor
+                    steps={formData.steps}
+                    onStepsChange={(newSteps) => {
+                      setFormData({ ...formData, steps: newSteps });
+                    }}
+                    customizations={customizations}
+                    agents={agents}
+                    dbTools={dbTools}
+                    requestTools={requestTools}
+                    dialogues={dialogues}
+                  />
+                </Box>
+              ) : (
+                <>
+                  <Grid item xs={12}>
+                    {formData.steps.length === 0 && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        No steps added yet. Add steps below.
+                      </Typography>
+                    )}
+                    {formData.steps.map((step, idx) => (
+                      <Accordion key={idx} sx={{ mb: 1 }}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                            <Chip label={step.step_type} size="small" />
+                            <Typography>{step.step_name}</Typography>
+                            {doneSteps.has(idx) && (
+                              <CheckCircleIcon fontSize="small" color="success" />
+                            )}
+                            <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                              {!doneSteps.has(idx) && (
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  color="success"
+                                  startIcon={<CheckCircleIcon />}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStepDone(idx);
+                                  }}
+                                  sx={{ minWidth: 'auto', px: 1 }}
+                                >
+                                  Done
+                                </Button>
+                              )}
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveStep(idx);
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Typography variant="body2">Resource: {step.resource_id}</Typography>
+                            {step.use_previous_output && (
+                              <Typography variant="body2" color="primary">
+                                Uses previous step output
+                              </Typography>
+                            )}
+                            {step.input_query && !step.use_previous_output && (
+                              <Typography variant="body2">
+                                Input Query: {step.input_query}
+                              </Typography>
+                            )}
+                            {doneSteps.has(idx) && (
+                              <Chip
+                                label="Done"
+                                size="small"
+                                color="success"
+                                icon={<CheckCircleIcon />}
+                                sx={{ alignSelf: 'flex-start' }}
+                              />
+                            )}
+                          </Box>
+                        </AccordionDetails>
+                      </Accordion>
+                    ))}
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 2 }} />
+                    <Typography variant="h6" sx={{ mb: 2 }}>Add Step</Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <TextField
@@ -932,6 +978,9 @@ const Flow = () => {
                   </Box>
                 </Grid>
               </Grid>
+                  </Grid>
+                </>
+              )}
             </Grid>
           </Grid>
         </DialogContent>
