@@ -405,11 +405,25 @@ const Conversation = () => {
                               border: '1px solid',
                               borderColor: 'primary.main',
                               borderOpacity: 0.1,
+                              '& p': { margin: 0, marginBottom: 1 },
+                              '& p:last-child': { marginBottom: 0 },
+                              '& ul, & ol': { marginTop: 0.5, marginBottom: 0.5, paddingLeft: 2 },
+                              '& code': { 
+                                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                padding: '2px 4px',
+                                borderRadius: '3px',
+                                fontSize: '0.9em',
+                              },
+                              '& pre': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                padding: 1,
+                                borderRadius: '4px',
+                                overflow: 'auto',
+                                '& code': { backgroundColor: 'transparent', padding: 0 },
+                              },
                             }}
                           >
-                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                              {msg.content}
-                            </Typography>
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
                           </Box>
                         </Box>
                       ))}

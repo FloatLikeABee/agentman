@@ -1425,7 +1425,28 @@ const Flow = () => {
                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                           {msg.role === 'user' ? 'You' : 'Assistant'}
                         </Typography>
-                        <Typography variant="body2">{msg.content}</Typography>
+                        <Box
+                          sx={{
+                            '& p': { margin: 0, marginBottom: 1 },
+                            '& p:last-child': { marginBottom: 0 },
+                            '& ul, & ol': { marginTop: 0.5, marginBottom: 0.5, paddingLeft: 2 },
+                            '& code': { 
+                              backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
+                              fontSize: '0.9em',
+                            },
+                            '& pre': {
+                              backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                              padding: 1,
+                              borderRadius: '4px',
+                              overflow: 'auto',
+                              '& code': { backgroundColor: 'transparent', padding: 0 },
+                            },
+                          }}
+                        >
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </Box>
                       </Box>
                     </Box>
                   ))
@@ -2492,7 +2513,28 @@ const SpecialFlows1Section = ({ flows, dbTools, requestTools }) => {
                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                           {msg.role === 'user' ? 'You' : 'Assistant'}
                         </Typography>
-                        <Typography variant="body2">{msg.content}</Typography>
+                        <Box
+                          sx={{
+                            '& p': { margin: 0, marginBottom: 1 },
+                            '& p:last-child': { marginBottom: 0 },
+                            '& ul, & ol': { marginTop: 0.5, marginBottom: 0.5, paddingLeft: 2 },
+                            '& code': { 
+                              backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
+                              fontSize: '0.9em',
+                            },
+                            '& pre': {
+                              backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                              padding: 1,
+                              borderRadius: '4px',
+                              overflow: 'auto',
+                              '& code': { backgroundColor: 'transparent', padding: 0 },
+                            },
+                          }}
+                        >
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </Box>
                       </Box>
                     </Box>
                   ))

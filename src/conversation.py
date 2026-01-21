@@ -283,10 +283,23 @@ class ConversationManager:
                 LLMProvider.QWEN if current_model_config.provider == LLMProviderType.QWEN else LLMProvider.MISTRAL
             )
             
+            # Get model name with fallback to default
+            model_name = current_model_config.model_name
+            if not model_name:
+                # Fallback to provider default model
+                if provider == LLMProvider.GEMINI:
+                    model_name = settings.gemini_default_model
+                elif provider == LLMProvider.QWEN:
+                    model_name = settings.qwen_default_model
+                elif provider == LLMProvider.MISTRAL:
+                    model_name = settings.mistral_default_model
+                else:
+                    model_name = settings.gemini_default_model  # Ultimate fallback
+            
             llm_caller = LLMFactory.create_caller(
                 provider=provider,
                 api_key=self._get_api_key(provider),
-                model=current_model_config.model_name
+                model=model_name
             )
 
             # Get RAG context if configured for this model

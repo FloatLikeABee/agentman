@@ -32,6 +32,7 @@ import {
   Send as SendIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
 import SystemPromptInput from '../components/SystemPromptInput';
 import Conversation from '../components/Conversation';
@@ -451,9 +452,28 @@ const Dialogue = () => {
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                               {msg.role === 'user' ? 'You' : 'AI'}
                             </Typography>
-                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                              {msg.content}
-                            </Typography>
+                            <Box
+                              sx={{
+                                '& p': { margin: 0, marginBottom: 1 },
+                                '& p:last-child': { marginBottom: 0 },
+                                '& ul, & ol': { marginTop: 0.5, marginBottom: 0.5, paddingLeft: 2 },
+                                '& code': { 
+                                  backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+                                  padding: '2px 4px',
+                                  borderRadius: '3px',
+                                  fontSize: '0.9em',
+                                },
+                                '& pre': {
+                                  backgroundColor: msg.role === 'user' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                                  padding: 1,
+                                  borderRadius: '4px',
+                                  overflow: 'auto',
+                                  '& code': { backgroundColor: 'transparent', padding: 0 },
+                                },
+                              }}
+                            >
+                              <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            </Box>
                           </Paper>
                         </Box>
                       ))
