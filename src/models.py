@@ -36,6 +36,7 @@ class ToolType(str, Enum):
     STORY_GENERATOR = "story_generator"
     TASK_PLANNER = "task_planner"
     MULTI_AGENT = "multi_agent"
+    BROWSER_AUTOMATION = "browser_automation"
     CUSTOM = "custom"
 
 

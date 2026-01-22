@@ -17,6 +17,7 @@ import random
 from .config import settings
 from .models import ToolType, ToolConfig, RAGDataInput, DataFormat, LLMProviderType
 from .llm_factory import LLMFactory, LLMProvider
+from .browser_automation import BrowserAutomationTool
 
 
 class ToolManager:
@@ -554,6 +555,46 @@ This simulates a collaborative team process for higher quality outputs."""
                 name="Multi-Agent Collaborator",
                 tool_type=ToolType.MULTI_AGENT,
                 description="Multiple AI agents collaborate: researcher, writer, critic, and summarizer",
+                config={}
+            )
+        )
+
+        # Browser Automation Tool
+        browser_automation = BrowserAutomationTool()
+        browser_tool = Tool(
+            name="Browser Automation",
+            func=browser_automation.execute,
+            description="""Control a web browser to perform tasks automatically. Uses AI agent with Playwright to follow instructions.
+
+INPUT FORMAT: Natural language instructions describing what to do in the browser.
+
+CAPABILITIES:
+- Navigate to websites
+- Click buttons and links
+- Fill forms
+- Extract text and data
+- Take screenshots
+- Scroll pages
+- Wait for elements
+- Select dropdown options
+
+EXAMPLES:
+- "Go to google.com and search for 'Python programming'"
+- "Navigate to example.com, fill the contact form with name 'John Doe' and email 'john@example.com', then submit"
+- "Open github.com, search for 'langchain', and get the first 5 repository names"
+- "Go to news.ycombinator.com, scroll down, and take a screenshot"
+- "Navigate to amazon.com, search for 'laptop', and get the price of the first result"
+
+The agent will automatically break down your instructions into browser actions and execute them step by step.
+Returns: Summary of actions taken, final URL, and page content summary."""
+        )
+        self.register_tool(
+            "browser_automation",
+            browser_tool,
+            ToolConfig(
+                name="Browser Automation",
+                tool_type=ToolType.BROWSER_AUTOMATION,
+                description="Control a web browser using AI agent with Playwright to follow natural language instructions",
                 config={}
             )
         )

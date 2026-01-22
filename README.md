@@ -23,6 +23,7 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
 - **Calculator**: Mathematical computation capabilities
 - **Financial Data**: Real-time stock prices and financial data (yfinance/Yahoo Finance - most reliable, free, no API key required)
 - **Wikipedia**: Wikipedia search integration
+- **Browser Automation**: AI-powered browser control using LangChain + Playwright for automated web tasks
 - **Custom Tools**: Extensible tool system for custom functionality
 
 ### 🔌 MCP (Model Context Protocol)
@@ -81,6 +82,12 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Model Context P
    ```bash
    pip install -r requirements.txt
    ```
+
+4. **Install Playwright browsers** (required for Browser Automation tool)
+   ```bash
+   playwright install
+   ```
+   This installs the browser binaries needed for the browser automation feature.
 
 3. **Install frontend dependencies**
    ```bash
@@ -193,6 +200,39 @@ ALPHA_VANTAGE_API_KEY=your-api-key
 3. Click "Config" to modify settings
 4. Enable/disable tools as needed
 
+#### Browser Automation Tool
+The Browser Automation tool uses AI (LangChain) and Playwright to control a web browser and follow natural language instructions.
+
+**Prerequisites:**
+- Playwright must be installed: `playwright install`
+- The tool requires an LLM provider to be configured (Gemini, Qwen, or Mistral)
+
+**Usage Examples:**
+- "Go to google.com and search for 'Python programming'"
+- "Navigate to example.com, fill the contact form with name 'John Doe' and email 'john@example.com', then submit"
+- "Open github.com, search for 'langchain', and get the first 5 repository names"
+- "Go to news.ycombinator.com, scroll down, and take a screenshot"
+- "Navigate to amazon.com, search for 'laptop', and get the price of the first result"
+
+**Capabilities:**
+- Navigate to websites
+- Click buttons and links (by CSS selector or text content)
+- Fill forms and input fields
+- Extract text and data from pages
+- Take screenshots
+- Scroll pages (up, down, top, bottom, or by pixels)
+- Wait for elements to load
+- Select dropdown options
+- Get page content (full text or summary)
+
+**How to Use:**
+1. Create or edit an agent in Agent Manager
+2. Enable the "Browser Automation" tool in the agent's tools list
+3. Run the agent with natural language instructions for browser tasks
+4. The AI agent will break down your instructions into browser actions and execute them step by step
+
+**Note:** The browser runs in headless mode by default. Screenshots are saved to the current directory with timestamps.
+
 ### 4. System Monitoring
 
 #### Status Dashboard
@@ -274,6 +314,20 @@ The frontend uses React with Material-UI:
 3. Register the tool with appropriate metadata
 4. The tool will be available in the UI
 
+### Browser Automation Architecture
+
+The Browser Automation tool combines:
+- **Playwright**: For browser control and automation
+- **LangChain ReAct Agent**: For interpreting natural language instructions
+- **Tool System**: Browser actions exposed as LangChain tools
+
+The agent receives natural language instructions, breaks them down into steps, and uses Playwright tools to execute browser actions. The system supports:
+- Navigation and page interaction
+- Form filling and submission
+- Data extraction
+- Screenshot capture
+- Dynamic element waiting and selection
+
 ### Adding New Data Formats
 
 1. Extend the `DataFormat` enum
@@ -304,6 +358,13 @@ The frontend uses React with Material-UI:
    - Verify model name exists in Ollama
    - Check agent configuration
    - Review logs for detailed error messages
+
+5. **Browser Automation Not Working**
+   - Ensure Playwright browsers are installed: `playwright install`
+   - Verify an LLM provider is configured (Gemini, Qwen, or Mistral)
+   - Check that the Browser Automation tool is enabled in your agent
+   - Review browser automation logs for specific errors
+   - Make sure you have sufficient disk space for screenshots
 
 ### Logs
 
