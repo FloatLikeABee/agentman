@@ -20,12 +20,14 @@ from .models import LLMProviderType
 class BrowserAutomationTool:
     """Browser automation tool using Playwright and LangChain"""
     
-    def __init__(self, llm_provider: Optional[LLMProviderType] = None, model_name: Optional[str] = None):
+    def __init__(self, llm_provider: Optional[LLMProviderType] = None, model_name: Optional[str] = None, headless: bool = False):
         self.logger = logging.getLogger(__name__)
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self.playwright = None
+        self._event_loop = None  # Store event loop reference for sync tool calls
+        self.headless = headless  # Whether to run browser in headless mode (False = visible browser)
         
         # Setup LLM for agent
         provider_str = llm_provider.value if llm_provider else settings.default_llm_provider.lower()
@@ -114,16 +116,39 @@ class BrowserAutomationTool:
         return tools
     
     async def _initialize_browser(self):
-        """Initialize Playwright browser"""
+        """Initialize Playwright browser - opens a REAL browser instance on your local machine"""
         if self.browser is None:
-            self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(headless=True)
-            self.context = await self.browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            )
-            self.page = await self.context.new_page()
-            self.logger.info("Browser initialized")
+            try:
+                # Start Playwright - this manages browser instances
+                self.playwright = await async_playwright().start()
+                
+                # Launch Chromium browser - this opens a REAL browser on your local machine
+                # headless=False means you'll see the browser window
+                # headless=True means it runs in the background (faster, but invisible)
+                self.browser = await self.playwright.chromium.launch(
+                    headless=self.headless,
+                    slow_mo=500 if not self.headless else 0  # Slow down actions so you can see them in visible mode
+                )
+                
+                # Create a browser context (like an incognito window)
+                self.context = await self.browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                )
+                
+                # Open a new page/tab
+                self.page = await self.context.new_page()
+                
+                mode = "visible" if not self.headless else "headless"
+                self.logger.info(f"Browser initialized in {mode} mode - ready to perform actions")
+            except Exception as e:
+                error_msg = str(e)
+                if "Executable doesn't exist" in error_msg or "BrowserType.launch" in error_msg:
+                    raise RuntimeError(
+                        "Playwright browsers are not installed. Please run: playwright install chromium\n"
+                        "Or install all browsers: playwright install"
+                    ) from e
+                raise
     
     async def _cleanup_browser(self):
         """Clean up browser resources"""
@@ -147,48 +172,66 @@ class BrowserAutomationTool:
     def _navigate(self, url: str) -> str:
         """Navigate to a URL"""
         try:
-            result = asyncio.run(self._navigate_async(url))
+            result = self._run_async_in_sync_context(self._navigate_async(url))
             return result
         except Exception as e:
             return f"Error navigating: {str(e)}"
     
     async def _navigate_async(self, url: str) -> str:
         """Async navigate implementation"""
-        await self._initialize_browser()
+        if self.browser is None:
+            await self._initialize_browser()
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
-        await self.page.goto(url, wait_until='networkidle', timeout=30000)
-        return f"Navigated to {url}"
+        self.logger.info(f"Navigating to: {url}")
+        try:
+            await self.page.goto(url, wait_until='networkidle', timeout=30000)
+            self.logger.info(f"Successfully navigated to: {url}")
+            return f"Navigated to {url}"
+        except Exception as e:
+            error_msg = f"Error navigating to {url}: {str(e)}"
+            self.logger.error(error_msg)
+            return error_msg
     
     def _click(self, selector_or_text: str) -> str:
         """Click on an element"""
         try:
-            result = asyncio.run(self._click_async(selector_or_text))
+            result = self._run_async_in_sync_context(self._click_async(selector_or_text))
             return result
         except Exception as e:
             return f"Error clicking: {str(e)}"
     
     async def _click_async(self, selector_or_text: str) -> str:
         """Async click implementation"""
-        await self._initialize_browser()
+        if self.browser is None:
+            await self._initialize_browser()
+        self.logger.info(f"Attempting to click: {selector_or_text}")
         try:
             # Try as CSS selector first
             await self.page.click(selector_or_text, timeout=5000)
+            self.logger.info(f"Successfully clicked on {selector_or_text}")
             return f"Clicked on {selector_or_text}"
-        except:
+        except Exception as e1:
             # Try as text content
             try:
                 await self.page.click(f"text={selector_or_text}", timeout=5000)
+                self.logger.info(f"Successfully clicked on element with text: {selector_or_text}")
                 return f"Clicked on element with text: {selector_or_text}"
-            except:
+            except Exception as e2:
                 # Try as partial text match
-                await self.page.click(f"text=/{selector_or_text}/i", timeout=5000)
-                return f"Clicked on element containing text: {selector_or_text}"
+                try:
+                    await self.page.click(f"text=/{selector_or_text}/i", timeout=5000)
+                    self.logger.info(f"Successfully clicked on element containing text: {selector_or_text}")
+                    return f"Clicked on element containing text: {selector_or_text}"
+                except Exception as e3:
+                    error_msg = f"Failed to click on {selector_or_text}. Errors: {str(e1)}, {str(e2)}, {str(e3)}"
+                    self.logger.error(error_msg)
+                    return f"Error: {error_msg}"
     
     def _type_text(self, input_json: str) -> str:
         """Type text into an input field"""
         try:
-            result = asyncio.run(self._type_text_async(input_json))
+            result = self._run_async_in_sync_context(self._type_text_async(input_json))
             return result
         except Exception as e:
             return f"Error typing text: {str(e)}"
@@ -212,7 +255,7 @@ class BrowserAutomationTool:
     def _get_text(self, selector: str) -> str:
         """Get text content from an element"""
         try:
-            result = asyncio.run(self._get_text_async(selector))
+            result = self._run_async_in_sync_context(self._get_text_async(selector))
             return result
         except Exception as e:
             return f"Error getting text: {str(e)}"
@@ -229,14 +272,16 @@ class BrowserAutomationTool:
     def _get_page_content(self, mode: str = "") -> str:
         """Get page content"""
         try:
-            result = asyncio.run(self._get_page_content_async(mode))
+            result = self._run_async_in_sync_context(self._get_page_content_async(mode))
             return result
         except Exception as e:
             return f"Error getting page content: {str(e)}"
     
     async def _get_page_content_async(self, mode: str = "") -> str:
         """Async get page content implementation"""
-        await self._initialize_browser()
+        if self.browser is None:
+            await self._initialize_browser()
+        self.logger.info(f"Getting page content (mode: {mode})")
         try:
             if mode == "summary":
                 # Get a summary of the page
@@ -248,19 +293,25 @@ class BrowserAutomationTool:
                         return headings.map(h => h.textContent.trim()).slice(0, 10);
                     }
                 """)
-                return f"Page Title: {title}\nURL: {url}\nHeadings: {', '.join(headings)}"
+                result = f"Page Title: {title}\nURL: {url}\nHeadings: {', '.join(headings)}"
+                self.logger.info(f"Page summary retrieved: {title}")
+                return result
             else:
                 # Get full text content
                 text = await self.page.evaluate("() => document.body.innerText")
                 # Limit to first 5000 characters to avoid token limits
-                return text[:5000] + ("..." if len(text) > 5000 else "")
+                result = text[:5000] + ("..." if len(text) > 5000 else "")
+                self.logger.info(f"Page content retrieved: {len(text)} characters")
+                return result
         except Exception as e:
-            return f"Error: {str(e)}"
+            error_msg = f"Error getting page content: {str(e)}"
+            self.logger.error(error_msg)
+            return error_msg
     
     def _take_screenshot(self, filename: str = "") -> str:
         """Take a screenshot"""
         try:
-            result = asyncio.run(self._take_screenshot_async(filename))
+            result = self._run_async_in_sync_context(self._take_screenshot_async(filename))
             return result
         except Exception as e:
             return f"Error taking screenshot: {str(e)}"
@@ -276,7 +327,7 @@ class BrowserAutomationTool:
     def _wait(self, input_str: str) -> str:
         """Wait for time or element"""
         try:
-            result = asyncio.run(self._wait_async(input_str))
+            result = self._run_async_in_sync_context(self._wait_async(input_str))
             return result
         except Exception as e:
             return f"Error waiting: {str(e)}"
@@ -297,7 +348,7 @@ class BrowserAutomationTool:
     def _scroll(self, direction: str) -> str:
         """Scroll the page"""
         try:
-            result = asyncio.run(self._scroll_async(direction))
+            result = self._run_async_in_sync_context(self._scroll_async(direction))
             return result
         except Exception as e:
             return f"Error scrolling: {str(e)}"
@@ -325,7 +376,7 @@ class BrowserAutomationTool:
     def _select_option(self, input_json: str) -> str:
         """Select an option from a dropdown"""
         try:
-            result = asyncio.run(self._select_option_async(input_json))
+            result = self._run_async_in_sync_context(self._select_option_async(input_json))
             return result
         except Exception as e:
             return f"Error selecting option: {str(e)}"
@@ -345,7 +396,7 @@ class BrowserAutomationTool:
     def _get_url(self, _: str = "") -> str:
         """Get current URL"""
         try:
-            result = asyncio.run(self._get_url_async())
+            result = self._run_async_in_sync_context(self._get_url_async())
             return result
         except Exception as e:
             return f"Error getting URL: {str(e)}"
@@ -367,52 +418,113 @@ class BrowserAutomationTool:
             String with execution results
         """
         try:
-            # Run async execution
-            result = asyncio.run(self._execute_async(instructions, max_steps))
+            # Run async execution (includes cleanup at the end)
+            result = asyncio.run(self._execute_with_cleanup(instructions, max_steps))
             return result
         except Exception as e:
             self.logger.error(f"Error in browser automation execution: {e}")
-            return f"Error: {str(e)}"
-        finally:
-            # Ensure cleanup
+            # Ensure cleanup even on error
             try:
                 asyncio.run(self._cleanup_browser())
-            except:
-                pass
+            except Exception as cleanup_error:
+                self.logger.warning(f"Error during cleanup: {cleanup_error}")
+            return f"Error: {str(e)}"
+    
+    async def _execute_with_cleanup(self, instructions: str, max_steps: int = 20) -> str:
+        """Async execution with guaranteed cleanup"""
+        try:
+            return await self._execute_async(instructions, max_steps)
+        finally:
+            # Always cleanup browser resources
+            await self._cleanup_browser()
+    
+    def _run_async_in_sync_context(self, coro):
+        """Helper to run async code from sync context, handling both cases"""
+        try:
+            # Try to get the running event loop
+            loop = asyncio.get_running_loop()
+            # We're in an async context - schedule the coroutine on the existing loop
+            # This ensures browser operations run in the same event loop where browser was initialized
+            import concurrent.futures
+            
+            # Use run_coroutine_threadsafe to schedule on the existing event loop
+            # This is thread-safe and allows sync code to await async operations
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            try:
+                return future.result(timeout=120)  # 2 minute timeout for browser operations
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                return "Error: Operation timed out after 2 minutes"
+        except RuntimeError:
+            # No running event loop - safe to use asyncio.run()
+            return asyncio.run(coro)
+        except Exception as e:
+            self.logger.error(f"Error running async in sync context: {e}")
+            return f"Error: {str(e)}"
     
     async def _execute_async(self, instructions: str, max_steps: int = 20) -> str:
         """Async execution implementation"""
         try:
-            await self._initialize_browser()
+            # Store the event loop for sync tool calls
+            try:
+                self._event_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._event_loop = None
             
-            # Create agent prompt
-            prompt = PromptTemplate.from_template("""
-You are a browser automation agent. Your task is to follow the user's instructions by controlling a web browser.
-
-Available tools:
-{tools}
-
-User instructions: {instructions}
-
-Follow these guidelines:
-1. Break down complex tasks into smaller steps
-2. Use the get_page_content tool to understand the current page state
-3. Use appropriate selectors (CSS selectors, text content, or XPath)
-4. Wait for elements to load before interacting with them
-5. Take screenshots if needed to verify actions
-6. Report what you're doing at each step
-
-Begin by understanding the current page, then execute the instructions step by step.
-
-{agent_scratchpad}
-""")
+            await self._initialize_browser()
             
             # Wrap LLM caller in LangChain wrapper
             from .llm_langchain_wrapper import LangChainLLMWrapper
             llm_wrapper = LangChainLLMWrapper(llm_caller=self.llm)
             
-            # Create ReAct agent
+            # Create ReAct agent with proper prompt template
             from langchain.agents import AgentExecutor, create_react_agent
+            
+            # Use custom prompt with all required variables for ReAct agent
+            # Note: create_react_agent requires 'tools', 'tool_names', 'input', and 'agent_scratchpad'
+            prompt = PromptTemplate(
+                template="""You are a browser automation agent. Your task is to follow the user's instructions by controlling a web browser.
+
+You have access to the following tools:
+
+{tools}
+
+Tool names: {tool_names}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+User instructions: {input}
+
+IMPORTANT WORKFLOW:
+1. FIRST: Understand the user's instructions and break them down into clear, sequential tasks
+2. SECOND: If a URL is mentioned, use the navigate tool to go to that page first
+3. THIRD: Use get_page_content to understand what's on the current page
+4. FOURTH: Execute each task step by step, using the appropriate tools
+5. FIFTH: Verify your actions worked by checking the page content or taking screenshots
+
+Follow these guidelines:
+- Always start by understanding the current page state with get_page_content
+- Break down complex tasks into smaller, manageable steps
+- Use appropriate selectors (CSS selectors, text content, or XPath)
+- Wait for elements to load before interacting with them (use the wait tool if needed)
+- Take screenshots if needed to verify actions
+- Report what you're doing at each step in your thoughts
+- If you encounter an error, try alternative approaches (different selectors, waiting longer, etc.)
+
+Begin by analyzing the user's instructions, then navigate to the required page (if needed), understand the page, and execute the tasks step by step.
+
+{agent_scratchpad}""",
+                input_variables=["tools", "tool_names", "input", "agent_scratchpad"]
+            )
             
             agent = create_react_agent(llm_wrapper, self.browser_tools, prompt)
             agent_executor = AgentExecutor(
@@ -420,16 +532,19 @@ Begin by understanding the current page, then execute the instructions step by s
                 tools=self.browser_tools,
                 verbose=True,
                 max_iterations=max_steps,
-                handle_parsing_errors=True
+                handle_parsing_errors=True,
+                return_intermediate_steps=True  # Return steps for visibility
             )
             
-            # Build tools description
-            tools_desc = "\n".join([f"- {tool.name}: {tool.description}" for tool in self.browser_tools])
+            # Log the start of execution
+            self.logger.info(f"Starting browser automation with instructions: {instructions[:100]}...")
             
-            # Execute agent (synchronous invoke since LangChain wrapper handles it)
+            # Execute agent - this will:
+            # 1. Have the LLM break down the instructions into tasks
+            # 2. Execute each task using the browser tools
+            # 3. Return the final result
             result = agent_executor.invoke({
-                "instructions": instructions,
-                "tools": tools_desc
+                "input": instructions
             })
             
             # Get final page state
@@ -437,6 +552,39 @@ Begin by understanding the current page, then execute the instructions step by s
             final_content = await self._get_page_content_async("summary")
             
             output = result.get("output", "")
+            intermediate_steps = result.get("intermediate_steps", [])
+            
+            # Build a summary of what was done
+            steps_summary = ""
+            if intermediate_steps:
+                steps_summary = "\n\nTask Breakdown & Execution Steps:\n" + "="*60 + "\n"
+                for i, step in enumerate(intermediate_steps, 1):
+                    if isinstance(step, tuple) and len(step) >= 2:
+                        action = step[0]
+                        observation = step[1]
+                        
+                        # Extract tool name and input
+                        tool_name = "Unknown"
+                        tool_input = ""
+                        if hasattr(action, 'tool'):
+                            tool_name = action.tool
+                            tool_input = str(action.tool_input) if hasattr(action, 'tool_input') else ""
+                        elif isinstance(action, dict):
+                            tool_name = action.get('tool', 'Unknown')
+                            tool_input = str(action.get('tool_input', ''))
+                        
+                        # Format the step
+                        steps_summary += f"\nStep {i}: {tool_name}\n"
+                        if tool_input:
+                            steps_summary += f"  Input: {tool_input[:100]}{'...' if len(tool_input) > 100 else ''}\n"
+                        if observation:
+                            obs_str = str(observation)[:200]
+                            steps_summary += f"  Result: {obs_str}{'...' if len(str(observation)) > 200 else ''}\n"
+                    else:
+                        steps_summary += f"\nStep {i}: {str(step)[:150]}...\n"
+                steps_summary += "\n" + "="*60 + "\n"
+            
+            self.logger.info(f"Browser automation completed. Final URL: {final_url}")
             
             return f"""Browser automation completed successfully.
 
@@ -444,6 +592,7 @@ Final URL: {final_url}
 
 Agent Output:
 {output}
+{steps_summary}
 
 Page Summary:
 {final_content}"""

@@ -46,6 +46,7 @@ pyodbc>=5.0.0
 python-dotenv==1.0.1
 pydantic-settings>=2.0.0
 tinydb==4.8.2
+nest-asyncio>=1.6.0
 
 # Development and testing
 pytest==8.2.2

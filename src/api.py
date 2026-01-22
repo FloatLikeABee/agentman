@@ -359,6 +359,9 @@ class RAGAPI:
         # Setup image generation routes
         self._setup_image_generation_routes()
         
+        # Setup browser automation routes
+        self._setup_browser_automation_routes()
+        
         # Setup static file handlers for common browser requests
         self._setup_static_handlers()
 
@@ -5110,6 +5113,69 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
             except Exception as e:
                 self.logger.error(f"Error deleting image: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+    def _setup_browser_automation_routes(self):
+        """Setup browser automation routes"""
+        from .browser_automation import BrowserAutomationTool
+        from .models import LLMProviderType
+        
+        @self.app.post(
+            "/browser-automation/execute",
+            tags=["Browser Automation"],
+            summary="Execute Browser Automation",
+            description="Execute browser automation tasks using AI agent with Playwright",
+        )
+        async def execute_browser_automation(request: dict):
+            """Execute browser automation with natural language instructions"""
+            try:
+                instructions = request.get('instructions', '')
+                provider_str = request.get('provider', 'qwen').lower().strip()
+                model = request.get('model', '')
+                max_steps = request.get('max_steps', 20)
+                headless = request.get('headless', False)  # Default to visible browser
+                
+                if not instructions:
+                    raise HTTPException(status_code=400, detail="Instructions are required")
+                
+                if not model:
+                    raise HTTPException(status_code=400, detail="Model is required")
+                
+                # Map provider string to LLMProviderType
+                provider_type = None
+                if provider_str == "gemini":
+                    provider_type = LLMProviderType.GEMINI
+                elif provider_str == "qwen":
+                    provider_type = LLMProviderType.QWEN
+                elif provider_str == "mistral":
+                    provider_type = LLMProviderType.MISTRAL
+                else:
+                    provider_type = LLMProviderType.QWEN
+                
+                # Create browser automation tool with specified provider and model
+                # headless=False means you'll see the browser window open and perform actions
+                browser_tool = BrowserAutomationTool(
+                    llm_provider=provider_type,
+                    model_name=model,
+                    headless=headless
+                )
+                
+                # Execute the automation (await directly since we're in async context)
+                result = await browser_tool._execute_with_cleanup(instructions, max_steps=max_steps)
+                
+                return {
+                    "result": result,
+                    "instructions": instructions,
+                    "provider": provider_str,
+                    "model": model,
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error executing browser automation: {e}")
+                import traceback
+                error_detail = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                raise HTTPException(status_code=500, detail=error_detail)
 
     def _setup_static_handlers(self):
         """Setup handlers for common browser static file requests to prevent 404 errors"""

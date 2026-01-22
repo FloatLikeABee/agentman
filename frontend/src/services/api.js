@@ -350,6 +350,12 @@ export const deleteGeneratedImage = async (filename) => {
   return response.data;
 };
 
+// Browser Automation
+export const executeBrowserAutomation = async (payload) => {
+  const response = await api.post('/browser-automation/execute', payload);
+  return response.data;
+};
+
 // Export all functions
 const apiService = {
   getStatus,
@@ -468,6 +474,8 @@ const apiService = {
   polishImagePrompt,
   getGeneratedImages,
   deleteGeneratedImage,
+  // Browser Automation
+  executeBrowserAutomation,
 };
 
 export default apiService; 

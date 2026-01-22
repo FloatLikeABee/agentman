@@ -78,38 +78,74 @@ class MistralCaller(BaseLLMCaller):
             
             if agent_id:
                 # Use agent-based streaming
-                response = self.client.agents.complete(
-                    messages=messages,
-                    agent_id=agent_id,
-                    stream=True
-                )
-                
-                for chunk in response:
-                    if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
-                        if hasattr(chunk.choices[0], 'delta'):
-                            delta = chunk.choices[0].delta
-                            if hasattr(delta, 'content') and delta.content:
-                                yield delta.content
-                        elif hasattr(chunk.choices[0], 'content') and chunk.choices[0].content:
-                            yield chunk.choices[0].content
+                try:
+                    response = self.client.agents.complete(
+                        messages=messages,
+                        agent_id=agent_id,
+                        stream=True
+                    )
+                    
+                    for chunk in response:
+                        if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
+                            if hasattr(chunk.choices[0], 'delta'):
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'content') and delta.content:
+                                    yield delta.content
+                            elif hasattr(chunk.choices[0], 'content') and chunk.choices[0].content:
+                                yield chunk.choices[0].content
+                except Exception as stream_error:
+                    # Fallback to non-streaming if streaming fails
+                    self.logger.warning(f"Mistral streaming failed, falling back to non-streaming: {stream_error}")
+                    result = self.client.agents.complete(
+                        messages=messages,
+                        agent_id=agent_id,
+                        stream=False
+                    )
+                    if hasattr(result, 'choices') and len(result.choices) > 0:
+                        content = ""
+                        if hasattr(result.choices[0], 'message'):
+                            content = result.choices[0].message.content or ""
+                        elif hasattr(result.choices[0], 'content'):
+                            content = result.choices[0].content or ""
+                        if content:
+                            yield content
             else:
                 # Use standard chat streaming
-                response = self.client.chat.complete(
-                    model=self.model,
-                    messages=messages,
-                    temperature=kwargs.get("temperature", self.default_temperature),
-                    max_tokens=kwargs.get("max_tokens", self.default_max_tokens),
-                    stream=True
-                )
-                
-                for chunk in response:
-                    if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
-                        if hasattr(chunk.choices[0], 'delta'):
-                            delta = chunk.choices[0].delta
-                            if hasattr(delta, 'content') and delta.content:
-                                yield delta.content
-                        elif hasattr(chunk.choices[0], 'content') and chunk.choices[0].content:
-                            yield chunk.choices[0].content
+                try:
+                    response = self.client.chat.complete(
+                        model=self.model,
+                        messages=messages,
+                        temperature=kwargs.get("temperature", self.default_temperature),
+                        max_tokens=kwargs.get("max_tokens", self.default_max_tokens),
+                        stream=True
+                    )
+                    
+                    for chunk in response:
+                        if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
+                            if hasattr(chunk.choices[0], 'delta'):
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'content') and delta.content:
+                                    yield delta.content
+                            elif hasattr(chunk.choices[0], 'content') and chunk.choices[0].content:
+                                yield chunk.choices[0].content
+                except Exception as stream_error:
+                    # Fallback to non-streaming if streaming fails
+                    self.logger.warning(f"Mistral streaming failed, falling back to non-streaming: {stream_error}")
+                    result = self.client.chat.complete(
+                        model=self.model,
+                        messages=messages,
+                        temperature=kwargs.get("temperature", self.default_temperature),
+                        max_tokens=kwargs.get("max_tokens", self.default_max_tokens),
+                        stream=False
+                    )
+                    if hasattr(result, 'choices') and len(result.choices) > 0:
+                        content = ""
+                        if hasattr(result.choices[0], 'message'):
+                            content = result.choices[0].message.content or ""
+                        elif hasattr(result.choices[0], 'content'):
+                            content = result.choices[0].content or ""
+                        if content:
+                            yield content
 
         except Exception as e:
             self.logger.error(f"Mistral streaming request failed: {e}")

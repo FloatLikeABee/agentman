@@ -25,6 +25,7 @@ import {
   Chat as DialogueIcon,
   AccountTree as FlowIcon,
   Image as ImageIcon,
+  Web as BrowserIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -47,6 +48,7 @@ const Header = () => {
     { path: '/rag', label: 'RAG', icon: <RAGIcon /> },
     { path: '/tools', label: 'Tool', icon: <ToolIcon /> },
     { path: '/images', label: 'Images', icon: <ImageIcon /> },
+    { path: '/browser-automation', label: 'Browser', icon: <BrowserIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
     { path: '/db-tools', label: 'Database', icon: <DBIcon /> },
     { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },

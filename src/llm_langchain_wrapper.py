@@ -202,31 +202,61 @@ class LangChainLLMWrapper(LLM):
         **kwargs: Any,
     ) -> Iterator[GenerationChunk]:
         """Stream the LLM output as GenerationChunk objects"""
-        for chunk in self.llm_caller.stream(prompt, **kwargs):
-            # Ensure chunk is a string
-            if isinstance(chunk, str):
-                chunk_text = chunk
-            elif hasattr(chunk, 'text'):
-                chunk_text = chunk.text
-            else:
-                chunk_text = str(chunk)
+        try:
+            for chunk in self.llm_caller.stream(prompt, **kwargs):
+                # Ensure chunk is a string
+                if isinstance(chunk, str):
+                    chunk_text = chunk
+                elif hasattr(chunk, 'text'):
+                    chunk_text = chunk.text
+                else:
+                    chunk_text = str(chunk)
 
-            # Handle stop sequences
-            if stop and isinstance(chunk_text, str):
-                for stop_seq in stop:
-                    if stop_seq in chunk_text:
-                        chunk_text = chunk_text[:chunk_text.index(stop_seq)]
-                        # Yield final chunk and return
-                        if chunk_text:
-                            yield GenerationChunk(text=chunk_text)
-                        return
+                # Handle stop sequences
+                if stop and isinstance(chunk_text, str):
+                    for stop_seq in stop:
+                        if stop_seq in chunk_text:
+                            chunk_text = chunk_text[:chunk_text.index(stop_seq)]
+                            # Yield final chunk and return
+                            if chunk_text:
+                                yield GenerationChunk(text=chunk_text)
+                            return
 
-            # Yield as GenerationChunk (not Generation or string)
-            if chunk_text:
-                yield GenerationChunk(text=chunk_text)
-                # Notify run manager if provided
-                if run_manager:
-                    run_manager.on_llm_new_token(chunk_text)
+                # Yield as GenerationChunk (not Generation or string)
+                if chunk_text:
+                    yield GenerationChunk(text=chunk_text)
+                    # Notify run manager if provided
+                    if run_manager:
+                        run_manager.on_llm_new_token(chunk_text)
+        except Exception as e:
+            # If streaming fails, fall back to non-streaming and yield as single chunk
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Streaming failed, falling back to non-streaming: {e}")
+            try:
+                result = self.llm_caller.generate(prompt, **kwargs)
+                if isinstance(result, str):
+                    result_text = result
+                elif hasattr(result, 'text'):
+                    result_text = result.text
+                else:
+                    result_text = str(result)
+                
+                # Handle stop sequences
+                if stop and isinstance(result_text, str):
+                    for stop_seq in stop:
+                        if stop_seq in result_text:
+                            result_text = result_text[:result_text.index(stop_seq)]
+                            break
+                
+                # Yield as single chunk
+                if result_text:
+                    yield GenerationChunk(text=result_text)
+                    if run_manager:
+                        run_manager.on_llm_new_token(result_text)
+            except Exception as fallback_error:
+                logger.error(f"Fallback to non-streaming also failed: {fallback_error}")
+                raise
     
     async def _astream(
         self,
