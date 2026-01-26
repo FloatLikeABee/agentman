@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.exceptions import RequestValidationError
@@ -79,6 +79,8 @@ from .crawler import CrawlerService
 from .crawler_manager import CrawlerManager
 from .db_tools import DatabaseToolsManager
 from .request_tools import RequestToolsManager
+from .image_reader import ImageReader
+from .pdf_reader import PDFReader
 
 
 class RAGAPI:
@@ -361,6 +363,12 @@ class RAGAPI:
         
         # Setup browser automation routes
         self._setup_browser_automation_routes()
+        
+        # Setup image reader routes
+        self._setup_image_reader_routes()
+        
+        # Setup PDF reader routes
+        self._setup_pdf_reader_routes()
         
         # Setup static file handlers for common browser requests
         self._setup_static_handlers()
@@ -5176,6 +5184,385 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                 import traceback
                 error_detail = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
                 raise HTTPException(status_code=500, detail=error_detail)
+
+    def _setup_image_reader_routes(self):
+        """Setup image reader routes using Qwen Vision OCR model"""
+        image_reader = ImageReader()
+        
+        @self.app.post(
+            "/image-reader/read",
+            tags=["Image Reader"],
+            summary="Read Text from Image",
+            description="Extract text content from a single image using Qwen Vision OCR model (qwen-vl-ocr-2025-11-20)",
+            response_description="Extracted text and image metadata",
+            responses={
+                200: {
+                    "description": "Image read successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "text": "Extracted text from image",
+                                "image_info": {
+                                    "width": 1920,
+                                    "height": 1080,
+                                    "format": "JPEG",
+                                    "mode": "RGB"
+                                },
+                                "model": "qwen-vl-ocr-2025-11-20",
+                                "prompt_used": "Please output only the text content from the image...",
+                                "timestamp": "2025-01-23T10:30:00"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request (missing image or invalid format)"},
+                500: {"description": "Error processing image"}
+            }
+        )
+        async def read_image(
+            file: UploadFile = File(..., description="Image file to read (JPEG, PNG, etc.)"),
+            prompt: Optional[str] = None,
+            min_pixels: int = 32 * 32 * 3,
+            max_pixels: int = 32 * 32 * 8192
+        ):
+            """
+            **Read Text from Image**
+            
+            Extracts text content from an uploaded image using Qwen's Vision OCR model.
+            
+            **Parameters:**
+            - **file**: Image file (JPEG, PNG, GIF, WebP, etc.)
+            - **prompt**: Optional custom prompt for extraction (default: OCR extraction prompt)
+            - **min_pixels**: Minimum pixel threshold for image scaling (default: 3072)
+            - **max_pixels**: Maximum pixel threshold for image scaling (default: 8388608)
+            
+            **Returns:**
+            - Extracted text content
+            - Image metadata (dimensions, format)
+            - Processing timestamp
+            
+            **Example:**
+            ```python
+            import requests
+            
+            with open('image.jpg', 'rb') as f:
+                response = requests.post(
+                    'http://localhost:8000/image-reader/read',
+                    files={'file': f},
+                    data={'prompt': 'Extract all text from this image'}
+                )
+            ```
+            """
+            try:
+                # Validate file
+                if not file.content_type or not file.content_type.startswith('image/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid file type: {file.content_type}. Expected image file."
+                    )
+                
+                # Read image data
+                image_data = await file.read()
+                
+                if len(image_data) == 0:
+                    raise HTTPException(status_code=400, detail="Empty image file")
+                
+                # Process image
+                result = image_reader.read_image(
+                    image_data=image_data,
+                    prompt=prompt,
+                    min_pixels=min_pixels,
+                    max_pixels=max_pixels
+                )
+                
+                if not result.get("success"):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Failed to read image")
+                    )
+                
+                return result
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error reading image: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error processing image: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
+        
+        @self.app.post(
+            "/image-reader/read-multiple",
+            tags=["Image Reader"],
+            summary="Read Text from Multiple Images",
+            description="Extract text content from up to 5 images sequentially using Qwen Vision OCR model",
+            response_description="Extracted text from each image",
+            responses={
+                200: {
+                    "description": "Images read successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "total_images": 2,
+                                "results": [
+                                    {
+                                        "success": True,
+                                        "text": "Text from image 1",
+                                        "image_index": 1,
+                                        "image_info": {"width": 1920, "height": 1080},
+                                        "timestamp": "2025-01-23T10:30:00"
+                                    },
+                                    {
+                                        "success": True,
+                                        "text": "Text from image 2",
+                                        "image_index": 2,
+                                        "image_info": {"width": 1920, "height": 1080},
+                                        "timestamp": "2025-01-23T10:30:01"
+                                    }
+                                ],
+                                "timestamp": "2025-01-23T10:30:01"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request (too many images, missing images, or invalid format)"},
+                500: {"description": "Error processing images"}
+            }
+        )
+        async def read_multiple_images(
+            files: List[UploadFile] = File(..., description="Image files to read (1-5 images, JPEG, PNG, etc.)"),
+            prompt: Optional[str] = None,
+            min_pixels: int = 32 * 32 * 3,
+            max_pixels: int = 32 * 32 * 8192
+        ):
+            """
+            **Read Text from Multiple Images**
+            
+            Extracts text content from multiple uploaded images (up to 5) sequentially.
+            Each image is processed one by one using Qwen's Vision OCR model.
+            
+            **Parameters:**
+            - **files**: List of image files (1-5 images, JPEG, PNG, GIF, WebP, etc.)
+            - **prompt**: Optional custom prompt for extraction (applied to all images)
+            - **min_pixels**: Minimum pixel threshold for image scaling (default: 3072)
+            - **max_pixels**: Maximum pixel threshold for image scaling (default: 8388608)
+            
+            **Returns:**
+            - Results array with extracted text for each image
+            - Image metadata for each image
+            - Processing timestamps
+            
+            **Limitations:**
+            - Maximum 5 images per request
+            - Images are processed sequentially (one after another)
+            
+            **Example:**
+            ```python
+            import requests
+            
+            files = [
+                ('files', open('image1.jpg', 'rb')),
+                ('files', open('image2.jpg', 'rb')),
+                ('files', open('image3.jpg', 'rb'))
+            ]
+            
+            response = requests.post(
+                'http://localhost:8000/image-reader/read-multiple',
+                files=files,
+                data={'prompt': 'Extract all text from these images'}
+            )
+            ```
+            """
+            try:
+                # Validate number of files
+                if len(files) == 0:
+                    raise HTTPException(status_code=400, detail="At least one image file is required")
+                
+                if len(files) > 5:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Too many images: {len(files)}. Maximum 5 images allowed."
+                    )
+                
+                # Validate all files are images
+                images_data = []
+                for idx, file in enumerate(files):
+                    if not file.content_type or not file.content_type.startswith('image/'):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid file type for image {idx + 1}: {file.content_type}. Expected image file."
+                        )
+                    
+                    image_data = await file.read()
+                    if len(image_data) == 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Empty image file: {file.filename}"
+                        )
+                    
+                    images_data.append(image_data)
+                
+                # Process all images
+                result = image_reader.read_multiple_images(
+                    images_data=images_data,
+                    prompt=prompt,
+                    min_pixels=min_pixels,
+                    max_pixels=max_pixels
+                )
+                
+                if not result.get("success"):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Failed to read images")
+                    )
+                
+                return result
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error reading multiple images: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error processing images: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
+
+    def _setup_pdf_reader_routes(self):
+        """Setup PDF reader routes"""
+        pdf_reader = PDFReader()
+        
+        @self.app.post(
+            "/pdf-reader/read",
+            tags=["PDF Reader"],
+            summary="Read and Process PDF",
+            description="Extract text from PDF and process it with AI based on system prompt",
+            response_description="Extracted text and AI-processed result",
+            responses={
+                200: {
+                    "description": "PDF read and processed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "extracted_text": "Full text from PDF...",
+                                "extracted_text_length": 5000,
+                                "page_count": 10,
+                                "ai_result": "AI-processed result based on system prompt",
+                                "provider": "gemini",
+                                "model": "gemini-2.5-flash",
+                                "system_prompt": "Summarize the key points",
+                                "timestamp": "2025-01-23T10:30:00"
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request (missing PDF or invalid format)"},
+                500: {"description": "Error processing PDF"}
+            }
+        )
+        async def read_pdf(
+            file: UploadFile = File(..., description="PDF file to read"),
+            system_prompt: str = None,
+            llm_provider: Optional[str] = None,
+            model_name: Optional[str] = None
+        ):
+            """
+            **Read and Process PDF**
+            
+            Extracts text from an uploaded PDF file and processes it with AI based on a system prompt.
+            
+            **Parameters:**
+            - **file**: PDF file to read
+            - **system_prompt**: System prompt for AI processing (required)
+            - **llm_provider**: Optional LLM provider (gemini, qwen, mistral). Default: system default
+            - **model_name**: Optional model name. Default: provider default
+            
+            **Returns:**
+            - Extracted text from PDF
+            - AI-processed result based on system prompt
+            - PDF metadata (page count, text length)
+            - Processing timestamp
+            
+            **Example:**
+            ```python
+            import requests
+            
+            with open('document.pdf', 'rb') as f:
+                response = requests.post(
+                    'http://localhost:8000/pdf-reader/read',
+                    files={'file': f},
+                    data={
+                        'system_prompt': 'Summarize the key points from this document',
+                        'llm_provider': 'gemini',
+                        'model_name': 'gemini-2.5-flash'
+                    }
+                )
+            ```
+            """
+            try:
+                # Validate file
+                if not file.content_type or file.content_type != 'application/pdf':
+                    # Also check filename extension
+                    if not file.filename or not file.filename.lower().endswith('.pdf'):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid file type: {file.content_type or 'unknown'}. Expected PDF file."
+                        )
+                
+                # Check if system prompt is provided
+                if not system_prompt or not system_prompt.strip():
+                    raise HTTPException(
+                        status_code=400,
+                        detail="System prompt is required"
+                    )
+                
+                # Read PDF data
+                pdf_data = await file.read()
+                
+                if len(pdf_data) == 0:
+                    raise HTTPException(status_code=400, detail="Empty PDF file")
+                
+                # Determine provider
+                provider_type = None
+                if llm_provider:
+                    provider_str = llm_provider.lower().strip()
+                    if provider_str == "gemini":
+                        provider_type = LLMProviderType.GEMINI
+                    elif provider_str == "qwen":
+                        provider_type = LLMProviderType.QWEN
+                    elif provider_str == "mistral":
+                        provider_type = LLMProviderType.MISTRAL
+                
+                # Process PDF
+                result = pdf_reader.read_and_process(
+                    pdf_data=pdf_data,
+                    system_prompt=system_prompt,
+                    llm_provider=provider_type,
+                    model_name=model_name
+                )
+                
+                if not result.get("success"):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Failed to read PDF")
+                    )
+                
+                return result
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error reading PDF: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error processing PDF: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
 
     def _setup_static_handlers(self):
         """Setup handlers for common browser static file requests to prevent 404 errors"""

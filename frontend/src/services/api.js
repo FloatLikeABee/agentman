@@ -356,6 +356,49 @@ export const executeBrowserAutomation = async (payload) => {
   return response.data;
 };
 
+// Image Reader
+export const readImage = async (file, prompt = null, minPixels = null, maxPixels = null) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (prompt) formData.append('prompt', prompt);
+  if (minPixels) formData.append('min_pixels', minPixels);
+  if (maxPixels) formData.append('max_pixels', maxPixels);
+  
+  const response = await api.post('/image-reader/read', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const readMultipleImages = async (files, prompt = null, minPixels = null, maxPixels = null) => {
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+  if (prompt) formData.append('prompt', prompt);
+  if (minPixels) formData.append('min_pixels', minPixels);
+  if (maxPixels) formData.append('max_pixels', maxPixels);
+  
+  const response = await api.post('/image-reader/read-multiple', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+// PDF Reader
+export const readPDF = async (formData) => {
+  const response = await api.post('/pdf-reader/read', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
 // Export all functions
 const apiService = {
   getStatus,
@@ -476,6 +519,11 @@ const apiService = {
   deleteGeneratedImage,
   // Browser Automation
   executeBrowserAutomation,
+  // Image Reader
+  readImage,
+  readMultipleImages,
+  // PDF Reader
+  readPDF,
 };
 
 export default apiService; 

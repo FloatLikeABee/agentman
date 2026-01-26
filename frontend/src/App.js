@@ -15,6 +15,8 @@ import Dialogue from './pages/Dialogue';
 import Flow from './pages/Flow';
 import ImageGenerator from './pages/ImageGenerator';
 import BrowserAutomation from './pages/BrowserAutomation';
+import ImageReader from './pages/ImageReader';
+import PDFReader from './pages/PDFReader';
 
 function App() {
   return (
@@ -36,6 +38,8 @@ function App() {
               <Route path="/agents" element={<AgentManager />} />
               <Route path="/tools" element={<ToolManager />} />
               <Route path="/images" element={<ImageGenerator />} />
+              <Route path="/image-reader" element={<ImageReader />} />
+              <Route path="/pdf-reader" element={<PDFReader />} />
               <Route path="/browser-automation" element={<BrowserAutomation />} />
               <Route path="/customizations" element={<Customizations />} />
               <Route path="/crawler" element={<Crawler />} />

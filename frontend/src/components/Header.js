@@ -26,6 +26,8 @@ import {
   AccountTree as FlowIcon,
   Image as ImageIcon,
   Web as BrowserIcon,
+  TextFields as TextIcon,
+  PictureAsPdf as PDFIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -48,6 +50,8 @@ const Header = () => {
     { path: '/rag', label: 'RAG', icon: <RAGIcon /> },
     { path: '/tools', label: 'Tool', icon: <ToolIcon /> },
     { path: '/images', label: 'Images', icon: <ImageIcon /> },
+    { path: '/image-reader', label: 'Image Reader', icon: <TextIcon /> },
+    { path: '/pdf-reader', label: 'PDF Reader', icon: <PDFIcon /> },
     { path: '/browser-automation', label: 'Browser', icon: <BrowserIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
     { path: '/db-tools', label: 'Database', icon: <DBIcon /> },
