@@ -27,6 +27,12 @@ export const addRAGData = async (payload) => {
   return response.data;
 };
 
+/** Suggest a short topic title from content using AI (for RAG document name). */
+export const suggestRAGTitle = async (content) => {
+  const response = await api.post('/rag/suggest-title', { content });
+  return response.data;
+};
+
 export const validateRAGData = async (data) => {
   const response = await api.post('/rag/validate', data);
   return response.data;
@@ -389,6 +395,40 @@ export const readMultipleImages = async (files, prompt = null, minPixels = null,
   return response.data;
 };
 
+/** Read image (OCR) then process with chosen AI model using system prompt. */
+export const readImageAndProcess = async (file, systemPrompt, provider, model, ocrPrompt = null) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('system_prompt', systemPrompt);
+  formData.append('provider', provider);
+  formData.append('model', model);
+  if (ocrPrompt) formData.append('ocr_prompt', ocrPrompt);
+
+  const response = await api.post('/image-reader/read-and-process', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+/** Read multiple images (OCR each), combine text, then process with AI once. */
+export const readImageAndProcessMultiple = async (files, systemPrompt, provider, model, ocrPrompt = null) => {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  formData.append('system_prompt', systemPrompt);
+  formData.append('provider', provider);
+  formData.append('model', model);
+  if (ocrPrompt) formData.append('ocr_prompt', ocrPrompt);
+
+  const response = await api.post('/image-reader/read-and-process-multiple', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
 // PDF Reader
 export const readPDF = async (formData) => {
   const response = await api.post('/pdf-reader/read', formData, {
@@ -404,6 +444,7 @@ const apiService = {
   getStatus,
   getRAGCollections,
   addRAGData,
+  suggestRAGTitle,
   validateRAGData,
   queryRAGCollection,
   deleteRAGCollection,
@@ -522,6 +563,8 @@ const apiService = {
   // Image Reader
   readImage,
   readMultipleImages,
+  readImageAndProcess,
+  readImageAndProcessMultiple,
   // PDF Reader
   readPDF,
 };

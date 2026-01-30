@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.exceptions import RequestValidationError
@@ -483,6 +483,62 @@ class RAGAPI:
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post(
+            "/rag/suggest-title",
+            tags=["RAG"],
+            summary="Suggest Topic Title",
+            description="Use AI to generate a short topic title from content (e.g. for RAG document name).",
+            response_description="Suggested title string.",
+            responses={
+                200: {"description": "Suggested title", "content": {"application/json": {"example": {"title": "Key Points from Document"}}}},
+                400: {"description": "Content is required or empty"},
+                500: {"description": "LLM error"}
+            }
+        )
+        async def suggest_rag_title(body: dict = Body(...)):
+            """Generate a short topic title from content using the default LLM (Qwen preferred)."""
+            try:
+                content = (body.get("content") or "").strip()
+                if not content:
+                    raise HTTPException(status_code=400, detail="Content is required")
+                from .llm_factory import LLMFactory, LLMProvider
+                # Prefer Qwen for suggest-title when configured; else use settings default
+                provider_str = "qwen" if (getattr(settings, "qwen_api_key", None) or "").strip() else (settings.default_llm_provider or "qwen")
+                provider_str = provider_str.lower()
+                if provider_str == "qwen":
+                    provider = LLMProvider.QWEN
+                    api_key = settings.qwen_api_key
+                    model = settings.qwen_default_model
+                elif provider_str == "gemini":
+                    provider = LLMProvider.GEMINI
+                    api_key = settings.gemini_api_key
+                    model = settings.gemini_default_model
+                elif provider_str == "mistral":
+                    provider = LLMProvider.MISTRAL
+                    api_key = settings.mistral_api_key
+                    model = settings.mistral_default_model
+                else:
+                    provider = LLMProvider.QWEN
+                    api_key = settings.qwen_api_key
+                    model = settings.qwen_default_model
+                if not api_key:
+                    raise HTTPException(status_code=503, detail=f"{provider_str.capitalize()} API key not configured")
+                caller = LLMFactory.create_caller(provider=provider, api_key=api_key, model=model, temperature=0.3, max_tokens=128)
+                excerpt = content[:4000] if len(content) > 4000 else content
+                prompt = f"""Based on the following content, suggest a short topic title (3 to 10 words). Reply with ONLY the title, no quotes or explanation.
+
+Content:
+{excerpt}"""
+                title = (caller.generate(prompt) or "").strip().strip('"\'')
+                if not title:
+                    title = "Untitled"
+                return {"title": title[:200]}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error suggesting title: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
             "/rag/collections/{collection_name}/data",
             tags=["RAG"],
             summary="Add Data to RAG Collection",
@@ -505,42 +561,10 @@ class RAGAPI:
             collection_name: str,
             data_input: RAGDataInput
         ):
-            """
-            **Add Data to RAG Collection**
-            
-            Ingests data into a specified RAG collection for later retrieval via semantic search.
-            
-            **Process Flow:**
-            1. Validates the input data format and structure
-            2. Processes data according to its format (parses JSON, CSV, etc.)
-            3. Splits content into appropriate chunks for embedding
-            4. Generates vector embeddings using the configured embedding model
-            5. Stores vectors and metadata in ChromaDB collection
-            6. Indexes for fast semantic search
-            
-            **Parameters:**
-            - `collection_name`: Name of the target RAG collection (created automatically if doesn't exist)
-            - `data_input`: RAGDataInput object containing:
-              - `name`: Unique identifier for this data entry
-              - `description`: Human-readable description
-              - `format`: Data format (json, csv, txt, pdf, docx)
-              - `content`: The actual data content
-              - `tags`: Optional tags for categorization
-              - `metadata`: Additional metadata dictionary
-            
-            **Supported Formats:**
-            - **JSON**: Structured data, automatically parsed and chunked
-            - **CSV**: Tabular data, each row becomes a searchable document
-            - **TXT**: Plain text, chunked by paragraphs/sentences
-            - **PDF**: PDF documents, text extracted and chunked
-            - **DOCX**: Word documents, text extracted and chunked
-            
-            **Use Cases:**
-            - Building knowledge bases from documents
-            - Adding structured data for retrieval
-            - Populating collections with domain-specific information
-            - Creating searchable document repositories
-            """
+            """Add data to RAG collection. Collection name is sanitized for ChromaDB (e.g. spaces → underscores)."""
+            collection_name = self.rag_system.sanitize_collection_name(collection_name)
+            if not collection_name:
+                raise HTTPException(status_code=400, detail="Collection name is required and must be valid (e.g. use letters, numbers, underscores or hyphens only).")
             try:
                 success = self.rag_system.add_data_to_collection(collection_name, data_input)
                 if success:
@@ -5293,7 +5317,168 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                     status_code=500,
                     detail=f"Error processing image: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
                 )
-        
+
+        @self.app.post(
+            "/image-reader/read-and-process",
+            tags=["Image Reader"],
+            summary="Read Image and Process with AI",
+            description="Extract text from image (OCR) then process with chosen AI model using a system prompt",
+            response_description="Extracted text and AI result",
+            responses={
+                200: {
+                    "description": "Image read and AI processing successful",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "extracted_text": "Text from image...",
+                                "ai_result": "AI response based on system prompt...",
+                                "provider": "qwen",
+                                "model": "qwen-plus",
+                                "system_prompt": "Summarize the following content..."
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request (missing image, system_prompt, or model)"},
+                500: {"description": "Error processing image or AI"}
+            }
+        )
+        async def read_image_and_process(
+            file: UploadFile = File(..., description="Image file to read (JPEG, PNG, etc.)"),
+            system_prompt: str = Form(..., description="System prompt for AI processing of extracted content"),
+            provider: str = Form("qwen", description="AI provider: gemini, qwen, mistral"),
+            model: str = Form(..., description="AI model name"),
+            ocr_prompt: Optional[str] = Form(None, description="Optional custom prompt for OCR extraction")
+        ):
+            """
+            **Read Image and Process with AI**
+
+            1. Extracts text from the image using Qwen Vision OCR.
+            2. Sends the extracted text to the chosen AI model with your system prompt.
+            3. Returns both the extracted text and the AI result.
+            """
+            try:
+                if not file.content_type or not file.content_type.startswith('image/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid file type: {file.content_type}. Expected image file."
+                    )
+                if not system_prompt or not system_prompt.strip():
+                    raise HTTPException(status_code=400, detail="system_prompt is required")
+                if not model or not model.strip():
+                    raise HTTPException(status_code=400, detail="model is required")
+
+                image_data = await file.read()
+                if len(image_data) == 0:
+                    raise HTTPException(status_code=400, detail="Empty image file")
+
+                from .models import LLMProviderType
+                provider_str = provider.lower().strip()
+                if provider_str == "gemini":
+                    provider_type = LLMProviderType.GEMINI
+                elif provider_str == "qwen":
+                    provider_type = LLMProviderType.QWEN
+                elif provider_str == "mistral":
+                    provider_type = LLMProviderType.MISTRAL
+                else:
+                    provider_type = LLMProviderType.QWEN
+
+                result = image_reader.read_and_process(
+                    image_data=image_data,
+                    system_prompt=system_prompt.strip(),
+                    llm_provider=provider_type,
+                    model_name=model.strip(),
+                    ocr_prompt=ocr_prompt.strip() if ocr_prompt else None
+                )
+
+                if not result.get("success"):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Failed to read image or process with AI")
+                    )
+                return result
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error in read_image_and_process: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
+
+        @self.app.post(
+            "/image-reader/read-and-process-multiple",
+            tags=["Image Reader"],
+            summary="Read Multiple Images and Process with AI",
+            description="Extract text from each image (OCR), concatenate, then process once with the chosen AI model.",
+            response_description="Combined extracted text and AI result",
+            responses={
+                200: {"description": "Images read and AI processing successful"},
+                400: {"description": "Invalid request (missing images, system_prompt, or model)"},
+                500: {"description": "Error processing images or AI"}
+            }
+        )
+        async def read_image_and_process_multiple(
+            files: List[UploadFile] = File(..., description="Image files (1–5)"),
+            system_prompt: str = Form(..., description="System prompt for AI processing of combined content"),
+            provider: str = Form("qwen", description="AI provider: gemini, qwen, mistral"),
+            model: str = Form(..., description="AI model name"),
+            ocr_prompt: Optional[str] = Form(None, description="Optional custom prompt for OCR")
+        ):
+            """OCR each image, concatenate text, then process with AI once."""
+            try:
+                if not files or len(files) > 5:
+                    raise HTTPException(status_code=400, detail="Provide 1 to 5 image files.")
+                if not system_prompt or not system_prompt.strip():
+                    raise HTTPException(status_code=400, detail="system_prompt is required")
+                if not model or not model.strip():
+                    raise HTTPException(status_code=400, detail="model is required")
+                images_data = []
+                for f in files:
+                    if not f.content_type or not f.content_type.startswith("image/"):
+                        raise HTTPException(status_code=400, detail=f"Invalid file type: {f.content_type}. Expected image.")
+                    data = await f.read()
+                    if len(data) == 0:
+                        raise HTTPException(status_code=400, detail="Empty image file.")
+                    images_data.append(data)
+
+                from .models import LLMProviderType
+                provider_str = provider.lower().strip()
+                if provider_str == "gemini":
+                    provider_type = LLMProviderType.GEMINI
+                elif provider_str == "qwen":
+                    provider_type = LLMProviderType.QWEN
+                elif provider_str == "mistral":
+                    provider_type = LLMProviderType.MISTRAL
+                else:
+                    provider_type = LLMProviderType.QWEN
+
+                result = image_reader.read_and_process_multi(
+                    images_data=images_data,
+                    system_prompt=system_prompt.strip(),
+                    llm_provider=provider_type,
+                    model_name=model.strip(),
+                    ocr_prompt=ocr_prompt.strip() if ocr_prompt else None
+                )
+
+                if not result.get("success"):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=result.get("error", "Failed to read images or process with AI")
+                    )
+                return result
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error in read_image_and_process_multiple: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
+
         @self.app.post(
             "/image-reader/read-multiple",
             tags=["Image Reader"],
@@ -5467,9 +5652,9 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
         )
         async def read_pdf(
             file: UploadFile = File(..., description="PDF file to read"),
-            system_prompt: str = None,
-            llm_provider: Optional[str] = None,
-            model_name: Optional[str] = None
+            system_prompt: str = Form(..., description="System prompt for AI processing"),
+            llm_provider: Optional[str] = Form(None, description="LLM provider (gemini, qwen, mistral)"),
+            model_name: Optional[str] = Form(None, description="Model name")
         ):
             """
             **Read and Process PDF**

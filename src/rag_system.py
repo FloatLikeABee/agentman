@@ -265,6 +265,22 @@ class RAGSystem:
         else:
             raise ValueError(f"Unsupported format: {data_input.format}")
 
+    @staticmethod
+    def sanitize_collection_name(name: str) -> str:
+        """Sanitize collection name for ChromaDB: 3-63 chars, alphanumeric/underscore/hyphen only, no spaces."""
+        if not name or not isinstance(name, str):
+            return ""
+        s = name.strip()
+        s = re.sub(r"\s+", "_", s)
+        s = re.sub(r"[^a-zA-Z0-9_-]", "_", s)
+        s = re.sub(r"_+", "_", s)
+        s = s.strip("_-")
+        if not s or len(s) < 3:
+            return ""
+        if len(s) > 63:
+            s = s[:63].rstrip("_-")
+        return s
+
     def create_collection(self, name: str, description: str = "") -> str:
         """Create a new RAG collection"""
         try:

@@ -17,14 +17,22 @@ import {
   Select,
   MenuItem,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   PictureAsPdf as PDFIcon,
   Upload as UploadIcon,
   Delete as DeleteIcon,
   SmartToy as AIIcon,
+  LibraryAdd as RAGIcon,
+  AutoAwesome as SuggestIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
+import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
 import { useQuery } from 'react-query';
 
@@ -36,6 +44,13 @@ const PDFReader = () => {
   const [result, setResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [ragModalOpen, setRagModalOpen] = useState(false);
+  const [ragCollectionName, setRagCollectionName] = useState('');
+  const [ragTitle, setRagTitle] = useState('');
+  const [ragDescription, setRagDescription] = useState('');
+  const [ragSuggestingTitle, setRagSuggestingTitle] = useState(false);
+  const [ragAdding, setRagAdding] = useState(false);
+  const [ragError, setRagError] = useState(null);
 
   // Fetch providers and models
   const { data: providersData = { providers: [] } } = useQuery('providers', api.getProviders);
@@ -68,6 +83,93 @@ const PDFReader = () => {
       setModelName(models[llmProvider][0]);
     }
   }, [llmProvider, models, modelName]);
+
+  const { data: ragCollectionsData = [] } = useQuery('rag-collections', api.getRAGCollections, { retry: false });
+  const ragCollections = Array.isArray(ragCollectionsData) ? ragCollectionsData.map((c) => (typeof c === 'string' ? c : c.name)).filter(Boolean) : [];
+
+  const getContentForRAG = () => {
+    if (!result) return '';
+    return (result.ai_result || result.extracted_text || '').trim();
+  };
+
+  const handleOpenRagModal = async () => {
+    const content = getContentForRAG();
+    if (!content) return;
+    setRagModalOpen(true);
+    setRagError(null);
+    setRagTitle('');
+    setRagDescription('');
+    setRagCollectionName(ragCollections[0] || '');
+    setRagSuggestingTitle(true);
+    try {
+      const res = await api.suggestRAGTitle(content);
+      setRagTitle((res && res.title) ? res.title : '');
+    } catch {
+      setRagTitle('');
+    } finally {
+      setRagSuggestingTitle(false);
+    }
+  };
+
+  const handleAddToRAG = async () => {
+    const collection = (ragCollectionName || '').trim();
+    const title = (ragTitle || '').trim();
+    const content = getContentForRAG();
+    if (!collection || !title || !content) {
+      setRagError('Collection name and document title are required.');
+      return;
+    }
+    setRagError(null);
+    setRagAdding(true);
+    try {
+      await api.addRAGData({
+        collection_name: collection,
+        data_input: {
+          name: title,
+          description: ragDescription.trim() || undefined,
+          format: 'txt',
+          content,
+          tags: ['pdf-reader'],
+        },
+      });
+      setRagModalOpen(false);
+    } catch (err) {
+      setRagError(err.response?.data?.detail || err.message || 'Failed to add to RAG');
+    } finally {
+      setRagAdding(false);
+    }
+  };
+
+  const getMarkdownForSave = () => {
+    if (!result) return '';
+    const meta = [];
+    if (result.page_count !== undefined) meta.push(`${result.page_count} pages`);
+    if (result.extracted_text_length) meta.push(`${result.extracted_text_length.toLocaleString()} characters`);
+    if (result.provider) meta.push(`${result.provider} / ${result.model || 'default'}`);
+    if (result.timestamp) meta.push(`Processed: ${new Date(result.timestamp).toLocaleString()}`);
+    let md = '# PDF Read Result\n\n';
+    if (meta.length) md += meta.join(' · ') + '\n\n';
+    if (result.ai_result) md += '## AI Result\n\n' + result.ai_result + '\n\n';
+    if (result.extracted_text) {
+      const text = result.extracted_text.length > 1000
+        ? result.extracted_text.substring(0, 1000) + '\n\n[Truncated. Full text has ' + result.extracted_text.length.toLocaleString() + ' characters.]'
+        : result.extracted_text;
+      md += '## Extracted Text\n\n```\n' + text + '\n```\n';
+    }
+    return md;
+  };
+
+  const handleSaveToFile = () => {
+    const md = getMarkdownForSave();
+    if (!md) return;
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pdf-read-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '-')}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const onDrop = (acceptedFiles) => {
     if (acceptedFiles.length > 0) {
@@ -144,10 +246,10 @@ const PDFReader = () => {
         </Typography>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={3} sx={{ alignItems: 'stretch' }}>
         {/* Upload and Configuration Section */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
                 Upload PDF
@@ -294,34 +396,48 @@ const PDFReader = () => {
         </Grid>
 
         {/* Results Section */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Results
-              </Typography>
+        <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: 'calc(100vh - 180px)' }}>
+          <Card sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', '&:last-child': { pb: 2 } }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="h6">
+                  Results
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                  {result && getMarkdownForSave() && (
+                    <Button size="small" variant="outlined" startIcon={<SaveIcon />} onClick={handleSaveToFile}>
+                      Save to file
+                    </Button>
+                  )}
+                  {result && getContentForRAG() && (
+                    <Button size="small" variant="outlined" startIcon={<RAGIcon />} onClick={handleOpenRagModal}>
+                      Add to RAG
+                    </Button>
+                  )}
+                </Box>
+              </Box>
 
               {error && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                <Alert severity="error" sx={{ mb: 2, flexShrink: 0 }} onClose={() => setError(null)}>
                   {error}
                 </Alert>
               )}
 
               {isProcessing && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4, flex: 1 }}>
                   <CircularProgress />
                 </Box>
               )}
 
               {!isProcessing && !result && (
-                <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+                <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary', flex: 1 }}>
                   <PDFIcon sx={{ fontSize: 64, mb: 2, opacity: 0.3 }} />
                   <Typography>No results yet. Upload a PDF and process it to see results.</Typography>
                 </Box>
               )}
 
               {!isProcessing && result && (
-                <Box>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pr: 0.5 }}>
                   {/* Success Indicator */}
                   {result.success && (
                     <Alert severity="success" sx={{ mb: 2 }}>
@@ -354,7 +470,7 @@ const PDFReader = () => {
                     </Box>
                   )}
 
-                  {/* AI Result */}
+                  {/* AI Result (Markdown) */}
                   {result.ai_result && (
                     <Paper
                       sx={{
@@ -363,7 +479,6 @@ const PDFReader = () => {
                         border: '1px solid',
                         borderColor: 'primary.main',
                         borderRadius: 1,
-                        bgcolor: 'primary.light',
                         bgcolor: 'rgba(25, 118, 210, 0.05)',
                       }}
                     >
@@ -374,15 +489,18 @@ const PDFReader = () => {
                         </Typography>
                       </Box>
                       <Divider sx={{ my: 1 }} />
-                      <Typography
-                        variant="body2"
+                      <Box
+                        className="markdown-body"
                         sx={{
-                          whiteSpace: 'pre-wrap',
-                          fontFamily: 'inherit',
+                          '& h1, & h2, & h3': { mt: 1.5, mb: 0.5, fontWeight: 600 },
+                          '& p': { mb: 1 },
+                          '& ul, & ol': { pl: 2.5, mb: 1 },
+                          '& pre': { overflow: 'auto', p: 1.5, bgcolor: 'action.hover', borderRadius: 1 },
+                          '& code': { fontFamily: 'monospace', fontSize: '0.9em' },
                         }}
                       >
-                        {result.ai_result}
-                      </Typography>
+                        <ReactMarkdown>{result.ai_result}</ReactMarkdown>
+                      </Box>
                     </Paper>
                   )}
 
@@ -407,7 +525,7 @@ const PDFReader = () => {
                           bgcolor: 'background.default',
                           p: 1,
                           borderRadius: 1,
-                          maxHeight: '300px',
+                          maxHeight: 'min(280px, 30vh)',
                           overflow: 'auto',
                           fontSize: '0.85rem',
                         }}
@@ -440,6 +558,92 @@ const PDFReader = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Add to RAG modal */}
+      <Dialog open={ragModalOpen} onClose={() => !ragAdding && setRagModalOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add to RAG</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Save the current result to a RAG collection for later retrieval. A topic title will be suggested from the content.
+          </Typography>
+          {ragError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setRagError(null)}>
+              {ragError}
+            </Alert>
+          )}
+          <TextField
+            fullWidth
+            label="Collection name"
+            placeholder="e.g. my_notes"
+            value={ragCollectionName}
+            onChange={(e) => setRagCollectionName(e.target.value)}
+            sx={{ mb: 2 }}
+            helperText={ragCollections.length ? 'Or choose existing below' : 'Collection will be created if new'}
+            InputProps={{ sx: { bgcolor: 'background.default' } }}
+          />
+          {ragCollections.length > 0 && (
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>Existing collections</InputLabel>
+              <Select
+                value={ragCollectionName}
+                label="Existing collections"
+                onChange={(e) => setRagCollectionName(e.target.value)}
+              >
+                {ragCollections.map((c) => (
+                  <MenuItem key={c} value={c}>{c}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 2 }}>
+            <TextField
+              fullWidth
+              label="Document title"
+              placeholder="Topic title for this content"
+              value={ragTitle}
+              onChange={(e) => setRagTitle(e.target.value)}
+              disabled={ragSuggestingTitle}
+              InputProps={{ sx: { bgcolor: 'background.default' } }}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={async () => {
+                const content = getContentForRAG();
+                if (!content) return;
+                setRagSuggestingTitle(true);
+                try {
+                  const res = await api.suggestRAGTitle(content);
+                  setRagTitle((res && res.title) ? res.title : '');
+                } finally {
+                  setRagSuggestingTitle(false);
+                }
+              }}
+              disabled={ragSuggestingTitle || !getContentForRAG()}
+              sx={{ minWidth: 48, mt: 1 }}
+              title="Suggest title with AI"
+            >
+              {ragSuggestingTitle ? <CircularProgress size={24} /> : <SuggestIcon />}
+            </Button>
+          </Box>
+          <TextField
+            fullWidth
+            label="Description (optional)"
+            placeholder="Brief description"
+            value={ragDescription}
+            onChange={(e) => setRagDescription(e.target.value)}
+            multiline
+            rows={2}
+            InputProps={{ sx: { bgcolor: 'background.default' } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setRagModalOpen(false)} disabled={ragAdding}>Cancel</Button>
+          <Button variant="contained" onClick={handleAddToRAG} disabled={ragAdding || !ragTitle.trim() || !ragCollectionName.trim()} startIcon={ragAdding ? <CircularProgress size={18} color="inherit" /> : <RAGIcon />}>
+            {ragAdding ? 'Adding…' : 'Add to RAG'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
