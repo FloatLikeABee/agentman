@@ -148,6 +148,27 @@ class DirectLLMResponse(BaseModel):
     metadata: Dict[str, Any] = Field(default={}, description="Response metadata")
 
 
+class GatheringRequest(BaseModel):
+    """Request for AI-powered data gathering from Wikipedia, Reddit, and web."""
+    prompt: str = Field(..., description="Topic or question to research")
+    llm_provider: Optional[str] = Field(None, description="LLM provider: gemini, qwen, mistral (default: system default)")
+    model_name: Optional[str] = Field(None, description="Model name (default: provider default)")
+    max_iterations: Optional[int] = Field(10, ge=3, le=20, description="Max agent iterations (limits search, default: 10)")
+    max_tokens: Optional[int] = Field(8192, ge=512, le=32768, description="Max response tokens")
+    temperature: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="LLM temperature")
+
+
+class GatheringResponse(BaseModel):
+    """Response from gathering endpoint."""
+    success: bool = Field(..., description="Whether gathering succeeded")
+    content: str = Field("", description="Gathered content (markdown)")
+    provider: Optional[str] = Field(None, description="LLM provider used")
+    model: Optional[str] = Field(None, description="Model used")
+    max_iterations: Optional[int] = Field(None, description="Max iterations applied")
+    metadata: Dict[str, Any] = Field(default={}, description="Additional metadata")
+    error: Optional[str] = Field(None, description="Error message if success is False")
+
+
 class SystemStatus(BaseModel):
     llm_providers_available: List[str]
     default_llm_provider: str

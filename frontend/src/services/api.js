@@ -213,6 +213,12 @@ export const executeCrawlerProfile = async (profileId) => {
   return response.data;
 };
 
+// Gathering
+export const gatherData = async (payload) => {
+  const response = await api.post('/gathering/gather', payload);
+  return response.data;
+};
+
 // Database Tools
 export const getDBTools = async () => {
   const response = await api.get('/db-tools');
@@ -478,6 +484,7 @@ const apiService = {
   updateCrawlerProfile,
   deleteCrawlerProfile,
   executeCrawlerProfile,
+  gatherData,
   getDBTools,
   getDBTool,
   createDBTool,

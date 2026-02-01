@@ -10,6 +10,7 @@ import ToolManager from './pages/ToolManager';
 import SystemStatus from './pages/SystemStatus';
 import Customizations from './pages/Customizations';
 import Crawler from './pages/Crawler';
+import Gathering from './pages/Gathering';
 import DBTools from './pages/DBTools';
 import Dialogue from './pages/Dialogue';
 import Flow from './pages/Flow';
@@ -43,6 +44,7 @@ function App() {
               <Route path="/browser-automation" element={<BrowserAutomation />} />
               <Route path="/customizations" element={<Customizations />} />
               <Route path="/crawler" element={<Crawler />} />
+              <Route path="/gathering" element={<Gathering />} />
               <Route path="/db-tools" element={<DBTools />} />
               <Route path="/dialogue" element={<Dialogue />} />
               <Route path="/flow" element={<Flow />} />

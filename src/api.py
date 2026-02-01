@@ -23,6 +23,8 @@ from .models import (
     RAGQueryRequest,
     DirectLLMRequest,
     DirectLLMResponse,
+    GatheringRequest,
+    GatheringResponse,
     LLMProviderType,
     CustomizationCreateRequest,
     CustomizationQueryRequest,
@@ -77,6 +79,7 @@ from .dialogue import DialogueManager
 from .conversation import ConversationManager
 from .crawler import CrawlerService
 from .crawler_manager import CrawlerManager
+from .gathering_service import GatheringService
 from .db_tools import DatabaseToolsManager
 from .request_tools import RequestToolsManager
 from .image_reader import ImageReader
@@ -212,6 +215,10 @@ class RAGAPI:
             - **MCP**: Model Context Protocol server
             - **Customizations**: Behavior template management
             - **Crawler**: Website crawling and content extraction
+            - **Conversations**: Multi-AI conversation (two models conversing)
+            - **Image Reader**: OCR from images (Qwen Vision) and AI processing
+            - **PDF Reader**: PDF text extraction and AI processing
+            - **Gathering**: AI-powered data gathering from Wikipedia, Reddit, and web search
             
             ## 🔧 Technical Details
             
@@ -288,6 +295,7 @@ class RAGAPI:
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
         self.crawler_manager = CrawlerManager()
+        self.gathering_service = GatheringService(tool_manager=self.tool_manager)
         self.db_tools_manager = DatabaseToolsManager()
         self.request_tools_manager = RequestToolsManager(api_instance=self)
         self.dialogue_manager = DialogueManager(
@@ -369,6 +377,9 @@ class RAGAPI:
         
         # Setup PDF reader routes
         self._setup_pdf_reader_routes()
+        
+        # Setup gathering routes
+        self._setup_gathering_routes()
         
         # Setup static file handlers for common browser requests
         self._setup_static_handlers()
@@ -2426,8 +2437,9 @@ Question: {{input}}
             "/crawler/profiles",
             tags=["Crawler"],
             summary="List Crawler Profiles",
-            description="List all saved crawler profiles.",
-            response_model=List[Dict[str, Any]]
+            description="List all saved crawler profiles with their configuration (URL, collection name, etc.).",
+            response_model=List[Dict[str, Any]],
+            response_description="Array of crawler profile objects.",
         )
         async def list_crawler_profiles():
             """List all crawler profiles."""
@@ -2441,8 +2453,9 @@ Question: {{input}}
             "/crawler/profiles/{profile_id}",
             tags=["Crawler"],
             summary="Get Crawler Profile",
-            description="Get a specific crawler profile by ID.",
-            response_model=CrawlerProfile
+            description="Get a specific crawler profile by ID, including URL, use_js, collection_name, max_pages, etc.",
+            response_model=CrawlerProfile,
+            response_description="Crawler profile object.",
         )
         async def get_crawler_profile(profile_id: str):
             """Get a crawler profile by ID."""
@@ -2461,8 +2474,9 @@ Question: {{input}}
             "/crawler/profiles",
             tags=["Crawler"],
             summary="Create Crawler Profile",
-            description="Create a new crawler profile with configuration.",
-            response_model=CrawlerProfile
+            description="Create a new crawler profile with URL, optional use_js, collection_name, max_pages, and other options.",
+            response_model=CrawlerProfile,
+            response_description="Created crawler profile with generated profile_id.",
         )
         async def create_crawler_profile(request: CrawlerCreateRequest):
             """Create a new crawler profile."""
@@ -2476,8 +2490,9 @@ Question: {{input}}
             "/crawler/profiles/{profile_id}",
             tags=["Crawler"],
             summary="Update Crawler Profile",
-            description="Update an existing crawler profile.",
-            response_model=CrawlerProfile
+            description="Update an existing crawler profile; all provided fields are updated.",
+            response_model=CrawlerProfile,
+            response_description="Updated crawler profile.",
         )
         async def update_crawler_profile(profile_id: str, request: CrawlerUpdateRequest):
             """Update a crawler profile."""
@@ -2496,8 +2511,9 @@ Question: {{input}}
             "/crawler/profiles/{profile_id}",
             tags=["Crawler"],
             summary="Delete Crawler Profile",
-            description="Delete a crawler profile.",
-            response_model=Dict[str, str]
+            description="Permanently delete a crawler profile by ID.",
+            response_model=Dict[str, str],
+            response_description="Confirmation message.",
         )
         async def delete_crawler_profile(profile_id: str):
             """Delete a crawler profile."""
@@ -2516,8 +2532,9 @@ Question: {{input}}
             "/crawler/profiles/{profile_id}/execute",
             tags=["Crawler"],
             summary="Execute Crawler Profile",
-            description="Execute a saved crawler profile to crawl the configured URL.",
-            response_model=CrawlerResponse
+            description="Execute a saved crawler profile: crawl the profile's URL, extract content with AI, and save to the profile's RAG collection.",
+            response_model=CrawlerResponse,
+            response_description="Crawling results (success, collection_name, extracted_data, etc.).",
         )
         async def execute_crawler_profile(profile_id: str):
             """Execute a crawler profile."""
@@ -4267,18 +4284,10 @@ Question: {{input}}
             **Request Parameters:**
             - `name`: Name for the conversation configuration
             - `description`: Optional description
-            - `config`: Conversation configuration including:
-              - `model1_provider`: LLM provider for first model (gemini, qwen, mistral)
-              - `model1_name`: Model name for first model
-              - `model2_provider`: LLM provider for second model
-              - `model2_name`: Model name for second model
-              - `rag_collection`: Optional RAG collection name
-              - `db_tools`: List of DB tool IDs to enable
-              - `request_tools`: List of Request tool IDs to enable
-              - `system_prompt`: System prompt for the conversation
-              - `max_turns`: Maximum turns (5-100, default: 10)
+            - `config`: Conversation configuration including model1_config, model2_config (provider, model_name, system_prompt, optional rag_collection), and max_turns (5-100).
             """,
             response_model=Dict[str, Any],
+            response_description="Returns id (config_id) and success message.",
         )
         async def create_conversation(req: ConversationCreateRequest):
             """Create a new conversation configuration."""
@@ -4293,8 +4302,9 @@ Question: {{input}}
             "/conversations",
             tags=["Conversations"],
             summary="List All Conversation Configurations",
-            description="Retrieve all conversation configuration profiles.",
+            description="Retrieve all conversation configuration profiles (name, config_id, config with model1_config, model2_config, max_turns).",
             response_model=List[Dict[str, Any]],
+            response_description="Array of conversation configuration objects.",
         )
         async def list_conversations():
             """List all conversation configurations."""
@@ -4308,8 +4318,9 @@ Question: {{input}}
             "/conversations/saved",
             tags=["Conversations"],
             summary="List Saved Conversations",
-            description="List all saved conversation history files.",
+            description="List all saved conversation history files (filenames and metadata).",
             response_model=List[Dict[str, Any]],
+            response_description="Array of saved conversation file entries.",
         )
         async def list_saved_conversations():
             """List all saved conversation files."""
@@ -4323,8 +4334,9 @@ Question: {{input}}
             "/conversations/saved/{filename:path}",
             tags=["Conversations"],
             summary="Get Saved Conversation Content",
-            description="Get the content of a saved conversation file by filename.",
-            response_model=Dict[str, Any]
+            description="Get the content of a saved conversation file by filename (from list saved).",
+            response_model=Dict[str, Any],
+            response_description="Object with filename and content (text).",
         )
         async def get_saved_conversation_content(filename: str):
             """Get the content of a saved conversation file."""
@@ -4343,8 +4355,9 @@ Question: {{input}}
             "/conversations/{config_id}",
             tags=["Conversations"],
             summary="Get Conversation Configuration",
-            description="Retrieve a specific conversation configuration by ID.",
+            description="Retrieve a specific conversation configuration by config_id (full config with model1_config, model2_config, max_turns).",
             response_model=Dict[str, Any],
+            response_description="Conversation configuration object.",
         )
         async def get_conversation(config_id: str):
             """Get a conversation configuration."""
@@ -4363,8 +4376,9 @@ Question: {{input}}
             "/conversations/{config_id}",
             tags=["Conversations"],
             summary="Update Conversation Configuration",
-            description="Update an existing conversation configuration.",
+            description="Update an existing conversation configuration (name, description, config).",
             response_model=Dict[str, Any],
+            response_description="Success message.",
         )
         async def update_conversation(config_id: str, req: ConversationCreateRequest):
             """Update a conversation configuration."""
@@ -4383,8 +4397,9 @@ Question: {{input}}
             "/conversations/{config_id}",
             tags=["Conversations"],
             summary="Delete Conversation Configuration",
-            description="Delete a conversation configuration.",
+            description="Permanently delete a conversation configuration by config_id.",
             response_model=Dict[str, Any],
+            response_description="Success message.",
         )
         async def delete_conversation(config_id: str):
             """Delete a conversation configuration."""
@@ -4422,6 +4437,7 @@ Question: {{input}}
             - `conversation_history`: Full conversation history
             """,
             response_model=ConversationResponse,
+            response_description="Session ID, turn number, messages, and full conversation history.",
         )
         async def start_conversation(req: ConversationStartRequest):
             """Start a new conversation session."""
@@ -4451,6 +4467,7 @@ Question: {{input}}
             - Updated conversation state with new messages
             """,
             response_model=ConversationResponse,
+            response_description="Updated turn number, new messages, and full conversation history.",
         )
         async def continue_conversation(req: ConversationTurnRequest):
             """Continue a conversation session."""
@@ -4464,8 +4481,9 @@ Question: {{input}}
             "/conversations/history/{session_id}",
             tags=["Conversations"],
             summary="Get Conversation History",
-            description="Retrieve the full conversation history for a session.",
+            description="Retrieve the full conversation history for a session (session_id, config_name, started_at, conversation_history).",
             response_model=ConversationHistoryResponse,
+            response_description="Session metadata and full list of messages.",
         )
         async def get_conversation_history(session_id: str):
             """Get conversation history for a session."""
@@ -5747,6 +5765,88 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                 raise HTTPException(
                     status_code=500,
                     detail=f"Error processing PDF: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                )
+
+    def _setup_gathering_routes(self):
+        """Setup gathering routes: AI-powered data gathering from Wikipedia, Reddit, and web."""
+        @self.app.post(
+            "/gathering/gather",
+            tags=["Gathering"],
+            summary="Gather Data",
+            description="Use AI to gather information from Wikipedia, Reddit (via web search), and general web search. Has configurable limits to prevent infinite searching.",
+            response_model=GatheringResponse,
+            response_description="Gathered content in markdown format, or error.",
+            responses={
+                200: {
+                    "description": "Gathering successful",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "content": "## Summary\n\n...",
+                                "provider": "qwen",
+                                "model": "qwen-plus",
+                                "max_iterations": 10,
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Invalid request (missing prompt)"},
+                500: {"description": "Error during gathering"}
+            }
+        )
+        async def gather_data(request: GatheringRequest) -> GatheringResponse:
+            """
+            **Gather Data from Multiple Sources**
+
+            The AI uses a preset system prompt to gather information in this order:
+            1. **Wikipedia** - Factual overview and definitions
+            2. **Reddit** - Real discussions (via web search with site:reddit.com)
+            3. **Web Search** - Additional sources and news
+
+            **Limits:** max_iterations (default 10) prevents the AI from searching forever.
+            """
+            try:
+                if not request.prompt or not request.prompt.strip():
+                    raise HTTPException(status_code=400, detail="prompt is required")
+
+                from .models import LLMProviderType
+                provider_type = None
+                if request.llm_provider:
+                    p = request.llm_provider.lower().strip()
+                    if p == "gemini":
+                        provider_type = LLMProviderType.GEMINI
+                    elif p == "qwen":
+                        provider_type = LLMProviderType.QWEN
+                    elif p == "mistral":
+                        provider_type = LLMProviderType.MISTRAL
+
+                result = await self.gathering_service.gather(
+                    prompt=request.prompt.strip(),
+                    llm_provider=provider_type,
+                    model_name=request.model_name,
+                    max_iterations=request.max_iterations or 10,
+                    max_tokens=request.max_tokens or 8192,
+                    temperature=request.temperature or 0.5,
+                )
+
+                return GatheringResponse(
+                    success=result.get("success", False),
+                    content=result.get("content", ""),
+                    provider=result.get("provider"),
+                    model=result.get("model"),
+                    max_iterations=result.get("max_iterations"),
+                    metadata=result.get("metadata", {}),
+                    error=result.get("error"),
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error in gathering: {e}")
+                import traceback
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
                 )
 
     def _setup_static_handlers(self):

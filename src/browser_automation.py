@@ -4,6 +4,7 @@ Allows AI agents to control a browser and follow user instructions
 """
 import logging
 import asyncio
+import concurrent.futures
 from typing import Dict, Any, Optional, List
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 from langchain.agents import AgentExecutor, create_react_agent
@@ -439,24 +440,26 @@ class BrowserAutomationTool:
             await self._cleanup_browser()
     
     def _run_async_in_sync_context(self, coro):
-        """Helper to run async code from sync context, handling both cases"""
+        """Run async browser code from sync tool context (agent runs in worker thread via run_in_executor).
+        If we have a main loop stored (self._event_loop), we're in the worker thread - schedule
+        the coroutine on the main loop and block until done. Otherwise no loop (e.g. sync execute()) - use asyncio.run()."""
         try:
-            # Try to get the running event loop
             loop = asyncio.get_running_loop()
-            # We're in an async context - schedule the coroutine on the existing loop
-            # This ensures browser operations run in the same event loop where browser was initialized
-            import concurrent.futures
-            
-            # Use run_coroutine_threadsafe to schedule on the existing event loop
-            # This is thread-safe and allows sync code to await async operations
+            # We're on the same thread as the event loop (invoke not in executor) - would deadlock.
+            # Run in executor is used so we should usually hit the except branch below.
             future = asyncio.run_coroutine_threadsafe(coro, loop)
-            try:
-                return future.result(timeout=120)  # 2 minute timeout for browser operations
-            except concurrent.futures.TimeoutError:
-                future.cancel()
-                return "Error: Operation timed out after 2 minutes"
+            return future.result(timeout=120)
         except RuntimeError:
-            # No running event loop - safe to use asyncio.run()
+            # No running loop: we're in the worker thread (agent runs in run_in_executor).
+            # Schedule coroutine on the main loop so browser ops run where browser was created.
+            main_loop = getattr(self, "_event_loop", None)
+            if main_loop is not None:
+                future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+                try:
+                    return future.result(timeout=120)
+                except concurrent.futures.TimeoutError:
+                    future.cancel()
+                    return "Error: Operation timed out after 2 minutes"
             return asyncio.run(coro)
         except Exception as e:
             self.logger.error(f"Error running async in sync context: {e}")
@@ -539,13 +542,14 @@ Begin by analyzing the user's instructions, then navigate to the required page (
             # Log the start of execution
             self.logger.info(f"Starting browser automation with instructions: {instructions[:100]}...")
             
-            # Execute agent - this will:
-            # 1. Have the LLM break down the instructions into tasks
-            # 2. Execute each task using the browser tools
-            # 3. Return the final result
-            result = agent_executor.invoke({
-                "input": instructions
-            })
+            # Run agent in thread pool so tool calls (navigate, click, etc.) run in worker thread.
+            # Then _run_async_in_sync_context uses run_coroutine_threadsafe(main_loop) and the
+            # main loop can process browser coroutines without deadlock.
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: agent_executor.invoke({"input": instructions}),
+            )
             
             # Get final page state
             final_url = await self._get_url_async()
