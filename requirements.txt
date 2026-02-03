@@ -3,7 +3,8 @@ langchain==0.3.27
 langchain-community==0.3.27
 langchain-core==0.3.80
 langchain-text-splitters==0.3.11
-google-generativeai
+langchain-huggingface>=0.0.1
+google-genai
 mistralai
 openai
 

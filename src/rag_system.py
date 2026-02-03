@@ -64,7 +64,10 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    from langchain_community.embeddings import HuggingFaceEmbeddings  # deprecated fallback
 import pandas as pd
 import json
 from typing import List, Dict, Any, Optional

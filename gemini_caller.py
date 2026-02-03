@@ -1,54 +1,46 @@
 """
 Gemini LLM Caller
-Integrates with Google's Gemini API
+Integrates with Google's Gemini API via the google-genai SDK.
 """
-import warnings
-# Suppress deprecation warning for google.generativeai
-# TODO: Migrate to google-genai package in the future
-warnings.filterwarnings("ignore", category=FutureWarning, message=".*google.generativeai.*")
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from typing import Dict, Any, List, Iterator
 from src.llm_factory import BaseLLMCaller, LLMFactory, LLMProvider
-
-
-# API Configuration - loaded from settings
 from src.config import settings
+
 GEMINI_API_KEY = settings.gemini_api_key
 
 
 class GeminiCaller(BaseLLMCaller):
-    """Gemini API caller implementation"""
+    """Gemini API caller implementation using google-genai Client."""
 
     def __init__(self, api_key: str = GEMINI_API_KEY, model: str = "gemini-2.5-flash", **kwargs):
         super().__init__(api_key, model, **kwargs)
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(model)
+        self._client = genai.Client(api_key=self.api_key)
         self.default_temperature = kwargs.get("temperature", 0.7)
         self.default_max_tokens = kwargs.get("max_tokens", 8192 * 8)
 
-    def generate(self, prompt: str, **kwargs) -> str:
-        """Generate a response from Gemini"""
-        try:
-            response = self.model.generate_content(
-                contents=prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=kwargs.get("temperature", self.default_temperature),
-                    max_output_tokens=kwargs.get("max_tokens", self.default_max_tokens)
-                )
-            )
+    def _config(self, **kwargs) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            temperature=kwargs.get("temperature", self.default_temperature),
+            max_output_tokens=kwargs.get("max_tokens", self.default_max_tokens),
+        )
 
-            # Handle different response types
+    def generate(self, prompt: str, **kwargs) -> str:
+        """Generate a response from Gemini."""
+        try:
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=self._config(**kwargs),
+            )
             if isinstance(response, str):
                 return response
-            elif hasattr(response, 'text'):
-                return response.text
-            else:
-                # Try to extract text from response object
-                return str(response)
-
+            if hasattr(response, "text"):
+                return response.text or ""
+            return str(response)
         except Exception as e:
             error_msg = str(e)
-            # Provide more helpful error messages
             if "DNS resolution failed" in error_msg or "503" in error_msg:
                 self.logger.error(f"Gemini API DNS/network error: {e}")
                 raise ConnectionError(
@@ -59,76 +51,61 @@ class GeminiCaller(BaseLLMCaller):
                     f"4. Gemini API service temporarily unavailable\n\n"
                     f"Original error: {error_msg}"
                 )
-            elif "timeout" in error_msg.lower() or "Timeout" in error_msg:
+            if "timeout" in error_msg.lower() or "Timeout" in error_msg:
                 self.logger.error(f"Gemini API timeout: {e}")
                 raise TimeoutError(
                     f"Request to Gemini API timed out. The API may be slow or unavailable.\n"
                     f"Original error: {error_msg}"
                 )
-            else:
-                self.logger.error(f"Gemini API request failed: {e}")
-                raise
+            self.logger.error(f"Gemini API request failed: {e}")
+            raise
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        """Chat with Gemini using a list of messages"""
+        """Chat with Gemini using a list of messages."""
         try:
-            # Convert messages to Gemini format
-            gemini_messages = []
+            contents = []
             for msg in messages:
-                role = msg.get("role", "user")
+                role = (msg.get("role") or "user").strip().lower()
+                if role == "assistant":
+                    role = "model"
+                if role not in ("user", "model"):
+                    role = "user"
                 content = msg.get("content", "")
-                gemini_messages.append({"role": role, "parts": [content]})
-
-            # Generate response
-            response = self.model.generate_content(
-                contents=gemini_messages,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=kwargs.get("temperature", self.default_temperature),
-                    max_output_tokens=kwargs.get("max_tokens", self.default_max_tokens)
-                )
+                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=self._config(**kwargs),
             )
-
-            # Handle different response types
             if isinstance(response, str):
                 return response
-            elif hasattr(response, 'text'):
-                return response.text
-            else:
-                # Try to extract text from response object
-                return str(response)
-
+            if hasattr(response, "text"):
+                return response.text or ""
+            return str(response)
         except Exception as e:
             self.logger.error(f"Gemini chat request failed: {e}")
             raise
 
     def stream(self, prompt: str, **kwargs) -> Iterator[str]:
-        """Stream responses from Gemini"""
+        """Stream responses from Gemini."""
         try:
-            response = self.model.generate_content(
+            for chunk in self._client.models.generate_content_stream(
+                model=self.model,
                 contents=prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=kwargs.get("temperature", self.default_temperature),
-                    max_output_tokens=kwargs.get("max_tokens", self.default_max_tokens)
-                ),
-                stream=True
-            )
-
-            # Gemini streaming works by iterating over the response chunks
-            for chunk in response:
+                config=self._config(**kwargs),
+            ):
                 if isinstance(chunk, str):
-                    yield chunk
-                elif hasattr(chunk, 'text') and chunk.text:
+                    if chunk:
+                        yield chunk
+                elif hasattr(chunk, "text") and chunk.text:
                     yield chunk.text
                 else:
-                    # Try to extract text from chunk object
-                    chunk_text = str(chunk)
-                    if chunk_text:
-                        yield chunk_text
-
+                    s = str(chunk)
+                    if s:
+                        yield s
         except Exception as e:
             self.logger.error(f"Gemini streaming request failed: {e}")
             raise
 
 
-# Register Gemini caller with the factory
 LLMFactory.register_caller(LLMProvider.GEMINI, GeminiCaller)
