@@ -6,6 +6,7 @@ from fastapi import status
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
+import sys
 from typing import List, Dict, Any, Optional
 import asyncio
 import os
@@ -5183,6 +5184,7 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                 model = request.get('model', '')
                 max_steps = request.get('max_steps', 20)
                 headless = request.get('headless', False)  # Default to visible browser
+                browser_bridge_url = (request.get('browser_bridge_url') or '').strip() or 'ws://localhost:8765'  # default: local browser bridge
                 
                 if not instructions:
                     raise HTTPException(status_code=400, detail="Instructions are required")
@@ -5202,21 +5204,39 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                     provider_type = LLMProviderType.QWEN
                 
                 # Create browser automation tool with specified provider and model
-                # headless=False means you'll see the browser window open and perform actions
+                # If browser_bridge_url is set, AI controls YOUR local browser (run browser_bridge.py on your machine)
                 browser_tool = BrowserAutomationTool(
                     llm_provider=provider_type,
                     model_name=model,
-                    headless=headless
+                    headless=headless,
+                    browser_bridge_url=browser_bridge_url,
                 )
                 
-                # Execute the automation (await directly since we're in async context)
-                result = await browser_tool._execute_with_cleanup(instructions, max_steps=max_steps)
+                # On Windows without bridge, Playwright needs ProactorEventLoop (subprocess support).
+                # Run in a dedicated thread with that loop so uvicorn/debugger loop doesn't cause NotImplementedError.
+                if sys.platform == "win32" and not browser_bridge_url:
+                    def _run_in_proactor_thread():
+                        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            return loop.run_until_complete(
+                                browser_tool._execute_with_cleanup(instructions, max_steps=max_steps)
+                            )
+                        finally:
+                            loop.close()
+                    result = await asyncio.get_running_loop().run_in_executor(
+                        None, _run_in_proactor_thread
+                    )
+                else:
+                    result = await browser_tool._execute_with_cleanup(instructions, max_steps=max_steps)
                 
                 return {
                     "result": result,
                     "instructions": instructions,
                     "provider": provider_str,
                     "model": model,
+                    "browser_bridge_url": browser_bridge_url,
                 }
                 
             except HTTPException:

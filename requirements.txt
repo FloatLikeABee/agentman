@@ -36,6 +36,7 @@ youtube-transcript-api>=0.6.2
 wikipedia
 requests==2.32.3
 playwright>=1.40.0
+websocket-client>=1.6.0
 
 # Financial data
 yfinance>=0.2.66

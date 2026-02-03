@@ -21,7 +21,13 @@ from .models import LLMProviderType
 class BrowserAutomationTool:
     """Browser automation tool using Playwright and LangChain"""
     
-    def __init__(self, llm_provider: Optional[LLMProviderType] = None, model_name: Optional[str] = None, headless: bool = False):
+    def __init__(
+        self,
+        llm_provider: Optional[LLMProviderType] = None,
+        model_name: Optional[str] = None,
+        headless: bool = False,
+        browser_bridge_url: Optional[str] = None,
+    ):
         self.logger = logging.getLogger(__name__)
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -29,6 +35,7 @@ class BrowserAutomationTool:
         self.playwright = None
         self._event_loop = None  # Store event loop reference for sync tool calls
         self.headless = headless  # Whether to run browser in headless mode (False = visible browser)
+        self.browser_bridge_url = (browser_bridge_url or "").strip() or None  # e.g. ws://localhost:8765 - use local browser via bridge
         
         # Setup LLM for agent
         provider_str = llm_provider.value if llm_provider else settings.default_llm_provider.lower()
@@ -57,8 +64,32 @@ class BrowserAutomationTool:
             max_tokens=4096
         )
         
-        # Create browser tools
+        # Create browser tools (bridge mode uses WebSocket to local browser_bridge.py)
         self.browser_tools = self._create_browser_tools()
+        
+    def _bridge_command(self, action: str, **kwargs) -> str:
+        """Send a single command to the local Browser Bridge (sync). Returns result string or error."""
+        if not self.browser_bridge_url:
+            return "Error: browser_bridge_url not set"
+        try:
+            import websocket
+            ws = websocket.create_connection(
+                self.browser_bridge_url,
+                timeout=60,
+            )
+            try:
+                payload = {"action": action, **kwargs}
+                ws.send(json.dumps(payload))
+                raw = ws.recv()
+                data = json.loads(raw)
+                if data.get("success"):
+                    return data.get("result", "OK")
+                return f"Error: {data.get('error', 'Unknown error')}"
+            finally:
+                ws.close()
+        except Exception as e:
+            self.logger.exception("Bridge command failed")
+            return f"Bridge error: {str(e)}. Is browser_bridge.py running on your machine?"
         
     def _create_browser_tools(self) -> List[Tool]:
         """Create LangChain tools for browser automation"""
@@ -172,6 +203,8 @@ class BrowserAutomationTool:
     
     def _navigate(self, url: str) -> str:
         """Navigate to a URL"""
+        if self.browser_bridge_url:
+            return self._bridge_command("navigate", url=url)
         try:
             result = self._run_async_in_sync_context(self._navigate_async(url))
             return result
@@ -196,6 +229,8 @@ class BrowserAutomationTool:
     
     def _click(self, selector_or_text: str) -> str:
         """Click on an element"""
+        if self.browser_bridge_url:
+            return self._bridge_command("click", selector=selector_or_text)
         try:
             result = self._run_async_in_sync_context(self._click_async(selector_or_text))
             return result
@@ -231,6 +266,12 @@ class BrowserAutomationTool:
     
     def _type_text(self, input_json: str) -> str:
         """Type text into an input field"""
+        if self.browser_bridge_url:
+            try:
+                data = json.loads(input_json)
+                return self._bridge_command("type", selector=data.get("selector", ""), text=data.get("text", ""))
+            except json.JSONDecodeError:
+                return self._bridge_command("type", selector=input_json, text="")
         try:
             result = self._run_async_in_sync_context(self._type_text_async(input_json))
             return result
@@ -255,6 +296,8 @@ class BrowserAutomationTool:
     
     def _get_text(self, selector: str) -> str:
         """Get text content from an element"""
+        if self.browser_bridge_url:
+            return self._bridge_command("get_text", selector=selector)
         try:
             result = self._run_async_in_sync_context(self._get_text_async(selector))
             return result
@@ -272,6 +315,8 @@ class BrowserAutomationTool:
     
     def _get_page_content(self, mode: str = "") -> str:
         """Get page content"""
+        if self.browser_bridge_url:
+            return self._bridge_command("get_page_content", mode=mode or "")
         try:
             result = self._run_async_in_sync_context(self._get_page_content_async(mode))
             return result
@@ -311,6 +356,9 @@ class BrowserAutomationTool:
     
     def _take_screenshot(self, filename: str = "") -> str:
         """Take a screenshot"""
+        if self.browser_bridge_url:
+            path = filename or f"screenshot_{int(time.time())}.png"
+            return self._bridge_command("screenshot", path=path)
         try:
             result = self._run_async_in_sync_context(self._take_screenshot_async(filename))
             return result
@@ -327,6 +375,8 @@ class BrowserAutomationTool:
     
     def _wait(self, input_str: str) -> str:
         """Wait for time or element"""
+        if self.browser_bridge_url:
+            return self._bridge_command("wait", value=input_str or "1")
         try:
             result = self._run_async_in_sync_context(self._wait_async(input_str))
             return result
@@ -348,6 +398,8 @@ class BrowserAutomationTool:
     
     def _scroll(self, direction: str) -> str:
         """Scroll the page"""
+        if self.browser_bridge_url:
+            return self._bridge_command("scroll", direction=direction)
         try:
             result = self._run_async_in_sync_context(self._scroll_async(direction))
             return result
@@ -376,6 +428,12 @@ class BrowserAutomationTool:
     
     def _select_option(self, input_json: str) -> str:
         """Select an option from a dropdown"""
+        if self.browser_bridge_url:
+            try:
+                data = json.loads(input_json)
+                return self._bridge_command("select_option", selector=data.get("selector", ""), value=data.get("value", ""))
+            except json.JSONDecodeError:
+                return "Error: Input must be JSON with 'selector' and 'value' keys"
         try:
             result = self._run_async_in_sync_context(self._select_option_async(input_json))
             return result
@@ -396,6 +454,8 @@ class BrowserAutomationTool:
     
     def _get_url(self, _: str = "") -> str:
         """Get current URL"""
+        if self.browser_bridge_url:
+            return self._bridge_command("get_url")
         try:
             result = self._run_async_in_sync_context(self._get_url_async())
             return result
@@ -432,12 +492,12 @@ class BrowserAutomationTool:
             return f"Error: {str(e)}"
     
     async def _execute_with_cleanup(self, instructions: str, max_steps: int = 20) -> str:
-        """Async execution with guaranteed cleanup"""
+        """Async execution with guaranteed cleanup (skip cleanup when using browser bridge)"""
         try:
             return await self._execute_async(instructions, max_steps)
         finally:
-            # Always cleanup browser resources
-            await self._cleanup_browser()
+            if not self.browser_bridge_url:
+                await self._cleanup_browser()
     
     def _run_async_in_sync_context(self, coro):
         """Run async browser code from sync tool context (agent runs in worker thread via run_in_executor).
@@ -468,13 +528,15 @@ class BrowserAutomationTool:
     async def _execute_async(self, instructions: str, max_steps: int = 20) -> str:
         """Async execution implementation"""
         try:
-            # Store the event loop for sync tool calls
+            # Store the event loop for sync tool calls (used when tools run in executor)
             try:
                 self._event_loop = asyncio.get_running_loop()
             except RuntimeError:
                 self._event_loop = None
             
-            await self._initialize_browser()
+            # Only start local browser when not using bridge (bridge runs browser on user's machine)
+            if not self.browser_bridge_url:
+                await self._initialize_browser()
             
             # Wrap LLM caller in LangChain wrapper
             from .llm_langchain_wrapper import LangChainLLMWrapper
@@ -551,9 +613,13 @@ Begin by analyzing the user's instructions, then navigate to the required page (
                 lambda: agent_executor.invoke({"input": instructions}),
             )
             
-            # Get final page state
-            final_url = await self._get_url_async()
-            final_content = await self._get_page_content_async("summary")
+            # Get final page state (use bridge when remote browser)
+            if self.browser_bridge_url:
+                final_url = self._bridge_command("get_url")
+                final_content = self._bridge_command("get_page_content", mode="summary")
+            else:
+                final_url = await self._get_url_async()
+                final_content = await self._get_page_content_async("summary")
             
             output = result.get("output", "")
             intermediate_steps = result.get("intermediate_steps", [])

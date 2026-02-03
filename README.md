@@ -233,6 +233,13 @@ The Browser Automation tool uses AI (LangChain) and Playwright to control a web 
 
 **Note:** The browser runs in headless mode by default. Screenshots are saved to the current directory with timestamps.
 
+**Using your local browser (Browser Bridge):** When the AI runs in the cloud (e.g. Qwen/Gemini/Mistral APIs), it cannot directly control a browser on the backend server. To have the AI control *your* local Chrome on your machine:
+
+1. On your computer, install: `pip install playwright websockets` and `playwright install chromium`
+2. Run the bridge: `python browser_bridge.py` (from the project root). It listens on `ws://0.0.0.0:8765`.
+3. In the app (or API), set **browser_bridge_url** to `ws://localhost:8765` (or `ws://YOUR_PC_IP:8765` if the backend is on another machine).
+4. Run browser automation as usual. The cloud AI will send commands to the bridge; Playwright on your machine will drive your visible local browser.
+
 ### 4. System Monitoring
 
 #### Status Dashboard

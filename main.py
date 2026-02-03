@@ -1,8 +1,14 @@
+import sys
 import uvicorn
 import asyncio
 import logging
 from src.api import app
 from src.config import settings
+
+# On Windows, use ProactorEventLoop so Playwright (and other subprocess use) works.
+# SelectorEventLoop does not support subprocesses and raises NotImplementedError.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # Configure logging
 logging.basicConfig(

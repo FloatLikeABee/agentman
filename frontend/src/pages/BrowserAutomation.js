@@ -40,6 +40,7 @@ const BrowserAutomation = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState(null);
   const [headless, setHeadless] = useState(false); // Default to visible browser
+  const [browserBridgeUrl, setBrowserBridgeUrl] = useState('ws://localhost:8765');
 
   // Fetch providers
   const { data: providersData = { providers: [] } } = useQuery('providers', api.getProviders);
@@ -116,6 +117,7 @@ const BrowserAutomation = () => {
       model: selectedModel,
       max_steps: 20,
       headless: headless,
+      browser_bridge_url: browserBridgeUrl.trim() || 'ws://localhost:8765',
     });
   };
 
@@ -289,6 +291,24 @@ const BrowserAutomation = () => {
                     </Typography>
                   </Box>
                 }
+              />
+            </Grid>
+
+            {/* Local browser bridge (optional) */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Browser Bridge URL (optional)"
+                placeholder="ws://localhost:8765 — use your local browser when AI is in the cloud"
+                value={browserBridgeUrl}
+                onChange={(e) => setBrowserBridgeUrl(e.target.value)}
+                helperText="Run python browser_bridge.py on your machine, then enter its WebSocket URL so the cloud AI controls your local Chrome."
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '&:hover fieldset': { borderColor: '#9d4edd' },
+                  },
+                }}
               />
             </Grid>
 
