@@ -1,6 +1,6 @@
 # User's Instruction: Using the API Only
 
-This document describes how to use **Image Reader**, **PDF Reader**, **Web Crawler**, **Gathering**, **Conversations**, **Customization**, **Agents (with RAG)**, and **Flows** by calling the APIs directly (no UI). All examples use `http://localhost:8000` as the base URL. Replace with your server URL if different.
+This document describes how to use **Image Reader**, **PDF Reader**, **Web Crawler**, **Gathering**, **Graphic Document Generator**, **Conversations**, **Customization**, **Agents (with RAG)**, and **Flows** by calling the APIs directly (no UI). All examples use `http://localhost:8000` as the base URL. Replace with your server URL if different.
 
 **Interactive API docs (Swagger):** Open `http://localhost:8000/docs` in a browser to see full endpoint descriptions, request/response schemas, and try requests from the UI.
 
@@ -12,10 +12,11 @@ This document describes how to use **Image Reader**, **PDF Reader**, **Web Crawl
 2. [PDF Reader](#2-pdf-reader)
 3. [Web Crawler](#3-web-crawler)
 4. [Gathering](#4-gathering)
-5. [Conversations](#5-conversations)
-6. [Customization](#6-customization)
-7. [Agents with RAG](#7-agents-with-rag)
-8. [Flows](#8-flows)
+5. [Graphic Document Generator](#5-graphic-document-generator)
+6. [Conversations](#6-conversations)
+7. [Customization](#7-customization)
+8. [Agents with RAG](#8-agents-with-rag)
+9. [Flows](#9-flows)
 
 ---
 
@@ -276,11 +277,51 @@ curl -X POST http://localhost:8000/gathering/gather \
 
 ---
 
-## 5. Conversations
+## 5. Graphic Document Generator
+
+The Graphic Document Generator produces a **detailed markdown document** on a topic, with **AI-chosen illustrations**. The AI writes creative content (length and style are controlled by a fixed system prompt in the backend), decides where to place images, and the service calls the image generation API to create up to 5 images and embed them in the markdown.
+
+**Endpoint:** `POST /graphic-document/generate`  
+**Request body (JSON):** `topic` (required), `llm_provider` (optional, default: gemini), `model_name` (optional), `max_images` (optional, 1–5, default: 3).
+
+### 5.1 Generate a graphic document
+
+```bash
+curl -X POST http://localhost:8000/graphic-document/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "The Future of Renewable Energy"
+  }'
+```
+
+With optional provider, model, and number of images:
+
+```bash
+curl -X POST http://localhost:8000/graphic-document/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "How CRISPR is Changing Medicine",
+    "llm_provider": "gemini",
+    "model_name": "gemini-2.5-flash",
+    "max_images": 4
+  }'
+```
+
+**Response (success):**  
+`{"success": true, "markdown": "## ...\n\n... ![alt](/images/file/img_...png) ...", "error": null, "images_generated": 4}`
+
+- **markdown**: Full document in markdown. Image references use paths like `/images/file/filename.png`; resolve them against your API base URL (e.g. `http://localhost:8000`) when rendering.
+- **images_generated**: Number of images successfully generated and embedded.
+
+**Swagger:** The endpoint is documented under the **Graphic Document Generator** tag at `http://localhost:8000/docs`, with request body schema (`GraphicDocumentRequest`) and response schema (`GraphicDocumentResponse`).
+
+---
+
+## 6. Conversations
 
 Conversations let two AI models talk to each other (and optionally the user) for a fixed number of turns. You create a **configuration** (two models + system prompts), then **start** a session with a topic and **continue** until max turns.
 
-### 5.1 Create a conversation configuration
+### 6.1 Create a conversation configuration
 
 Create a config that defines model 1, model 2, and max turns. You need this `config_id` to start a session.
 
@@ -308,7 +349,7 @@ curl -X POST http://localhost:8000/conversations \
 
 **Response:** `{"id": "CONFIG_ID_HERE", "message": "Conversation configuration created successfully"}`. Save `id` as `config_id`.
 
-### 5.2 List and get configurations
+### 6.2 List and get configurations
 
 ```bash
 # List all configurations
@@ -318,7 +359,7 @@ curl -s http://localhost:8000/conversations | jq
 curl -s http://localhost:8000/conversations/CONFIG_ID | jq
 ```
 
-### 5.3 Start a conversation session
+### 6.3 Start a conversation session
 
 Start a new session with a topic. The two models will begin alternating.
 
@@ -333,7 +374,7 @@ curl -X POST http://localhost:8000/conversations/start \
 
 **Response:** Includes `session_id`, `turn_number`, `max_turns`, `is_complete`, `messages`, `conversation_history`. Save `session_id` for continue and history.
 
-### 5.4 Continue a conversation
+### 6.4 Continue a conversation
 
 Send another turn. You can optionally inject a `user_message`; otherwise the models continue between themselves.
 
@@ -356,7 +397,7 @@ curl -X POST http://localhost:8000/conversations/continue \
 
 **Response:** Same shape as start; `turn_number` and `conversation_history` update each time.
 
-### 5.5 Get conversation history
+### 6.5 Get conversation history
 
 Retrieve the full history for a session.
 
@@ -366,7 +407,7 @@ curl -s http://localhost:8000/conversations/history/SESSION_ID | jq
 
 **Response:** `{"session_id": "...", "config_id": "...", "config_name": "...", "started_at": "...", "total_turns": 5, "conversation_history": [...]}`
 
-### 5.6 List saved conversations and get content
+### 6.6 List saved conversations and get content
 
 If the server saves conversation transcripts to files:
 
@@ -378,7 +419,7 @@ curl -s http://localhost:8000/conversations/saved | jq
 curl -s "http://localhost:8000/conversations/saved/FILENAME.txt" | jq
 ```
 
-### 5.7 Update and delete a configuration
+### 6.7 Update and delete a configuration
 
 ```bash
 # Update (same body shape as create, partial ok depending on implementation)
@@ -392,11 +433,11 @@ curl -X DELETE http://localhost:8000/conversations/CONFIG_ID
 
 ---
 
-## 6. Customization
+## 7. Customization
 
 Customization profiles let you define reusable AI behavior: a **system prompt** plus an optional **RAG collection** for context. You create a profile once, then **query** it with short user prompts; the AI uses the profile’s system prompt and (if set) RAG context to answer.
 
-### 6.1 Create a customization profile
+### 7.1 Create a customization profile
 
 ```bash
 curl -X POST http://localhost:8000/customizations \
@@ -416,7 +457,7 @@ curl -X POST http://localhost:8000/customizations \
 - **rag_collection**: Optional. RAG collection name; if set, the query will pull context from it.
 - **llm_provider** / **model_name**: Optional overrides; omit to use server defaults.
 
-### 6.2 List and get customizations
+### 7.2 List and get customizations
 
 ```bash
 # List all customization profiles
@@ -426,7 +467,7 @@ curl -s http://localhost:8000/customizations | jq
 curl -s http://localhost:8000/customizations/PROFILE_ID | jq
 ```
 
-### 6.3 Query a customization (with RAG)
+### 7.3 Query a customization (with RAG)
 
 Send a user query; the API uses the profile’s system prompt and optional RAG context.
 
@@ -443,7 +484,7 @@ curl -X POST http://localhost:8000/customizations/PROFILE_ID/query \
 
 - **n_results**: Number of RAG documents to use (1–20, default 3).
 
-### 6.4 Update and delete
+### 7.4 Update and delete
 
 ```bash
 # Update (same body shape as create)
@@ -457,11 +498,11 @@ curl -X DELETE http://localhost:8000/customizations/PROFILE_ID
 
 ---
 
-## 7. Agents with RAG
+## 8. Agents with RAG
 
 Agents are AI assistants that can use **RAG collections** (for knowledge) and **tools** (e.g. web search, calculator). You create an agent with `rag_collections` and `tools`, then **run** it with a query.
 
-### 7.1 Create an agent (with RAG and tools)
+### 8.1 Create an agent (with RAG and tools)
 
 ```bash
 curl -X POST http://localhost:8000/agents \
@@ -487,7 +528,7 @@ curl -X POST http://localhost:8000/agents \
 - **tools**: List of tool IDs, e.g. `web_search`, `wikipedia`, `calculator`, `crawler`.
 - **system_prompt**: Optional; defines agent behavior.
 
-### 7.2 List and get agents
+### 8.2 List and get agents
 
 ```bash
 # List all agents
@@ -497,7 +538,7 @@ curl -s http://localhost:8000/agents | jq
 curl -s http://localhost:8000/agents/AGENT_ID | jq
 ```
 
-### 7.3 Run an agent
+### 8.3 Run an agent
 
 ```bash
 curl -X POST http://localhost:8000/agents/AGENT_ID/run \
@@ -515,7 +556,7 @@ curl -X POST http://localhost:8000/agents/AGENT_ID/run \
   -d '{"query": "What did we decide about feature X?", "context": {"thread_id": "123"}}'
 ```
 
-### 7.4 Run agent with streaming
+### 8.4 Run agent with streaming
 
 ```bash
 curl -X POST http://localhost:8000/agents/AGENT_ID/run/stream \
@@ -526,7 +567,7 @@ curl -X POST http://localhost:8000/agents/AGENT_ID/run/stream \
 
 Returns streaming text (e.g. `text/plain`).
 
-### 7.5 Update and delete agent
+### 8.5 Update and delete agent
 
 ```bash
 # Update (same body shape as create)
@@ -540,11 +581,11 @@ curl -X DELETE http://localhost:8000/agents/AGENT_ID
 
 ---
 
-## 8. Flows
+## 9. Flows
 
 Flows chain steps together: **Customization**, **Agent**, **DB Tool**, **Request**, **Crawler**, or **Dialogue**. Each step can use the previous step’s output as input. Create a flow with an ordered list of steps, then **execute** it with optional initial input.
 
-### 8.1 List and get flows
+### 9.1 List and get flows
 
 ```bash
 # List all flows
@@ -554,7 +595,7 @@ curl -s http://localhost:8000/flows | jq
 curl -s http://localhost:8000/flows/FLOW_ID | jq
 ```
 
-### 8.2 Create a flow
+### 9.2 Create a flow
 
 Each step has: **step_id**, **step_type**, **step_name**, **resource_id** (ID of the customization, agent, db_tool, request, or crawler), and optionally **use_previous_output** (use previous step’s output as input).
 
@@ -592,7 +633,7 @@ curl -X POST http://localhost:8000/flows \
 - **resource_id**: For `customization` use customization profile ID; for `agent` use agent ID; for `db_tool` use db-tool ID; for `request` use request-tool ID; for `crawler` use crawler profile ID; for `dialogue` use dialogue ID.
 - **use_previous_output**: If `true`, this step receives the previous step’s output as input.
 
-### 8.3 Execute a flow
+### 9.3 Execute a flow
 
 ```bash
 curl -X POST http://localhost:8000/flows/FLOW_ID/execute \
@@ -608,7 +649,7 @@ curl -X POST http://localhost:8000/flows/FLOW_ID/execute \
 - **initial_input**: Optional; used as input for the first step if the step expects it.
 - **context**: Optional key-value context for execution.
 
-### 8.4 Update and delete flow
+### 9.4 Update and delete flow
 
 ```bash
 # Update (same body shape as create)
@@ -630,6 +671,7 @@ curl -X DELETE http://localhost:8000/flows/FLOW_ID
 | PDF Reader      | `/pdf-reader/`         | `POST read` (file + system_prompt) |
 | Web Crawler     | `/crawler/`            | `POST crawl`, `GET/POST/PUT/DELETE profiles`, `POST profiles/{id}/execute` |
 | Gathering       | `/gathering/`          | `POST gather` (prompt, max_iterations, optional provider/model) |
+| Graphic Document| `/graphic-document/`   | `POST generate` (topic, optional llm_provider, model_name, max_images 1–5) |
 | Conversations   | `/conversations/`      | `POST` create, `GET` list, `GET {id}`, `POST start`, `POST continue`, `GET history/{session_id}` |
 | Customization   | `/customizations/`    | `POST` create, `GET` list, `GET {id}`, `PUT` update, `DELETE` delete, `POST {id}/query` (with RAG) |
 | Agents          | `/agents/`             | `POST` create (rag_collections, tools), `GET` list, `GET {id}`, `PUT` update, `DELETE` delete, `POST {id}/run`, `POST {id}/run/stream` |

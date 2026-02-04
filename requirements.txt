@@ -45,6 +45,9 @@ yfinance>=0.2.66
 # Database drivers
 pyodbc>=5.0.0
 
+# Markdown to HTML (graphic document export)
+markdown>=3.5.0
+
 # Utilities
 python-dotenv==1.0.1
 pydantic-settings>=2.0.0

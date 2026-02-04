@@ -169,6 +169,23 @@ class GatheringResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if success is False")
 
 
+class GraphicDocumentRequest(BaseModel):
+    """Request for Graphic Document Generator: topic and optional LLM/image settings."""
+    topic: str = Field(..., min_length=1, description="Topic for the document (e.g. 'The Future of Renewable Energy')")
+    llm_provider: Optional[str] = Field("gemini", description="LLM provider: gemini, qwen, mistral")
+    model_name: Optional[str] = Field(None, description="Model name (default: provider default)")
+    max_images: Optional[int] = Field(3, ge=1, le=5, description="Number of images to generate (1–5, default: 3)")
+
+
+class GraphicDocumentResponse(BaseModel):
+    """Response from Graphic Document Generator."""
+    success: bool = Field(..., description="Whether generation succeeded")
+    markdown: str = Field("", description="Final markdown document with embedded image references")
+    error: Optional[str] = Field(None, description="Error message if success is False")
+    images_generated: int = Field(0, description="Number of images successfully generated and embedded")
+    html_filename: Optional[str] = Field(None, description="Saved HTML file name (with base64 images); fetch via GET /graphic-document/file/{html_filename}")
+
+
 class SystemStatus(BaseModel):
     llm_providers_available: List[str]
     default_llm_provider: str

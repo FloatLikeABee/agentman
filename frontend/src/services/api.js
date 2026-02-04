@@ -362,6 +362,12 @@ export const deleteGeneratedImage = async (filename) => {
   return response.data;
 };
 
+// Graphic Document Generator
+export const generateGraphicDocument = async (payload) => {
+  const response = await api.post('/graphic-document/generate', payload);
+  return response.data;
+};
+
 // Browser Automation
 export const executeBrowserAutomation = async (payload) => {
   const response = await api.post('/browser-automation/execute', payload);
@@ -565,6 +571,8 @@ const apiService = {
   polishImagePrompt,
   getGeneratedImages,
   deleteGeneratedImage,
+  // Graphic Document Generator
+  generateGraphicDocument,
   // Browser Automation
   executeBrowserAutomation,
   // Image Reader
