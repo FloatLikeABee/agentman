@@ -20,13 +20,13 @@ import {
   Info as StatusIcon,
   Tune as CustomIcon,
   Menu as MenuIcon,
-  Web as CrawlerIcon,
+  Language as CrawlerIcon,
   TravelExplore as GatheringIcon,
   Dns as DBIcon,
   Chat as DialogueIcon,
   AccountTree as FlowIcon,
   Image as ImageIcon,
-  Web as BrowserIcon,
+  Public as BrowserIcon,
   TextFields as TextIcon,
   PictureAsPdf as PDFIcon,
 } from '@mui/icons-material';
@@ -78,7 +78,7 @@ const Header = () => {
 
   return (
     <AppBar position="sticky" sx={{ top: 0, zIndex: 1300, mb: 2 }}>
-      <Toolbar>
+      <Toolbar sx={{ color: '#e0e0e0' }}>
         <Typography 
           variant="h6" 
           component="div" 
@@ -106,6 +106,7 @@ const Header = () => {
               edge="end"
               sx={{
                 color: '#9d4edd',
+                '& .MuiSvgIcon-root': { fontSize: 24, fill: 'currentColor' },
                 '&:hover': {
                   color: '#ff6b35',
                   backgroundColor: 'rgba(157, 78, 221, 0.1)',
@@ -177,6 +178,10 @@ const Header = () => {
                       : '1px solid transparent',
                     borderRadius: '8px',
                     transition: 'all 0.3s ease',
+                    '& .MuiSvgIcon-root': {
+                      fontSize: 24,
+                      fill: 'currentColor',
+                    },
                     '&:hover': {
                       color: '#9d4edd',
                       backgroundColor: 'rgba(157, 78, 221, 0.2)',

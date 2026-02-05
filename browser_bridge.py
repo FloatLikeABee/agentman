@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 HOST = "0.0.0.0"  # Listen on all interfaces so remote backend can connect
 PORT = 8765
 HEADLESS = False  # Visible browser so you can see what the AI is doing
+ACTION_TIMEOUT_MS = 15000  # Timeout for element-based actions (fill, click, etc.) so errors return sooner
 
 # Global browser state
 playwright = None
@@ -91,12 +92,12 @@ async def handle_command(data: dict) -> dict:
         elif action == "type":
             selector = data.get("selector", "")
             text = data.get("text", "")
-            await page.fill(selector, text)
+            await page.fill(selector, text, timeout=ACTION_TIMEOUT_MS)
             return {"success": True, "result": f"Typed into {selector}"}
 
         elif action == "get_text":
             selector = data.get("selector", "")
-            text = await page.text_content(selector)
+            text = await page.text_content(selector, timeout=ACTION_TIMEOUT_MS)
             return {"success": True, "result": text or f"No text for {selector}"}
 
         elif action == "get_page_content":
@@ -149,7 +150,7 @@ async def handle_command(data: dict) -> dict:
         elif action == "select_option":
             selector = data.get("selector", "")
             value = data.get("value", "")
-            await page.select_option(selector, value)
+            await page.select_option(selector, value, timeout=ACTION_TIMEOUT_MS)
             return {"success": True, "result": f"Selected {value} in {selector}"}
 
         elif action == "get_url":

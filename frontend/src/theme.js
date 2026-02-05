@@ -419,6 +419,16 @@ const theme = createTheme({
         },
       },
     },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          '& .MuiSvgIcon-root': {
+            fontSize: '1.5rem',
+            fill: 'currentColor',
+          },
+        },
+      },
+    },
     MuiInputLabel: {
       styleOverrides: {
         root: {
