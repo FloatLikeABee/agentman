@@ -14,6 +14,7 @@ import Gathering from './pages/Gathering';
 import DBTools from './pages/DBTools';
 import Dialogue from './pages/Dialogue';
 import Flow from './pages/Flow';
+import GraphicDocumentGenerator from './pages/GraphicDocumentGenerator';
 import ImageGenerator from './pages/ImageGenerator';
 import BrowserAutomation from './pages/BrowserAutomation';
 import ImageReader from './pages/ImageReader';
@@ -48,6 +49,7 @@ function App() {
               <Route path="/db-tools" element={<DBTools />} />
               <Route path="/dialogue" element={<Dialogue />} />
               <Route path="/flow" element={<Flow />} />
+              <Route path="/graphic-document" element={<GraphicDocumentGenerator />} />
               <Route path="/status" element={<SystemStatus />} />
             </Routes>
           </Container>

@@ -69,6 +69,7 @@ build/
 ### Local data / databases ###
 chroma_db/
 data/documents/
+data/graphic_documents/
 data/*.json
 data/scraped_content/
 *.sqlite3

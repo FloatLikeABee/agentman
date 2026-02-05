@@ -24,6 +24,7 @@ class GeminiCaller(BaseLLMCaller):
         return types.GenerateContentConfig(
             temperature=kwargs.get("temperature", self.default_temperature),
             max_output_tokens=kwargs.get("max_tokens", self.default_max_tokens),
+            system_instruction=kwargs.get("system_prompt") or None,
         )
 
     def generate(self, prompt: str, **kwargs) -> str:

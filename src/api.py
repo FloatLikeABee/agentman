@@ -26,6 +26,8 @@ from .models import (
     DirectLLMResponse,
     GatheringRequest,
     GatheringResponse,
+    GraphicDocumentRequest,
+    GraphicDocumentResponse,
     LLMProviderType,
     CustomizationCreateRequest,
     CustomizationQueryRequest,
@@ -220,6 +222,7 @@ class RAGAPI:
             - **Image Reader**: OCR from images (Qwen Vision) and AI processing
             - **PDF Reader**: PDF text extraction and AI processing
             - **Gathering**: AI-powered data gathering from Wikipedia, Reddit, and web search
+            - **Graphic Document Generator**: AI-generated markdown documents on a topic with AI-chosen illustrations (image API)
             
             ## 🔧 Technical Details
             
@@ -381,6 +384,9 @@ class RAGAPI:
         
         # Setup gathering routes
         self._setup_gathering_routes()
+        
+        # Setup graphic document generator routes
+        self._setup_graphic_document_routes()
         
         # Setup static file handlers for common browser requests
         self._setup_static_handlers()
@@ -4924,29 +4930,15 @@ Question: {{input}}
 
     def _setup_image_generation_routes(self):
         """Setup image generation routes"""
-        import requests
-        from urllib.parse import quote_plus
-        from datetime import datetime
-        import json
-        import uuid
-        
-        # Create images directory if it doesn't exist
-        images_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'generated_images')
+        from src.image_generation import (
+            generate_image_and_save,
+            load_images_metadata,
+            save_images_metadata,
+            get_images_dir,
+        )
+        images_dir = get_images_dir()
         os.makedirs(images_dir, exist_ok=True)
-        
-        # Images metadata file
-        images_meta_file = os.path.join(images_dir, 'images_metadata.json')
-        
-        def load_images_metadata():
-            if os.path.exists(images_meta_file):
-                with open(images_meta_file, 'r') as f:
-                    return json.load(f)
-            return []
-        
-        def save_images_metadata(metadata):
-            with open(images_meta_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
-        
+
         @self.app.post(
             "/images/generate",
             tags=["Image Generation"],
@@ -4958,62 +4950,10 @@ Question: {{input}}
             try:
                 prompt = request.get('prompt', '')
                 save_image = request.get('save', True)
-                
                 if not prompt:
                     raise HTTPException(status_code=400, detail="Prompt is required")
-                
-                # URL encode the prompt
-                encoded_prompt = quote_plus(prompt)
-                
-                # Build the Pollinations API URL
-                image_url = f"https://gen.pollinations.ai/image/{encoded_prompt}?model=flux"
-                
-                result = {
-                    "image_url": image_url,
-                    "prompt": prompt,
-                }
-                
-                # Save the image if requested
-                if save_image:
-                    try:
-                        # Generate unique filename
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        unique_id = str(uuid.uuid4())[:8]
-                        filename = f"img_{timestamp}_{unique_id}.png"
-                        filepath = os.path.join(images_dir, filename)
-                        
-                        # Download and save the image
-                        headers = {
-                            'Authorization': 'Bearer pk_gzM6GGeMB1HQWKgW',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        }
-                        response = requests.get(image_url, headers=headers, timeout=60)
-                        
-                        if response.status_code == 200:
-                            with open(filepath, 'wb') as f:
-                                f.write(response.content)
-                            
-                            # Update metadata
-                            metadata = load_images_metadata()
-                            metadata.insert(0, {
-                                "filename": filename,
-                                "prompt": prompt,
-                                "created_at": datetime.now().isoformat(),
-                                "url": image_url,
-                            })
-                            save_images_metadata(metadata)
-                            
-                            result["saved"] = True
-                            result["filename"] = filename
-                        else:
-                            result["saved"] = False
-                            result["save_error"] = f"Failed to download image: {response.status_code}"
-                    except Exception as e:
-                        result["saved"] = False
-                        result["save_error"] = str(e)
-                
+                result = generate_image_and_save(prompt, save=save_image)
                 return result
-                
             except HTTPException:
                 raise
             except Exception as e:
@@ -5164,6 +5104,86 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
             except Exception as e:
                 self.logger.error(f"Error deleting image: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+    def _setup_graphic_document_routes(self):
+        """Setup Graphic Document Generator routes: AI-generated markdown document with illustrations."""
+        from src.graphic_document_service import generate_graphic_document
+
+        @self.app.post(
+            "/graphic-document/generate",
+            tags=["Graphic Document Generator"],
+            summary="Generate Graphic Document",
+            description="Generate a detailed, creative markdown document on a topic with AI-chosen illustrations. "
+                        "The AI writes the content (length and style controlled by a fixed system prompt), inserts placeholders for images, "
+                        "then the service generates up to 5 images via the image API and embeds them in the markdown. "
+                        "Use **topic** (required), optional **llm_provider** (gemini, qwen, mistral), **model_name**, and **max_images** (1–5).",
+            response_model=GraphicDocumentResponse,
+            response_description="Markdown document with embedded image references, or error.",
+            responses={
+                200: {
+                    "description": "Graphic document generated successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "success": True,
+                                "markdown": "## Topic\n\nContent...\n\n![desc](/images/file/img_20250119_123456_abc1.png)",
+                                "error": None,
+                                "images_generated": 3,
+                                "html_filename": "document_20250119_123456.html",
+                            }
+                        }
+                    },
+                },
+                400: {"description": "Bad request (e.g. missing or empty topic)"},
+                500: {"description": "Error during content or image generation"},
+            },
+        )
+        async def graphic_document_generate(request: GraphicDocumentRequest) -> GraphicDocumentResponse:
+            """Generate graphic document: topic → AI content with placeholders → image generation → final markdown."""
+            try:
+                result = generate_graphic_document(
+                    topic=request.topic.strip(),
+                    llm_provider=(request.llm_provider or "gemini").strip(),
+                    model_name=request.model_name.strip() if request.model_name else None,
+                    max_images=request.max_images or 3,
+                    polish_image_prompts=True,
+                )
+                return GraphicDocumentResponse(
+                    success=result.get("success", False),
+                    markdown=result.get("markdown", ""),
+                    error=result.get("error"),
+                    images_generated=result.get("images_generated", 0),
+                    html_filename=result.get("html_filename"),
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error generating graphic document: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/graphic-document/file/{filename}",
+            tags=["Graphic Document Generator"],
+            summary="Get saved HTML document",
+            description="Serve a saved graphic document HTML file (with base64-embedded images). Use when html_filename is returned from generate.",
+        )
+        async def get_graphic_document_file(filename: str, download: bool = False):
+            """Serve saved HTML file from data/graphic_documents. Use ?download=1 to force download."""
+            from fastapi.responses import FileResponse
+            from src.graphic_document_service import get_graphic_documents_dir
+            dir_path = get_graphic_documents_dir()
+            if ".." in filename or "/" in filename or "\\" in filename:
+                raise HTTPException(status_code=400, detail="Invalid filename")
+            filepath = os.path.join(dir_path, filename)
+            if not os.path.isfile(filepath):
+                raise HTTPException(status_code=404, detail="File not found")
+            disposition = "attachment" if download else "inline"
+            return FileResponse(
+                filepath,
+                media_type="text/html; charset=utf-8",
+                filename=filename,
+                headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+            )
 
     def _setup_browser_automation_routes(self):
         """Setup browser automation routes"""

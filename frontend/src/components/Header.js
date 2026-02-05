@@ -25,6 +25,7 @@ import {
   Dns as DBIcon,
   Chat as DialogueIcon,
   AccountTree as FlowIcon,
+  Description as GraphicDocIcon,
   Image as ImageIcon,
   Public as BrowserIcon,
   TextFields as TextIcon,
@@ -60,6 +61,7 @@ const Header = () => {
     { path: '/gathering', label: 'Gathering', icon: <GatheringIcon /> },
     { path: '/dialogue', label: 'Dialogue', icon: <DialogueIcon /> },
     { path: '/flow', label: 'Flow', icon: <FlowIcon /> },
+    { path: '/graphic-document', label: 'Graphic Doc', icon: <GraphicDocIcon /> },
     { path: '/status', label: 'System', icon: <StatusIcon /> },
   ];
 
