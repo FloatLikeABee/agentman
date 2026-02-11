@@ -16,8 +16,12 @@ import {
   Select,
   MenuItem,
   Slider,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
 } from '@mui/material';
-import { AutoAwesome as GenerateIcon, Code as MarkdownIcon, Html as HtmlIcon } from '@mui/icons-material';
+import { AutoAwesome as GenerateIcon, Code as MarkdownIcon, Html as HtmlIcon, OpenInFull as ExpandIcon, Close as CloseIcon } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { useQuery, useMutation } from 'react-query';
 import api from '../services/api';
@@ -68,6 +72,9 @@ const GraphicDocumentGenerator = () => {
   const [maxImages, setMaxImages] = useState(3);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [expandOpen, setExpandOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('markdown'); // 'markdown' | 'html'
+  const [imageErrors, setImageErrors] = useState(0);
 
   const { data: providersData = { providers: [] } } = useQuery('providers', api.getProviders, { retry: false });
   const providers = (providersData && providersData.providers) ? providersData.providers : [];
@@ -120,12 +127,11 @@ const GraphicDocumentGenerator = () => {
   const markdownContent = result && result.success ? (result.markdown || '').trim() : '';
   const imagesGenerated = result && result.success ? (result.images_generated ?? 0) : 0;
   const htmlFilename = result && result.success ? result.html_filename : null;
-  const [viewMode, setViewMode] = useState('markdown'); // 'markdown' | 'html'
-  const [imageErrors, setImageErrors] = useState(0);
 
   const markdownComponents = useMemo(
     () => ({
       img: ({ src, alt, ...props }) => {
+        // Resolve /images/file/... against API (or use as-is when proxied)
         const href = src && src.startsWith('/') ? `${API_BASE}${src}` : src;
         return (
           <ImageWithFallback
@@ -278,6 +284,15 @@ const GraphicDocumentGenerator = () => {
                     <Button size="small" variant="outlined" onClick={handleSaveMarkdown} sx={{ fontSize: '0.75rem', py: 0.5, px: 1 }}>
                       Save MD
                     </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<ExpandIcon />}
+                      onClick={() => setExpandOpen(true)}
+                      sx={{ fontSize: '0.75rem', py: 0.5, px: 1 }}
+                    >
+                      Expand
+                    </Button>
                   </Box>
                 )}
               </Box>
@@ -307,15 +322,18 @@ const GraphicDocumentGenerator = () => {
                 </Box>
               )}
               {result && !generateMutation.isLoading && (
-                <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pr: 0.5, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', pr: 0.5, display: 'flex', flexDirection: 'column' }}>
                   {result.success ? (
                     viewMode === 'html' && htmlFilename ? (
-                      <Paper variant="outlined" sx={{ flex: 1, minHeight: 200, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      <Paper variant="outlined" sx={{ flex: 1, minHeight: 120, maxHeight: 220, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                         <iframe
-                          title="Graphic document HTML"
+                          title="Graphic document HTML preview"
                           src={`${API_BASE}/graphic-document/file/${encodeURIComponent(htmlFilename)}`}
-                          style={{ flex: 1, width: '100%', minHeight: 400, border: 'none' }}
+                          style={{ flex: 1, width: '100%', minHeight: 120, maxHeight: 220, border: 'none' }}
                         />
+                        <Typography variant="caption" color="text.secondary" sx={{ p: 1, textAlign: 'center' }}>
+                          Click Expand to view full document
+                        </Typography>
                       </Paper>
                     ) : (
                       <Paper
@@ -324,14 +342,17 @@ const GraphicDocumentGenerator = () => {
                           p: 2,
                           borderColor: 'primary.main',
                           bgcolor: 'rgba(25, 118, 210, 0.04)',
-                          overflow: 'auto',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
+                          overflow: 'hidden',
+                          maxHeight: 220,
+                          display: 'flex',
+                          flexDirection: 'column',
                         }}
                       >
                         <Box
                           className="markdown-body"
                           sx={{
+                            overflow: 'auto',
+                            maxHeight: 180,
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word',
                             '& h1, & h2, & h3': { mt: 1.5, mb: 0.5, fontWeight: 600 },
@@ -344,6 +365,9 @@ const GraphicDocumentGenerator = () => {
                         >
                           <ReactMarkdown components={markdownComponents}>{markdownContent || 'No content.'}</ReactMarkdown>
                         </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, flexShrink: 0 }}>
+                          Click Expand to view full document with images
+                        </Typography>
                       </Paper>
                     )
                   ) : (
@@ -355,6 +379,81 @@ const GraphicDocumentGenerator = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Dialog
+        open={expandOpen}
+        onClose={() => setExpandOpen(false)}
+        maxWidth={false}
+        fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            width: '90vw',
+            maxWidth: 960,
+            height: '85vh',
+            maxHeight: 720,
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.5 }}>
+          <Typography variant="h6">Document</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {markdownContent && htmlFilename && (
+              <ButtonGroup size="small" variant="outlined">
+                <Button
+                  startIcon={<MarkdownIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => setViewMode('markdown')}
+                  variant={viewMode === 'markdown' ? 'contained' : 'outlined'}
+                >
+                  MD
+                </Button>
+                <Button
+                  startIcon={<HtmlIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => setViewMode('html')}
+                  variant={viewMode === 'html' ? 'contained' : 'outlined'}
+                >
+                  HTML
+                </Button>
+              </ButtonGroup>
+            )}
+            <IconButton size="small" onClick={() => setExpandOpen(false)} aria-label="Close">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {markdownContent && (
+            viewMode === 'html' && htmlFilename ? (
+              <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <iframe
+                  title="Graphic document HTML full"
+                  src={`${API_BASE}/graphic-document/file/${encodeURIComponent(htmlFilename)}`}
+                  style={{ width: '100%', height: '100%', minHeight: 400, border: 'none' }}
+                />
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  p: 3,
+                  overflow: 'auto',
+                  flex: 1,
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word',
+                  '& h1': { fontSize: '1.75rem', fontWeight: 700, mt: 0, mb: 1 },
+                  '& h2': { fontSize: '1.35rem', fontWeight: 600, mt: 2, mb: 0.75 },
+                  '& h3': { fontSize: '1.1rem', fontWeight: 600, mt: 1.5, mb: 0.5 },
+                  '& p': { mb: 1.25, lineHeight: 1.7 },
+                  '& ul, & ol': { pl: 2.5, mb: 1.25 },
+                  '& img': { maxWidth: '100%', height: 'auto', borderRadius: 2, my: 1.5 },
+                  '& pre': { overflow: 'auto', p: 2, bgcolor: 'action.hover', borderRadius: 1 },
+                  '& code': { fontFamily: 'monospace', fontSize: '0.9em' },
+                }}
+              >
+                <ReactMarkdown components={markdownComponents}>{markdownContent}</ReactMarkdown>
+              </Box>
+            )
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };
