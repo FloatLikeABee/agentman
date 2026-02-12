@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import Optional, List
 import os
 
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     # API settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    debug_mode: bool = True
+    debug_mode: bool = Field(True, validation_alias="DEBUG")  # .env can use DEBUG=true (or DEBUG_MODE=true)
     api_timeout: int = 180  # Timeout in seconds for LLM API calls (increased for Qwen compatibility)
 
     # CORS settings - allow all by default
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # Ignore extra env vars (e.g. DEBUG) so .env from env.example doesn't raise
 
 
 settings = Settings()
