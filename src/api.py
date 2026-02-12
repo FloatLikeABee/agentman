@@ -10,6 +10,7 @@ import sys
 from typing import List, Dict, Any, Optional
 import asyncio
 import os
+from urllib.parse import quote
 
 from .config import settings
 from .models import (
@@ -5178,11 +5179,18 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
             if not os.path.isfile(filepath):
                 raise HTTPException(status_code=404, detail="File not found")
             disposition = "attachment" if download else "inline"
+            
+            # HTTP headers must be latin-1 encodable; Chinese characters in filename break this.
+            # Use RFC 5987 encoding: ascii fallback + UTF-8 encoded filename* parameter.
+            fallback_name = "document.html"
+            quoted_name = quote(filename)
+            content_disposition = (
+                f'{disposition}; filename="{fallback_name}"; filename*=UTF-8\'\'{quoted_name}'
+            )
             return FileResponse(
                 filepath,
                 media_type="text/html; charset=utf-8",
-                filename=filename,
-                headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+                headers={"Content-Disposition": content_disposition},
             )
 
     def _setup_browser_automation_routes(self):
