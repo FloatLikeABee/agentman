@@ -104,7 +104,12 @@ class AgentManager:
 
     def get_available_providers(self) -> List[str]:
         """Get list of available LLM providers"""
-        return LLMFactory.get_available_providers()
+        providers = LLMFactory.get_available_providers()
+        # Fallback: if factory has not registered callers yet (e.g. import issues),
+        # return the known built‑in providers so the UI always has options.
+        if not providers:
+            providers = ["gemini", "qwen", "mistral"]
+        return providers
 
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Get list of available models for all providers"""

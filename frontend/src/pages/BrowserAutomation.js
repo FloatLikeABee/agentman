@@ -42,23 +42,43 @@ const BrowserAutomation = () => {
   const [headless, setHeadless] = useState(false); // Default to visible browser
   const [browserBridgeUrl, setBrowserBridgeUrl] = useState('ws://localhost:8765');
 
-  // Fetch providers
-  const { data: providersData = { providers: [] } } = useQuery('providers', api.getProviders);
-  const providers = providersData.providers || [];
+  // Fetch providers (with frontend fallback so the UI always has choices)
+  const { data: providersData } = useQuery('providers', api.getProviders);
+  const providers = useMemo(() => {
+    const fromApi = (providersData && Array.isArray(providersData.providers))
+      ? providersData.providers
+      : [];
+    if (fromApi.length > 0) {
+      return fromApi;
+    }
+    // Fallback: known built‑in providers used by the backend
+    return ['qwen', 'gemini', 'mistral'];
+  }, [providersData]);
 
-  // Fetch models and transform to {provider: [model1, model2, ...]} format
-  const { data: modelsData = [] } = useQuery('models', api.getModels);
+  // Fetch models and transform to {provider: [model1, model2, ...]} format,
+  // with sensible defaults if the API is unavailable.
+  const { data: modelsData } = useQuery('models', api.getModels);
   const models = useMemo(() => {
-    const modelsByProvider = {};
-    (Array.isArray(modelsData) ? modelsData : []).forEach((model) => {
-      const provider = model.provider;
-      if (!modelsByProvider[provider]) {
-        modelsByProvider[provider] = [];
-      }
-      if (model.name && !modelsByProvider[provider].includes(model.name)) {
-        modelsByProvider[provider].push(model.name);
-      }
-    });
+    const modelsByProvider = {
+      // Fallbacks match backend defaults in src/config.py / AgentManager
+      qwen: ['qwen3-max'],
+      gemini: ['gemini-2.5-flash'],
+      mistral: ['mistral-large-latest'],
+    };
+
+    if (Array.isArray(modelsData)) {
+      modelsData.forEach((model) => {
+        const provider = model.provider;
+        if (!provider || !model.name) return;
+        if (!modelsByProvider[provider]) {
+          modelsByProvider[provider] = [];
+        }
+        if (!modelsByProvider[provider].includes(model.name)) {
+          modelsByProvider[provider].push(model.name);
+        }
+      });
+    }
+
     return modelsByProvider;
   }, [modelsData]);
 
