@@ -38,11 +38,14 @@ from .models import (
     CrawlerProfile,
     CrawlerCreateRequest,
     CrawlerUpdateRequest,
+    DatabaseConnectionConfig,
     DatabaseToolProfile,
     DatabaseToolCreateRequest,
     DatabaseToolUpdateRequest,
     DatabaseToolPreviewResponse,
     DatabaseToolExecuteRequest,
+    TextToSQLRequest,
+    TextToSQLResponse,
     DatabaseType,
     RequestProfile,
     RequestCreateRequest,
@@ -85,6 +88,7 @@ from .crawler import CrawlerService
 from .crawler_manager import CrawlerManager
 from .gathering_service import GatheringService
 from .db_tools import DatabaseToolsManager
+from .text_to_sql import TextToSQLService
 from .request_tools import RequestToolsManager
 from .image_reader import ImageReader
 from .pdf_reader import PDFReader
@@ -3019,6 +3023,95 @@ Question: {{input}}
             except Exception as e:
                 self.logger.error(f"Error executing database tool {tool_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+        # Text-to-SQL (database submodule): natural language → SQL → run → LLM summary
+        text_to_sql_service = TextToSQLService(db_tools_manager=self.db_tools_manager)
+        @self.app.post(
+            "/db-tools/text-to-sql",
+            tags=["Database Tools"],
+            summary="Text-to-SQL",
+            description="Convert natural language to SQL using schema, run the query, and summarize results with the LLM. Provide either db_tool_id or connection_config (SQL Server).",
+            response_model=TextToSQLResponse,
+            response_description="Generated SQL, result columns/rows, and LLM-generated natural language summary.",
+            responses={
+                200: {
+                    "description": "Text-to-SQL completed successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "sql": "SELECT COUNT(*) AS run_count FROM LogiReportRunHistory WHERE run_date >= DATEADD(day, -7, GETDATE())",
+                                "columns": ["run_count"],
+                                "rows": [[42]],
+                                "total_rows": 1,
+                                "summary": "There were 42 report runs in the last 7 days.",
+                                "error": None
+                            }
+                        }
+                    }
+                },
+                400: {"description": "Bad request (e.g. missing question, or neither db_tool_id nor connection_config)"},
+                500: {"description": "SQL generation, query execution, or LLM summary failed"},
+            }
+        )
+        async def text_to_sql(req: TextToSQLRequest):
+            """
+            **Text-to-SQL workflow**
+
+            1. **Schema**: Use `schema_text` (raw DDL/description) or `schema_tables` (introspected from SQL Server).
+            2. **Generate SQL**: LLM converts the user question into a SQL query (SQL Server dialect).
+            3. **Retrieval**: Execute the query (using `db_tool_id` profile or `connection_config`).
+            4. **Augmentation**: LLM summarizes the result rows in natural language.
+
+            **Request body:**
+            - **question** (required): Natural language question.
+            - **db_tool_id** (optional): Use an existing Database Tool profile.
+            - **connection_config** (optional): SQL Server connection (host, port, database, username, password). Use when not using db_tool_id.
+            - **schema_tables** (optional): Table names to introspect (e.g. `["LogiReportRunHistory", "LogiReport", "User"]`).
+            - **schema_text** (optional): Raw schema description; if set, overrides schema_tables.
+            - **provider** (optional): LLM provider — `gemini`, `qwen`, or `mistral` (default: qwen).
+            - **model** (optional): LLM model name (default: provider default).
+            """
+            try:
+                if not req.question or not req.question.strip():
+                    raise HTTPException(status_code=400, detail="question is required")
+                connection_config = req.connection_config
+                connection_string = req.connection_string.strip() if req.connection_string and req.connection_string.strip() else None
+                default_pwd = getattr(settings, "text_to_sql_default_password", None) or ""
+                if not default_pwd.strip():
+                    default_pwd = "$transfinder2006"
+                if not req.db_tool_id and not connection_config and not connection_string:
+                    connection_config = DatabaseConnectionConfig(
+                        host=settings.text_to_sql_default_host,
+                        port=settings.text_to_sql_default_port,
+                        database=settings.text_to_sql_default_database,
+                        username=settings.text_to_sql_default_username,
+                        password=default_pwd,
+                    )
+                elif connection_config and (not connection_config.password or not connection_config.password.strip()):
+                    connection_config = DatabaseConnectionConfig(
+                        host=connection_config.host,
+                        port=connection_config.port,
+                        database=connection_config.database,
+                        username=connection_config.username,
+                        password=default_pwd,
+                    )
+                result = text_to_sql_service.run(
+                    question=req.question,
+                    db_tool_id=req.db_tool_id,
+                    connection_config=connection_config,
+                    connection_string=connection_string,
+                    schema_tables=req.schema_tables,
+                    schema_text=req.schema_text,
+                    provider=req.provider or "qwen",
+                    model=req.model,
+                )
+                return TextToSQLResponse(**result)
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Text-to-SQL error: {e}")
+                import traceback
+                raise HTTPException(status_code=500, detail=f"{str(e)}\n{traceback.format_exc()}")
 
         # Request Tools Endpoints
         @self.app.post(

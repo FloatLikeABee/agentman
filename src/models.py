@@ -371,6 +371,41 @@ class DatabaseToolExecuteRequest(BaseModel):
     sql_input: Optional[str] = Field(None, description="Optional dynamic SQL input (WHERE condition or full SQL statement)")
 
 
+class TextToSQLRequest(BaseModel):
+    """Request for Text-to-SQL: natural language question → SQL → retrieval → LLM summary.
+    Provide db_tool_id, or connection_config (ODBC-style), or connection_string (OLE DB e.g. SQLOLEDB)."""
+    question: str = Field(..., description="Natural language question about the data")
+    db_tool_id: Optional[str] = Field(None, description="Use an existing database tool profile by ID (optional)")
+    connection_config: Optional[DatabaseConnectionConfig] = Field(
+        None,
+        description="SQL Server connection (ODBC). host, port, database, username, password. Ignored if connection_string is set."
+    )
+    connection_string: Optional[str] = Field(
+        None,
+        description="OLE DB connection string (e.g. Provider=SQLOLEDB;Data Source=...;Initial Catalog=...;User ID=...;password=...). Used when db_tool_id and connection_config are not set."
+    )
+    schema_tables: Optional[List[str]] = Field(
+        None,
+        description="Table names to include in schema (e.g. ['LogiReportRunHistory', 'LogiReport', 'User']). Schema is introspected from DB if not provided via schema_text."
+    )
+    schema_text: Optional[str] = Field(
+        None,
+        description="Raw schema description or DDL. If set, used instead of introspecting schema_tables."
+    )
+    provider: str = Field(default="qwen", description="LLM provider: gemini, qwen, mistral")
+    model: Optional[str] = Field(None, description="LLM model name (default: provider default)")
+
+
+class TextToSQLResponse(BaseModel):
+    """Response from Text-to-SQL workflow"""
+    sql: str = Field(..., description="Generated SQL query")
+    columns: List[str] = Field(default_factory=list, description="Result column names")
+    rows: List[List[Any]] = Field(default_factory=list, description="Query result rows")
+    total_rows: int = Field(default=0, description="Number of rows returned")
+    summary: str = Field(..., description="LLM-generated natural language summary of the results")
+    error: Optional[str] = Field(None, description="Error message if any step failed")
+
+
 class RequestType(str, Enum):
     HTTP = "http"
     INTERNAL = "internal"

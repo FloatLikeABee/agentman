@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     # If not set, will use free search engines (unlimited)
     tavily_api_key: Optional[str] = None
 
+    # Text-to-SQL default SQL Server connection (used when no db_tool_id / connection_config / connection_string provided)
+    # Override via env: TEXT_TO_SQL_DEFAULT_HOST, TEXT_TO_SQL_DEFAULT_PORT, etc.
+    # If password contains $ and you use .env, use single quotes so the shell does not expand it: TEXT_TO_SQL_DEFAULT_PASSWORD='$transfinder2006'
+    text_to_sql_default_host: str = "192.168.9.9"
+    text_to_sql_default_port: int = 1433
+    text_to_sql_default_database: str = "team2_ent"
+    text_to_sql_default_username: str = "tfuser"
+    text_to_sql_default_password: str = "$transfinder2006"
+
     class Config:
         env_file = ".env"
         extra = "ignore"  # Ignore extra env vars (e.g. DEBUG) so .env from env.example doesn't raise

@@ -44,6 +44,7 @@ yfinance>=0.2.66
 
 # Database drivers
 pyodbc>=5.0.0
+adodbapi>=2.6.2  # OLE DB (e.g. SQLOLEDB) for Text-to-SQL connection_string; Windows + pywin32
 
 # Markdown to HTML (graphic document export)
 markdown>=3.5.0

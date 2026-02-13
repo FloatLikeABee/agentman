@@ -577,6 +577,31 @@ class DatabaseToolsManager:
             self.logger.error(f"Error deleting database tool {tool_id}: {e}")
             return False
 
+    def execute_raw_sql(self, tool_id: str, raw_sql: str) -> Dict[str, Any]:
+        """Execute a raw SQL string using the given tool's connection (no cache, no preset).
+        Used by Text-to-SQL workflow."""
+        profile = self.db_tools.get(tool_id)
+        if not profile:
+            raise ValueError(f"Database tool {tool_id} not found")
+        if not profile.is_active:
+            raise ValueError(f"Database tool {tool_id} is not active")
+        if profile.db_type == DatabaseType.MONGODB:
+            raise ValueError("Text-to-SQL does not support MongoDB; use SQL Server, MySQL, or SQLite")
+        temp_profile = DatabaseToolProfile(
+            id=profile.id,
+            name=profile.name,
+            description=profile.description,
+            db_type=profile.db_type,
+            connection_config=profile.connection_config,
+            sql_statement=raw_sql.strip(),
+            is_active=profile.is_active,
+            cache_ttl_hours=profile.cache_ttl_hours,
+            allow_dynamic_sql=profile.allow_dynamic_sql,
+            preset_sql_statement=profile.preset_sql_statement,
+            metadata=profile.metadata,
+        )
+        return self._execute_query(temp_profile, sql_input=None)
+
     def execute_query(self, tool_id: str, sql_input: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
         """Execute database query with optional dynamic SQL input.
         

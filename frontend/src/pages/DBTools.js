@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -29,6 +29,8 @@ import {
   Paper,
   CircularProgress,
   Tooltip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -37,13 +39,56 @@ import {
   Visibility as PreviewIcon,
   Refresh as RefreshIcon,
   Storage as DatabaseIcon,
+  SmartToy as TextToSQLIcon,
+  PlayArrow as RunIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
 
 const DBTools = () => {
   const queryClient = useQueryClient();
   const { data: tools = [], isLoading, error } = useQuery('db-tools', api.getDBTools, { staleTime: 5 * 60 * 1000 }); // Cache for 5 minutes
+
+  const [activeTab, setActiveTab] = useState(0);
+  const [textToSqlQuestion, setTextToSqlQuestion] = useState('');
+  const [textToSqlUseExisting, setTextToSqlUseExisting] = useState(true);
+  const [textToSqlDbToolId, setTextToSqlDbToolId] = useState('');
+  const [textToSqlConn, setTextToSqlConn] = useState({ host: '192.168.9.9', port: 1433, database: 'team2_ent', username: 'tfuser', password: '' });
+  const [textToSqlConnectionString, setTextToSqlConnectionString] = useState('');
+  const [textToSqlSchemaTables, setTextToSqlSchemaTables] = useState('');
+  const [textToSqlSchemaText, setTextToSqlSchemaText] = useState('');
+  const [textToSqlProvider, setTextToSqlProvider] = useState('qwen');
+  const [textToSqlModel, setTextToSqlModel] = useState('');
+  const [textToSqlResult, setTextToSqlResult] = useState(null);
+  const [textToSqlLoading, setTextToSqlLoading] = useState(false);
+  const [textToSqlError, setTextToSqlError] = useState('');
+
+  const { data: providersData } = useQuery('providers', api.getProviders);
+  const providers = useMemo(() => {
+    const fromApi = (providersData && Array.isArray(providersData.providers)) ? providersData.providers : [];
+    return fromApi.length > 0 ? fromApi : ['qwen', 'gemini', 'mistral'];
+  }, [providersData]);
+  const { data: modelsData } = useQuery('models', api.getModels);
+  const modelsByProvider = useMemo(() => {
+    const out = { qwen: ['qwen3-max'], gemini: ['gemini-2.5-flash'], mistral: ['mistral-large-latest'] };
+    if (Array.isArray(modelsData)) {
+      modelsData.forEach((m) => {
+        if (!m.provider || !m.name) return;
+        if (!out[m.provider]) out[m.provider] = [];
+        if (!out[m.provider].includes(m.name)) out[m.provider].push(m.name);
+      });
+    }
+    return out;
+  }, [modelsData]);
+  const textToSqlModels = modelsByProvider[textToSqlProvider] || [];
+  useEffect(() => {
+    if (textToSqlModels.length > 0 && !textToSqlModels.includes(textToSqlModel)) {
+      setTextToSqlModel(textToSqlModels[0]);
+    }
+  }, [textToSqlProvider]);
+
+  const sqlTools = useMemo(() => tools.filter((t) => t.db_type !== 'mongodb'), [tools]);
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
@@ -315,10 +360,52 @@ const DBTools = () => {
     }
   };
 
+  const handleTextToSqlRun = async () => {
+    setTextToSqlError('');
+    setTextToSqlResult(null);
+    setTextToSqlLoading(true);
+    try {
+      const payload = {
+        question: textToSqlQuestion.trim(),
+        provider: textToSqlProvider || 'qwen',
+        model: textToSqlModel || undefined,
+      };
+      if (textToSqlDbToolId) {
+        payload.db_tool_id = textToSqlDbToolId;
+      } else if (textToSqlConnectionString.trim()) {
+        payload.connection_string = textToSqlConnectionString.trim();
+      } else if (String(textToSqlConn.host || '').trim() && String(textToSqlConn.database || '').trim()) {
+        payload.connection_config = {
+          host: textToSqlConn.host,
+          port: parseInt(textToSqlConn.port, 10) || 1433,
+          database: textToSqlConn.database,
+          username: textToSqlConn.username,
+          password: textToSqlConn.password,
+        };
+      }
+      // When no connection is sent, backend uses default from config (text_to_sql_default_*)
+      if (textToSqlSchemaText.trim()) {
+        payload.schema_text = textToSqlSchemaText.trim();
+      }
+      if (textToSqlSchemaTables.trim()) {
+        payload.schema_tables = textToSqlSchemaTables.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+      }
+      const result = await api.textToSQL(payload);
+      setTextToSqlResult(result);
+      setTextToSqlError(result.error || '');
+    } catch (err) {
+      setTextToSqlError(err.response?.data?.detail || err.message || 'Text-to-SQL failed');
+      setTextToSqlResult(null);
+    } finally {
+      setTextToSqlLoading(false);
+    }
+  };
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4">Database Tools</Typography>
+        {activeTab === 0 && (
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -329,8 +416,167 @@ const DBTools = () => {
         >
           New DB Tool
         </Button>
+        )}
       </Box>
 
+      <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tab label="Database Tools" icon={<DatabaseIcon />} iconPosition="start" />
+        <Tab label="Text-to-SQL" icon={<TextToSQLIcon />} iconPosition="start" />
+      </Tabs>
+
+      {activeTab === 1 && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" sx={{ mb: 2 }}>Ask in natural language → SQL → results → summary</Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  label="Question"
+                  value={textToSqlQuestion}
+                  onChange={(e) => setTextToSqlQuestion(e.target.value)}
+                  placeholder="e.g. How many report runs were there in the last 7 days?"
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={textToSqlUseExisting}
+                      onChange={(e) => setTextToSqlUseExisting(e.target.checked)}
+                    />
+                  }
+                  label="Use existing DB tool"
+                />
+              </Grid>
+              {textToSqlUseExisting ? (
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>DB Tool</InputLabel>
+                    <Select
+                      value={textToSqlDbToolId}
+                      label="DB Tool"
+                      onChange={(e) => setTextToSqlDbToolId(e.target.value)}
+                    >
+                      <MenuItem value="">— Select —</MenuItem>
+                      {sqlTools.map((t) => (
+                        <MenuItem key={t.id} value={t.id}>{t.name} ({getDBTypeLabel(t.db_type)})</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              ) : (
+                <>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField fullWidth label="Host" value={textToSqlConn.host} onChange={(e) => setTextToSqlConn({ ...textToSqlConn, host: e.target.value })} />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={2}>
+                    <TextField fullWidth type="number" label="Port" value={textToSqlConn.port} onChange={(e) => setTextToSqlConn({ ...textToSqlConn, port: e.target.value })} />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={2}>
+                    <TextField fullWidth label="Database" value={textToSqlConn.database} onChange={(e) => setTextToSqlConn({ ...textToSqlConn, database: e.target.value })} />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={2}>
+                    <TextField fullWidth label="Username" value={textToSqlConn.username} onChange={(e) => setTextToSqlConn({ ...textToSqlConn, username: e.target.value })} />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={2}>
+                    <TextField fullWidth type="password" label="Password" value={textToSqlConn.password} onChange={(e) => setTextToSqlConn({ ...textToSqlConn, password: e.target.value })} />
+                  </Grid>
+                </>
+              )}
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Or OLE DB connection string"
+                  value={textToSqlConnectionString}
+                  onChange={(e) => setTextToSqlConnectionString(e.target.value)}
+                  placeholder="Provider=SQLOLEDB;Initial Catalog=...;Data Source=...;User ID=...;password=..."
+                  helperText="If set, this is used instead of the connection fields above (avoids ODBC driver issues on Windows)."
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Table names (optional)"
+                  value={textToSqlSchemaTables}
+                  onChange={(e) => setTextToSqlSchemaTables(e.target.value)}
+                  placeholder="LogiReportRunHistory, LogiReport, User"
+                  helperText="Comma-separated. Leave empty to let the AI use all tables from the database (SQL Server)."
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Provider</InputLabel>
+                  <Select value={textToSqlProvider} label="Provider" onChange={(e) => setTextToSqlProvider(e.target.value)}>
+                    {providers.map((p) => (
+                      <MenuItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={2}
+                  label="Schema text (optional)"
+                  value={textToSqlSchemaText}
+                  onChange={(e) => setTextToSqlSchemaText(e.target.value)}
+                  placeholder="Paste DDL or schema description to override table introspection"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Model</InputLabel>
+                  <Select value={textToSqlModel} label="Model" onChange={(e) => setTextToSqlModel(e.target.value)}>
+                    {textToSqlModels.map((m) => (
+                      <MenuItem key={m} value={m}>{m}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <Button
+                  variant="contained"
+                  startIcon={textToSqlLoading ? <CircularProgress size={20} color="inherit" /> : <RunIcon />}
+                  onClick={handleTextToSqlRun}
+                  disabled={textToSqlLoading || !textToSqlQuestion.trim()}
+                >
+                  {textToSqlLoading ? 'Running...' : 'Run'}
+                </Button>
+              </Grid>
+              {textToSqlError && (
+                <Grid item xs={12}>
+                  <Alert severity="error" onClose={() => setTextToSqlError('')}>{textToSqlError}</Alert>
+                </Grid>
+              )}
+              {textToSqlResult && !textToSqlResult.error && (
+                <>
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Generated SQL</Typography>
+                    <Paper variant="outlined" sx={{ p: 2, mt: 0.5, fontFamily: 'monospace', fontSize: '0.85rem', overflow: 'auto' }}>
+                      {textToSqlResult.sql}
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Result</Typography>
+                    <Paper variant="outlined" sx={{ p: 2, mt: 0.5, overflow: 'auto' }}>
+                      <ReactMarkdown>{textToSqlResult.summary || 'No result.'}</ReactMarkdown>
+                    </Paper>
+                  </Grid>
+                </>
+              )}
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 0 && (
+      <>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           Failed to load database tools
@@ -596,6 +842,8 @@ const DBTools = () => {
           </Card>
         </Grid>
       </Grid>
+      </>
+      )}
 
       {/* Create DB Tool Dialog */}
       <Dialog

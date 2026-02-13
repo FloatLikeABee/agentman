@@ -259,6 +259,12 @@ export const executeDBTool = async (toolId, sqlInput = null) => {
   return response.data;
 };
 
+/** Text-to-SQL: natural language → SQL → run → LLM summary */
+export const textToSQL = async (payload) => {
+  const response = await api.post('/db-tools/text-to-sql', payload);
+  return response.data;
+};
+
 // Request Tools
 export const getRequestTools = async () => {
   const response = await api.get('/request-tools');
@@ -498,6 +504,7 @@ const apiService = {
   deleteDBTool,
   previewDBTool,
   executeDBTool,
+  textToSQL,
   getRequestTools,
   getRequestTool,
   createRequestTool,
