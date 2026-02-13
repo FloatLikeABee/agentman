@@ -60,6 +60,7 @@ class LLMProviderType(str, Enum):
     GEMINI = "gemini"
     QWEN = "qwen"
     MISTRAL = "mistral"
+    GROQ = "groq"
 
 
 class SmartImportRequest(BaseModel):

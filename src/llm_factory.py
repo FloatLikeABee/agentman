@@ -13,6 +13,7 @@ class LLMProvider(str, Enum):
     GEMINI = "gemini"
     QWEN = "qwen"
     MISTRAL = "mistral"
+    GROQ = "groq"
 
 
 class BaseLLMCaller(ABC):

@@ -462,6 +462,9 @@ class RAGSystem:
             elif provider_type == LLMProviderType.MISTRAL:
                 api_key = getattr(settings, 'mistral_api_key', '')
                 model = model_name or settings.mistral_default_model
+            elif provider_type == LLMProviderType.GROQ:
+                api_key = getattr(settings, 'groq_api_key', '')
+                model = model_name or getattr(settings, 'groq_default_model', 'llama-3.3-70b-versatile')
             else:
                 provider_type = LLMProviderType.GEMINI
                 api_key = settings.gemini_api_key

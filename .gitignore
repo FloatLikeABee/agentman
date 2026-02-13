@@ -62,6 +62,7 @@ build/
 .env
 .env.*
 !.env.example
+gemini_key
 *.pem
 *.key
 *.crt

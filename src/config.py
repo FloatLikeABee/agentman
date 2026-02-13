@@ -4,17 +4,35 @@ from typing import Optional, List
 import os
 
 
+def _read_local_key(filename: str) -> str:
+  """
+  Read a secret key from a local file (one-line), returning empty string if missing.
+  The file is expected to live at the project root and is gitignored.
+  """
+  try:
+    # config.py lives in src/, project root is one level up
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    path = os.path.join(root_dir, filename)
+    with open(path, "r", encoding="utf-8") as f:
+      return f.read().strip()
+  except OSError:
+    return ""
+
+
 class Settings(BaseSettings):
     # Database settings
     chroma_persist_directory: str = "./chroma_db"
     data_directory: str = "./data"
 
     # LLM Provider settings
-    default_llm_provider: str = "gemini"  # Options: gemini, qwen, mistral
+    # Options: gemini, qwen, mistral, groq
+    default_llm_provider: str = "gemini"
     default_model: str = "gemini-2.5-flash"
 
     # Gemini settings
-    gemini_api_key: str = "AIzaSyDcs-5IodVYVg6rop3pEdt7UYaevbakIF0"
+    # Default: read from local gitignored file `gemini_key` at project root.
+    # Can still be overridden via environment variable GEMINI_API_KEY / .env.
+    gemini_api_key: str = _read_local_key("gemini_key")
     gemini_default_model: str = "gemini-2.5-flash"
 
     # Qwen settings
@@ -25,6 +43,11 @@ class Settings(BaseSettings):
     # Mistral settings
     mistral_api_key: str = "2IGzr4XnznEjh3O3vs0wFf0lwh7r7yhU"
     mistral_default_model: str = "mistral-large-latest"
+
+    # Groq settings
+    # IMPORTANT: set GROQ_API_KEY in your local .env; do not commit real keys.
+    groq_api_key: str = ""
+    groq_default_model: str = "llama-3.3-70b-versatile"
 
     # Embedding settings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

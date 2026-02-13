@@ -1249,6 +1249,10 @@ Calculate weighted scores by: sum(factor.weight * factor.score) / sum(factor.wei
             provider = LLMProvider.MISTRAL
             api_key = settings.mistral_api_key
             model = settings.mistral_default_model
+        elif provider_str == "groq":
+            provider = LLMProvider.GROQ
+            api_key = getattr(settings, "groq_api_key", "")
+            model = getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
         else:
             # Default to Qwen
             provider = LLMProvider.QWEN

@@ -52,6 +52,10 @@ class FlowDialogueMethods:
             provider = LLMProviderType.MISTRAL
             api_key = getattr(settings, 'mistral_api_key', '')
             model_name = profile.model_name or "mistral-large-latest"
+        elif provider_str == "groq":
+            provider = LLMProviderType.GROQ
+            api_key = getattr(settings, "groq_api_key", "")
+            model_name = profile.model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
         else:
             provider = LLMProviderType.GEMINI
             api_key = settings.gemini_api_key
@@ -215,6 +219,10 @@ class FlowDialogueMethods:
             provider = LLMProviderType.MISTRAL
             api_key = getattr(settings, 'mistral_api_key', '')
             model_name = profile.model_name or "mistral-large-latest"
+        elif provider_str == "groq":
+            provider = LLMProviderType.GROQ
+            api_key = getattr(settings, "groq_api_key", "")
+            model_name = profile.model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
         else:
             provider = LLMProviderType.GEMINI
             api_key = settings.gemini_api_key

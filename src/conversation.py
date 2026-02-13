@@ -279,9 +279,16 @@ class ConversationManager:
             model_label = f"AI Model 1 ({config.model1_config.model_name})" if is_model1_turn else f"AI Model 2 ({config.model2_config.model_name})"
 
             # Get LLM caller for current model
-            provider = LLMProvider.GEMINI if current_model_config.provider == LLMProviderType.GEMINI else (
-                LLMProvider.QWEN if current_model_config.provider == LLMProviderType.QWEN else LLMProvider.MISTRAL
-            )
+            if current_model_config.provider == LLMProviderType.GEMINI:
+                provider = LLMProvider.GEMINI
+            elif current_model_config.provider == LLMProviderType.QWEN:
+                provider = LLMProvider.QWEN
+            elif current_model_config.provider == LLMProviderType.MISTRAL:
+                provider = LLMProvider.MISTRAL
+            elif current_model_config.provider == LLMProviderType.GROQ:
+                provider = LLMProvider.GROQ
+            else:
+                provider = LLMProvider.GEMINI
             
             # Get model name with fallback to default
             model_name = current_model_config.model_name
@@ -293,6 +300,8 @@ class ConversationManager:
                     model_name = settings.qwen_default_model
                 elif provider == LLMProvider.MISTRAL:
                     model_name = settings.mistral_default_model
+                elif provider == LLMProvider.GROQ:
+                    model_name = getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
                 else:
                     model_name = settings.gemini_default_model  # Ultimate fallback
             
@@ -419,6 +428,8 @@ class ConversationManager:
             return settings.qwen_api_key
         elif provider == LLMProvider.MISTRAL:
             return settings.mistral_api_key
+        elif provider == LLMProvider.GROQ:
+            return getattr(settings, "groq_api_key", "")
         return None
 
     def _save_conversation_history(self, session: Dict[str, Any]) -> str:

@@ -47,6 +47,10 @@ def _get_llm_caller(provider_str: str, model_name: str):
         provider = LLMProvider.MISTRAL
         api_key = settings.mistral_api_key
         model = model_name or settings.mistral_default_model
+    elif provider_str == "groq":
+        provider = LLMProvider.GROQ
+        api_key = getattr(settings, "groq_api_key", "")
+        model = model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
     else:
         provider = LLMProvider.GEMINI
         api_key = settings.gemini_api_key

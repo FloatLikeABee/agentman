@@ -18,9 +18,10 @@ from .llm_factory import LLMFactory, LLMProvider
 from .llm_langchain_wrapper import LangChainLLMWrapper
 
 # Import all callers to register them with the factory
-import gemini_caller
-import qwen_caller
-import mistral_caller
+import gemini_caller  # noqa: F401
+import qwen_caller    # noqa: F401
+import mistral_caller # noqa: F401
+import groq_caller    # noqa: F401
 
 
 class AgentManager:
@@ -136,6 +137,14 @@ class AgentManager:
             'description': 'Mistral AI model'
         })
 
+        # Groq models
+        if getattr(settings, "groq_default_model", None):
+            models.append({
+                'name': settings.groq_default_model,
+                'provider': 'groq',
+                'description': 'Groq-hosted Llama model'
+            })
+
         return models
 
     def _create_llm_caller_with_fallback(self, preferred_provider: LLMProviderType, model: str, temperature: float, max_tokens: int):
@@ -154,6 +163,10 @@ class AgentManager:
                 api_key = settings.mistral_api_key
                 # Use appropriate model for Mistral
                 model_to_use = model if model.startswith('mistral') else settings.mistral_default_model
+            elif preferred_provider == LLMProviderType.GROQ:
+                api_key = getattr(settings, "groq_api_key", "")
+                # Groq models typically start with "llama-" but allow any explicit override
+                model_to_use = model or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
             else:
                 raise ValueError(f"Unknown provider: {preferred_provider}")
 
@@ -178,7 +191,7 @@ class AgentManager:
             self.logger.warning(f"Error creating {preferred_provider.value} caller: {e}. Attempting fallback...")
 
         # Fallback: try other providers only if preferred failed
-        fallback_providers = [LLMProviderType.GEMINI, LLMProviderType.QWEN, LLMProviderType.MISTRAL]
+        fallback_providers = [LLMProviderType.GEMINI, LLMProviderType.QWEN, LLMProviderType.MISTRAL, LLMProviderType.GROQ]
         # Remove the preferred provider from fallback list
         fallback_providers = [p for p in fallback_providers if p != preferred_provider]
 
@@ -193,6 +206,9 @@ class AgentManager:
                 elif provider == LLMProviderType.MISTRAL:
                     api_key = settings.mistral_api_key
                     model_to_use = model if model.startswith('mistral') else settings.mistral_default_model
+                elif provider == LLMProviderType.GROQ:
+                    api_key = getattr(settings, "groq_api_key", "")
+                    model_to_use = model or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
                 else:
                     continue
 

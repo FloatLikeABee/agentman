@@ -539,6 +539,14 @@ class RAGAPI:
                     provider = LLMProvider.MISTRAL
                     api_key = settings.mistral_api_key
                     model = settings.mistral_default_model
+                elif provider_str == "groq":
+                    provider = LLMProvider.GROQ
+                    api_key = getattr(settings, "groq_api_key", "")
+                    model = getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
+                elif provider_str == "groq":
+                    provider = LLMProvider.GROQ
+                    api_key = getattr(settings, "groq_api_key", "")
+                    model = getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
                 else:
                     provider = LLMProvider.QWEN
                     api_key = settings.qwen_api_key
@@ -2240,6 +2248,10 @@ Question: {{input}}
                     provider = LLMProviderType.MISTRAL
                     api_key = settings.mistral_api_key
                     model_name = profile.model_name or settings.mistral_default_model
+                elif provider_str == "groq":
+                    provider = LLMProviderType.GROQ
+                    api_key = getattr(settings, "groq_api_key", "")
+                    model_name = profile.model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
                 else:
                     # Fallback to default provider
                     provider = LLMProviderType.GEMINI
@@ -3775,6 +3787,10 @@ Question: {{input}}
                     provider = LLMProviderType.MISTRAL
                     api_key = settings.mistral_api_key
                     model_name = profile.model_name or settings.mistral_default_model
+                elif provider_str == "groq":
+                    provider = LLMProviderType.GROQ
+                    api_key = getattr(settings, "groq_api_key", "")
+                    model_name = profile.model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
                 else:
                     provider = LLMProviderType.GEMINI
                     api_key = settings.gemini_api_key
@@ -5321,6 +5337,8 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                     provider_type = LLMProviderType.QWEN
                 elif provider_str == "mistral":
                     provider_type = LLMProviderType.MISTRAL
+                elif provider_str == "groq":
+                    provider_type = LLMProviderType.GROQ
                 else:
                     provider_type = LLMProviderType.QWEN
                 
@@ -5540,6 +5558,8 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                     provider_type = LLMProviderType.QWEN
                 elif provider_str == "mistral":
                     provider_type = LLMProviderType.MISTRAL
+                elif provider_str == "groq":
+                    provider_type = LLMProviderType.GROQ
                 else:
                     provider_type = LLMProviderType.QWEN
 
@@ -5881,6 +5901,8 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                         provider_type = LLMProviderType.QWEN
                     elif provider_str == "mistral":
                         provider_type = LLMProviderType.MISTRAL
+                    elif provider_str == "groq":
+                        provider_type = LLMProviderType.GROQ
                 
                 # Process PDF
                 result = pdf_reader.read_and_process(
@@ -5961,6 +5983,8 @@ Respond with ONLY the enhanced prompt, nothing else. Make it detailed but concis
                         provider_type = LLMProviderType.QWEN
                     elif p == "mistral":
                         provider_type = LLMProviderType.MISTRAL
+                    elif p == "groq":
+                        provider_type = LLMProviderType.GROQ
 
                 result = await self.gathering_service.gather(
                     prompt=request.prompt.strip(),
