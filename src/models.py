@@ -260,10 +260,112 @@ class CustomizationQueryResponse(BaseModel):
     profile_id: str = Field(..., description="Customization profile used")
     profile_name: str = Field(..., description="Customization profile name")
     model_used: str = Field(..., description="Model that was actually used")
-    rag_collection_used: Optional[str] = Field(
-        None, description="RAG collection used (if any)"
-    )
+    rag_collection_used: Optional[str] = Field(None, description="RAG collection used (if any)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
+
+
+class AdviserFileInput(BaseModel):
+    """File content used to bootstrap an adviser-specific knowledge base."""
+
+    filename: str = Field(..., description="Original file name")
+    format: DataFormat = Field(..., description="Data format (json, csv, txt)")
+    content: str = Field(..., description="Raw file content as text")
+    description: Optional[str] = Field(
+        None,
+        description="Optional description of what this file contains or should be used for",
+    )
+
+
+class AdviserCreateRequest(BaseModel):
+    """Request payload for creating or updating an Adviser."""
+
+    name: str = Field(..., description="Display name of the adviser")
+    draft_system_prompt: str = Field(
+        ...,
+        description="Draft system prompt describing adviser behavior. This will be cleaned and normalized by the AI model before saving.",
+    )
+    description: Optional[str] = Field(
+        None,
+        description="Optional draft description. If omitted or empty, the AI model will generate one from the prompt.",
+    )
+    llm_provider: Optional[LLMProviderType] = Field(
+        None, description="Optional LLM provider override for this adviser"
+    )
+    model_name: Optional[str] = Field(
+        None, description="Optional model override for this adviser"
+    )
+    existing_rag_collections: List[str] = Field(
+        default_factory=list,
+        description="Names of existing RAG collections that this adviser should use",
+    )
+    files: List[AdviserFileInput] = Field(
+        default_factory=list,
+        description="Optional uploaded JSON/CSV/TXT files that will be turned into an adviser-specific RAG collection",
+    )
+
+
+class AdviserProfile(BaseModel):
+    """Stored Adviser configuration and runtime linkage to an underlying Agent."""
+
+    id: str = Field(..., description="Unique adviser id (URL-friendly)")
+    name: str = Field(..., description="Adviser display name")
+    description: Optional[str] = Field(None, description="Adviser description")
+    system_prompt: str = Field(..., description="Normalized system prompt for the adviser")
+    rag_collections: List[str] = Field(
+        default_factory=list,
+        description="All RAG collections used by this adviser (uploaded files + any existing collections)",
+    )
+    base_collection: Optional[str] = Field(
+        None,
+        description="Auto-created RAG collection that stores data from uploaded files, if any",
+    )
+    llm_provider: Optional[LLMProviderType] = Field(
+        None, description="LLM provider actually configured for the underlying agent"
+    )
+    model_name: Optional[str] = Field(
+        None, description="Model actually configured for the underlying agent"
+    )
+    agent_id: Optional[str] = Field(
+        None,
+        description="ID of the underlying Agent this adviser uses for execution",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata about this adviser (e.g., creation source, tags)",
+    )
+
+
+class AdviserQueryRequest(BaseModel):
+    """Run-time query request for an Adviser."""
+
+    query: str = Field(..., description="User query to run through the adviser")
+    context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional additional context that will be passed through to the underlying agent",
+    )
+
+
+class AdviserRunResponse(BaseModel):
+    """Response payload when executing an Adviser."""
+
+    response: str = Field(..., description="Adviser response text")
+    adviser_id: str = Field(..., description="Adviser id used for the run")
+    agent_id: str = Field(..., description="Underlying agent id that executed the query")
+    model_used: Optional[str] = Field(
+        None, description="Model actually used by the underlying agent"
+    )
+    rag_collections_used: List[str] = Field(
+        default_factory=list,
+        description="RAG collections that were attached to this adviser",
+    )
+    web_search_enabled: bool = Field(
+        default=True,
+        description="Indicates that the adviser has web search enabled as a tool",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional execution metadata (provider, temperature, etc.)",
+    )
 
 
 class DatabaseType(str, Enum):

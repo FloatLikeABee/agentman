@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import RAGManager from './pages/RAGManager';
 import AgentManager from './pages/AgentManager';
 import ToolManager from './pages/ToolManager';
+import AdviserManager from './pages/AdviserManager';
 import SystemStatus from './pages/SystemStatus';
 import Customizations from './pages/Customizations';
 import Crawler from './pages/Crawler';
@@ -40,6 +41,7 @@ function App() {
               <Route path="/rag" element={<RAGManager />} />
               <Route path="/agents" element={<AgentManager />} />
               <Route path="/tools" element={<ToolManager />} />
+              <Route path="/advisers" element={<AdviserManager />} />
               <Route path="/images" element={<ImageGenerator />} />
               <Route path="/image-reader" element={<ImageReader />} />
               <Route path="/pdf-reader" element={<PDFReader />} />

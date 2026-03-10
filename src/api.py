@@ -77,6 +77,9 @@ from .models import (
     MCPHostProfile,
     MCPHostCreateRequest,
     MCPHostUpdateRequest,
+    AdviserCreateRequest,
+    AdviserQueryRequest,
+    AdviserRunResponse,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -95,6 +98,7 @@ from .text_to_sql import TextToSQLService
 from .request_tools import RequestToolsManager
 from .image_reader import ImageReader
 from .pdf_reader import PDFReader
+from .adviser_manager import AdviserManager
 
 
 class RAGAPI:
@@ -303,6 +307,7 @@ class RAGAPI:
         self.rag_system = RAGSystem()
         self.tool_manager = ToolManager(rag_system=self.rag_system)
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
+        self.adviser_manager = AdviserManager(self.rag_system, self.tool_manager, self.agent_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         from .mcp_host_manager import MCPHostManager
         self.mcp_host_manager = MCPHostManager()
@@ -1229,6 +1234,160 @@ Content:
                     raise HTTPException(status_code=400, detail="Failed to delete agent")
             except Exception as e:
                 self.logger.error(f"Error deleting agent: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Adviser Endpoints
+        @self.app.post(
+            "/advisers",
+            tags=["Advisers"],
+            summary="Create Adviser",
+            description="Create a new Adviser profile backed by an Agent with web search and RAG. Files (JSON/CSV/TXT) will be ingested into an adviser-specific RAG collection.",
+            response_model=Dict[str, Any],
+            response_description="Adviser creation response with adviser id and success message.",
+        )
+        async def create_adviser(req: AdviserCreateRequest):
+            """
+            **Create New Adviser**
+
+            An Adviser is a higher-level helper built on top of the Agent system. When you create
+            an adviser:
+
+            1. The draft system prompt and optional description are sent to the LLM to be cleaned
+               and normalized.
+            2. Any uploaded files (JSON/CSV/TXT) are ingested into an adviser-specific RAG collection.
+            3. Any existing RAG collections you reference are attached.
+            4. An underlying Agent is created with:
+               - RAG tools for all attached collections
+               - Web Search tool enabled by default
+
+            This endpoint returns the new adviser id.
+            """
+            try:
+                adviser_id = self.adviser_manager.create_adviser(req)
+                return {"id": adviser_id, "message": "Adviser created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating adviser: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/advisers",
+            tags=["Advisers"],
+            summary="List Advisers",
+            description="List all Adviser profiles with their configuration summary.",
+            response_description="Array of adviser profiles.",
+        )
+        async def list_advisers():
+            """List all configured Advisers."""
+            try:
+                return [a.model_dump() for a in self.adviser_manager.list_advisers()]
+            except Exception as e:
+                self.logger.error(f"Error listing advisers: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/advisers/{adviser_id}",
+            tags=["Advisers"],
+            summary="Get Adviser",
+            description="Get full Adviser profile by id.",
+            response_description="Adviser profile.",
+        )
+        async def get_adviser(adviser_id: str):
+            """Get a single Adviser profile."""
+            try:
+                adviser = self.adviser_manager.get_adviser(adviser_id)
+                if not adviser:
+                    raise HTTPException(status_code=404, detail="Adviser not found")
+                return adviser
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting adviser {adviser_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/advisers/{adviser_id}",
+            tags=["Advisers"],
+            summary="Update Adviser",
+            description="Update an existing Adviser configuration. New files are appended to the existing adviser-specific RAG collection.",
+            response_description="Confirmation message.",
+        )
+        async def update_adviser(adviser_id: str, req: AdviserCreateRequest):
+            """Update an existing Adviser profile and its underlying Agent."""
+            try:
+                updated = self.adviser_manager.update_adviser(adviser_id, req)
+                if not updated:
+                    raise HTTPException(status_code=404, detail="Adviser not found")
+                return {"message": "Adviser updated successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating adviser {adviser_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/advisers/{adviser_id}",
+            tags=["Advisers"],
+            summary="Delete Adviser",
+            description="Delete an Adviser profile and its underlying Agent. Any RAG collections created from files are preserved.",
+            response_description="Confirmation message.",
+        )
+        async def delete_adviser(adviser_id: str):
+            """Delete an Adviser profile and its underlying Agent."""
+            try:
+                deleted = self.adviser_manager.delete_adviser(adviser_id)
+                if not deleted:
+                    raise HTTPException(status_code=404, detail="Adviser not found")
+                return {"message": "Adviser deleted successfully"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting adviser {adviser_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/advisers/{adviser_id}/run",
+            tags=["Advisers"],
+            summary="Run Adviser",
+            description="Execute an Adviser with a query. This forwards the request to the underlying Agent with web search and RAG enabled.",
+            response_model=AdviserRunResponse,
+            response_description="Adviser execution response.",
+        )
+        async def run_adviser(adviser_id: str, request: AdviserQueryRequest) -> AdviserRunResponse:
+            """
+            **Run Adviser**
+
+            Executes the Adviser by delegating to its underlying Agent.
+            """
+            try:
+                adviser = self.adviser_manager.get_adviser(adviser_id)
+                if not adviser or not adviser.agent_id:
+                    raise HTTPException(status_code=404, detail="Adviser not found or not initialized")
+
+                agent_result = await self.agent_manager.run_agent(
+                    adviser.agent_id,
+                    request.query,
+                    context=request.context,
+                )
+
+                agent_data = self.agent_manager.get_agent(adviser.agent_id) or {}
+                model_used = agent_data.get("model")
+
+                return AdviserRunResponse(
+                    response=agent_result.get("response", ""),
+                    adviser_id=adviser.id,
+                    agent_id=adviser.agent_id,
+                    model_used=model_used,
+                    rag_collections_used=adviser.rag_collections or [],
+                    web_search_enabled=True,
+                    metadata={
+                        "query": request.query,
+                        "context_keys": list((request.context or {}).keys()),
+                    },
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error running adviser {adviser_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post(

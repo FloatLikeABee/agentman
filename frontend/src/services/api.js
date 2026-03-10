@@ -85,6 +85,40 @@ export const runAgent = async (agentId, query, context = null) => {
   return response.data;
 };
 
+// Advisers
+export const getAdvisers = async () => {
+  const response = await api.get('/advisers');
+  return response.data;
+};
+
+export const getAdviser = async (adviserId) => {
+  const response = await api.get(`/advisers/${adviserId}`);
+  return response.data;
+};
+
+export const createAdviser = async (payload) => {
+  const response = await api.post('/advisers', payload);
+  return response.data;
+};
+
+export const updateAdviser = async (adviserId, payload) => {
+  const response = await api.put(`/advisers/${adviserId}`, payload);
+  return response.data;
+};
+
+export const deleteAdviser = async (adviserId) => {
+  const response = await api.delete(`/advisers/${adviserId}`);
+  return response.data;
+};
+
+export const runAdviser = async (adviserId, query, context = null) => {
+  const response = await api.post(`/advisers/${adviserId}/run`, {
+    query,
+    context,
+  });
+  return response.data;
+};
+
 // Tools
 export const getTools = async () => {
   const response = await api.get('/tools');
@@ -493,6 +527,13 @@ const apiService = {
   updateAgent,
   deleteAgent,
   runAgent,
+  // Advisers
+  getAdvisers,
+  getAdviser,
+  createAdviser,
+  updateAdviser,
+  deleteAdviser,
+  runAdviser,
   getTools,
   updateToolConfig,
   getModels,

@@ -31,6 +31,7 @@ import {
   TextFields as TextIcon,
   PictureAsPdf as PDFIcon,
   Lan as NetworkIcon,
+  Psychology as AdviserIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -52,6 +53,7 @@ const Header = () => {
     { path: '/agents', label: 'Agent', icon: <AgentIcon /> },
     { path: '/rag', label: 'RAG', icon: <RAGIcon /> },
     { path: '/tools', label: 'Tool', icon: <ToolIcon /> },
+    { path: '/advisers', label: 'Adviser', icon: <AdviserIcon /> },
     { path: '/images', label: 'Images', icon: <ImageIcon /> },
     { path: '/image-reader', label: 'Image Reader', icon: <TextIcon /> },
     { path: '/pdf-reader', label: 'PDF Reader', icon: <PDFIcon /> },
