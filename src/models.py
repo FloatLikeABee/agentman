@@ -1100,3 +1100,163 @@ class ConversationHistoryResponse(BaseModel):
     total_turns: int = Field(..., description="Total number of turns")
     conversation_history: List[ConversationMessage] = Field(..., description="Full conversation history")
     saved_file_path: Optional[str] = Field(None, description="Path to saved conversation file")
+
+
+# MCP Host Models
+class MCPTransportType(str, Enum):
+    """Transport mechanism used to connect to the MCP server."""
+    STDIO = "stdio"
+    TCP = "tcp"
+    WEBSOCKET = "websocket"
+
+
+class MCPHostConfig(BaseModel):
+    """Configuration for hosting or connecting to an MCP server."""
+
+    name: str = Field(..., description="Display name for this MCP server")
+    description: Optional[str] = Field(None, description="Description / purpose of this MCP server")
+    transport: MCPTransportType = Field(
+        MCPTransportType.TCP,
+        description="Transport type: stdio (spawn process), tcp (host/port), or websocket (URL)",
+    )
+    command: Optional[str] = Field(
+        None,
+        description="Command or executable to start the MCP server (for stdio transport)",
+    )
+    args: List[str] = Field(
+        default_factory=list,
+        description="Command-line arguments for the MCP server process (for stdio transport)",
+    )
+    env: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Environment variables for the MCP server process (for stdio transport)",
+    )
+    working_dir: Optional[str] = Field(
+        None,
+        description="Working directory for the MCP server process (for stdio transport)",
+    )
+    host: Optional[str] = Field(
+        None,
+        description="Host for TCP-based MCP server (for tcp transport)",
+    )
+    port: Optional[int] = Field(
+        None,
+        description="Port for TCP-based MCP server (for tcp transport)",
+    )
+    url: Optional[str] = Field(
+        None,
+        description="WebSocket URL for MCP server (for websocket transport)",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="Whether this MCP host configuration is active/usable",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for this MCP host configuration",
+    )
+
+
+class MCPHostProfile(BaseModel):
+    """Stored MCP host profile with resolved configuration."""
+
+    id: str = Field(..., description="Unique MCP host id")
+    name: str = Field(..., description="Display name")
+    description: Optional[str] = Field(None, description="Description / purpose")
+    config: MCPHostConfig = Field(..., description="MCP host configuration")
+    created_at: Optional[str] = Field(None, description="Creation timestamp (ISO)")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp (ISO)")
+
+
+class MCPHostCreateRequest(BaseModel):
+    """Request body for creating a new MCP host configuration."""
+
+    name: str = Field(..., description="Display name for this MCP server")
+    description: Optional[str] = Field(None, description="Description / purpose of this MCP server")
+    transport: MCPTransportType = Field(
+        MCPTransportType.TCP,
+        description="Transport type: stdio, tcp, or websocket",
+    )
+    command: Optional[str] = Field(
+        None,
+        description="Command or executable to start the MCP server (for stdio transport)",
+    )
+    args: List[str] = Field(
+        default_factory=list,
+        description="Command-line arguments for the MCP server process (for stdio transport)",
+    )
+    env: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Environment variables for the MCP server process (for stdio transport)",
+    )
+    working_dir: Optional[str] = Field(
+        None,
+        description="Working directory for the MCP server process (for stdio transport)",
+    )
+    host: Optional[str] = Field(
+        None,
+        description="Host for TCP-based MCP server (for tcp transport)",
+    )
+    port: Optional[int] = Field(
+        None,
+        description="Port for TCP-based MCP server (for tcp transport)",
+    )
+    url: Optional[str] = Field(
+        None,
+        description="WebSocket URL for MCP server (for websocket transport)",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="Whether this MCP host configuration is active/usable",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for this MCP host configuration",
+    )
+
+
+class MCPHostUpdateRequest(BaseModel):
+    """Request body for updating an existing MCP host configuration."""
+
+    name: str = Field(..., description="Display name for this MCP server")
+    description: Optional[str] = Field(None, description="Description / purpose of this MCP server")
+    transport: MCPTransportType = Field(
+        MCPTransportType.TCP,
+        description="Transport type: stdio, tcp, or websocket",
+    )
+    command: Optional[str] = Field(
+        None,
+        description="Command or executable to start the MCP server (for stdio transport)",
+    )
+    args: List[str] = Field(
+        default_factory=list,
+        description="Command-line arguments for the MCP server process (for stdio transport)",
+    )
+    env: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Environment variables for the MCP server process (for stdio transport)",
+    )
+    working_dir: Optional[str] = Field(
+        None,
+        description="Working directory for the MCP server process (for stdio transport)",
+    )
+    host: Optional[str] = Field(
+        None,
+        description="Host for TCP-based MCP server (for tcp transport)",
+    )
+    port: Optional[int] = Field(
+        None,
+        description="Port for TCP-based MCP server (for tcp transport)",
+    )
+    url: Optional[str] = Field(
+        None,
+        description="WebSocket URL for MCP server (for websocket transport)",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="Whether this MCP host configuration is active/usable",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for this MCP host configuration",
+    )

@@ -30,6 +30,7 @@ import {
   Public as BrowserIcon,
   TextFields as TextIcon,
   PictureAsPdf as PDFIcon,
+  Lan as NetworkIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
@@ -57,6 +58,7 @@ const Header = () => {
     { path: '/browser-automation', label: 'Browser', icon: <BrowserIcon /> },
     { path: '/customizations', label: 'Customizations', icon: <CustomIcon /> },
     { path: '/db-tools', label: 'Database', icon: <DBIcon /> },
+    { path: '/mcp-hosts', label: 'MCP Hosts', icon: <NetworkIcon /> },
     { path: '/crawler', label: 'Crawler', icon: <CrawlerIcon /> },
     { path: '/gathering', label: 'Gathering', icon: <GatheringIcon /> },
     { path: '/dialogue', label: 'Dialogue', icon: <DialogueIcon /> },

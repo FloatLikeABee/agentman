@@ -114,6 +114,27 @@ export const startMCPServer = async () => {
   return response.data;
 };
 
+// MCP Hosts
+export const getMCPHosts = async () => {
+  const response = await api.get('/mcp/hosts');
+  return response.data;
+};
+
+export const createMCPHost = async (payload) => {
+  const response = await api.post('/mcp/hosts', payload);
+  return response.data;
+};
+
+export const updateMCPHost = async (hostId, payload) => {
+  const response = await api.put(`/mcp/hosts/${hostId}`, payload);
+  return response.data;
+};
+
+export const deleteMCPHost = async (hostId) => {
+  const response = await api.delete(`/mcp/hosts/${hostId}`);
+  return response.data;
+};
+
 // Customizations
 export const getCustomizations = async () => {
   const response = await api.get('/customizations');
@@ -477,6 +498,10 @@ const apiService = {
   getModels,
   getProviders,
   startMCPServer,
+  getMCPHosts,
+  createMCPHost,
+  updateMCPHost,
+  deleteMCPHost,
   getCustomizations,
   createCustomization,
   updateCustomization,

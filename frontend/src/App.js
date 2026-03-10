@@ -18,6 +18,7 @@ import GraphicDocumentGenerator from './pages/GraphicDocumentGenerator';
 import ImageGenerator from './pages/ImageGenerator';
 import BrowserAutomation from './pages/BrowserAutomation';
 import ImageReader from './pages/ImageReader';
+import MCPHosts from './pages/MCPHosts';
 import PDFReader from './pages/PDFReader';
 
 function App() {
@@ -47,6 +48,7 @@ function App() {
               <Route path="/crawler" element={<Crawler />} />
               <Route path="/gathering" element={<Gathering />} />
               <Route path="/db-tools" element={<DBTools />} />
+              <Route path="/mcp-hosts" element={<MCPHosts />} />
               <Route path="/dialogue" element={<Dialogue />} />
               <Route path="/flow" element={<Flow />} />
               <Route path="/graphic-document" element={<GraphicDocumentGenerator />} />

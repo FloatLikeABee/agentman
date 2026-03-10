@@ -74,6 +74,9 @@ from .models import (
     SpecialFlow1ExecuteResponse,
     SmartImportRequest,
     SmartImportResponse,
+    MCPHostProfile,
+    MCPHostCreateRequest,
+    MCPHostUpdateRequest,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -301,6 +304,8 @@ class RAGAPI:
         self.tool_manager = ToolManager(rag_system=self.rag_system)
         self.agent_manager = AgentManager(self.rag_system, self.tool_manager)
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
+        from .mcp_host_manager import MCPHostManager
+        self.mcp_host_manager = MCPHostManager()
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
         self.crawler_manager = CrawlerManager()
@@ -1863,44 +1868,113 @@ Question: {{input}}
             **Start Model Context Protocol (MCP) Server**
             
             Initiates the MCP server for WebSocket-based AI interactions.
-            
-            **MCP Protocol:**
-            The Model Context Protocol enables enhanced communication with AI models through:
-            - WebSocket connections
-            - Structured message protocols
-            - Real-time bidirectional communication
-            - Enhanced context management
-            
-            **Server Features:**
-            - WebSocket endpoint (default port: 8196)
-            - Tool execution support
-            - RAG query capabilities
-            - Agent execution
-            - Health check (ping/pong)
-            
-            **Server Behavior:**
-            - Starts in background (non-blocking)
-            - Runs until server shutdown
-            - Supports multiple concurrent connections
-            - Handles client initialization and capabilities
-            
-            **Use Cases:**
-            - Real-time AI applications
-            - Interactive AI interfaces
-            - WebSocket-based integrations
-            - Enhanced context-aware interactions
-            
-            **Connection Details:**
-            - Protocol: WebSocket
-            - Default Port: 8196
-            - Message Format: JSON with length prefix
-            - Supports multiple clients simultaneously
             """
             try:
                 background_tasks.add_task(self.mcp_service.start_server)
                 return {"message": "MCP server starting"}
             except Exception as e:
                 self.logger.error(f"Error starting MCP server: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/mcp/hosts",
+            tags=["MCP"],
+            summary="Create MCP Host Configuration",
+            description="Create a new MCP host configuration that defines how to host or connect to an MCP server.",
+            response_description="MCP host creation response with host ID.",
+        )
+        async def create_mcp_host(req: MCPHostCreateRequest):
+            """Create MCP host configuration."""
+            try:
+                host_id = self.mcp_host_manager.create_host(req)
+                return {"host_id": host_id, "message": "MCP host created successfully"}
+            except Exception as e:
+                self.logger.error(f"Error creating MCP host: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/mcp/hosts",
+            tags=["MCP"],
+            summary="List MCP Hosts",
+            description="List all MCP host configurations stored in the system.",
+            response_description="Array of MCP host profiles.",
+        )
+        async def list_mcp_hosts():
+            """List all MCP host configurations."""
+            try:
+                profiles = self.mcp_host_manager.list_hosts()
+                return [p.model_dump() for p in profiles]
+            except Exception as e:
+                self.logger.error(f"Error listing MCP hosts: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/mcp/hosts/{host_id}",
+            tags=["MCP"],
+            summary="Get MCP Host",
+            description="Retrieve a specific MCP host configuration by ID.",
+            response_description="MCP host profile.",
+            responses={404: {"description": "MCP host not found"}},
+        )
+        async def get_mcp_host(host_id: str):
+            """Get single MCP host configuration."""
+            try:
+                profile = self.mcp_host_manager.get_host(host_id)
+                if not profile:
+                    raise HTTPException(status_code=404, detail="MCP host not found")
+                return profile.model_dump()
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting MCP host {host_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/mcp/hosts/{host_id}",
+            tags=["MCP"],
+            summary="Update MCP Host",
+            description="Update an existing MCP host configuration.",
+            response_description="Confirmation message indicating successful update.",
+            responses={
+                200: {"description": "MCP host updated successfully"},
+                404: {"description": "MCP host not found"},
+            },
+        )
+        async def update_mcp_host(host_id: str, req: MCPHostUpdateRequest):
+            """Update MCP host configuration."""
+            try:
+                success = self.mcp_host_manager.update_host(host_id, req)
+                if success:
+                    return {"message": "MCP host updated successfully"}
+                raise HTTPException(status_code=404, detail="MCP host not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating MCP host {host_id}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete(
+            "/mcp/hosts/{host_id}",
+            tags=["MCP"],
+            summary="Delete MCP Host",
+            description="Delete an MCP host configuration.",
+            response_description="Confirmation message indicating successful deletion.",
+            responses={
+                200: {"description": "MCP host deleted successfully"},
+                404: {"description": "MCP host not found"},
+            },
+        )
+        async def delete_mcp_host(host_id: str):
+            """Delete MCP host configuration."""
+            try:
+                success = self.mcp_host_manager.delete_host(host_id)
+                if success:
+                    return {"message": "MCP host deleted successfully"}
+                raise HTTPException(status_code=404, detail="MCP host not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting MCP host {host_id}: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Customization Endpoints
