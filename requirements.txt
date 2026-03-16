@@ -45,7 +45,8 @@ yfinance>=0.2.66
 
 # Database drivers
 pyodbc>=5.0.0
-adodbapi>=2.6.2  # OLE DB (e.g. SQLOLEDB) for Text-to-SQL connection_string; Windows + pywin32
+# adodbapi: optional, for Text-to-SQL OLE DB connection_string only. Often fails to build;
+# install manually on Windows if needed: pip install adodbapi (requires pywin32). Skip if not using OLE DB.
 
 # Markdown to HTML (graphic document export)
 markdown>=3.5.0

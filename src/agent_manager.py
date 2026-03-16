@@ -75,9 +75,9 @@ class AgentManager:
                 try:
                     agent_id = agent_doc.get('id')
                     agent_config = agent_doc.get('config', {})
-                    # Recreate the agent from config
+                    # Recreate the agent from config, preserving stored id
                     config = AgentConfig(**agent_config)
-                    self.create_agent(config)
+                    self.create_agent(config, fixed_agent_id=agent_id)
                 except Exception as e:
                     self.logger.error(f"Failed to load agent {agent_id}: {e}")
             self.logger.info(f"Loaded {len(self.agents)} agents from TinyDB")
@@ -232,8 +232,10 @@ class AgentManager:
 
         raise RuntimeError(f"Failed to create LLM caller for preferred provider {preferred_provider.value} and all fallback providers")
 
-    def create_agent(self, config: AgentConfig) -> str:
-        """Create a new agent with the specified configuration"""
+    def create_agent(self, config: AgentConfig, fixed_agent_id: Optional[str] = None) -> str:
+        """Create a new agent with the specified configuration.
+        If fixed_agent_id is provided (e.g. when updating), use it as the agent id instead of deriving from config.name.
+        """
         try:
             self.logger.info(f"Creating agent: {config.name}")
             self.logger.info(f"LLM Provider: {config.llm_provider}")
@@ -392,8 +394,10 @@ Question: {input}
                 # No tools available - agent will be None, and we'll use direct LLM calls
                 self.logger.info(f"Agent '{config.name}' created without agent executor (no tools). Will use direct LLM calls.")
 
-            # Store agent with provider information
-            agent_id = config.name.lower().replace(' ', '_')
+            # Store agent with provider information (use fixed_agent_id when updating to preserve URL identity)
+            agent_id = (fixed_agent_id or config.name.lower().replace(' ', '_')).strip()
+            if not agent_id:
+                agent_id = config.name.lower().replace(' ', '_')
             self.agents[agent_id] = {
                 'id': agent_id,
                 'config': config,
@@ -446,20 +450,31 @@ Question: {input}
             for agent_id, agent_data in self.agents.items()
         ]
 
+    def _resolve_agent_id(self, agent_id: str) -> Optional[str]:
+        """Return stored agent id for the given path id (exact match or normalized name match)."""
+        if agent_id in self.agents:
+            return agent_id
+        normalized_path = agent_id.lower().replace(' ', '_').strip()
+        for stored_id, data in self.agents.items():
+            config = data.get('config')
+            name = getattr(config, 'name', None) if config is not None else None
+            if name and isinstance(name, str) and name.lower().replace(' ', '_').strip() == normalized_path:
+                return stored_id
+        return None
+
     def update_agent(self, agent_id: str, config: AgentConfig) -> bool:
-        """Update an existing agent"""
-        try:
-            if agent_id in self.agents:
-                # Remove old agent
-                del self.agents[agent_id]
-                
-                # Create new agent with updated config
-                new_agent_id = self.create_agent(config)
-                return new_agent_id == agent_id
-            return False
-        except Exception as e:
-            self.logger.error(f"Error updating agent {agent_id}: {e}")
-            return False
+        """Update an existing agent. Preserves agent_id so the URL does not change.
+        Resolves agent by exact id or by normalized config name (so path can match name).
+        """
+        resolved_id = self._resolve_agent_id(agent_id)
+        if resolved_id is None:
+            raise ValueError("Agent not found")
+        agent_id = resolved_id
+        # Remove old agent
+        del self.agents[agent_id]
+        # Create new agent with updated config, reusing the same agent_id (so URL stays valid)
+        new_agent_id = self.create_agent(config, fixed_agent_id=agent_id)
+        return new_agent_id == agent_id
 
     def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent"""

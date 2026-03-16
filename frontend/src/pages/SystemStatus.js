@@ -28,6 +28,9 @@ const SystemStatus = () => {
   const { data: status, isLoading, error } = useQuery('status', api.getStatus, {
     refetchInterval: 10000, // Refetch every 10 seconds
   });
+  const { data: mcpHosts = [] } = useQuery('mcp-hosts', api.getMCPHosts, {
+    staleTime: 5 * 60 * 1000,
+  });
 
   if (isLoading) {
     return <LinearProgress />;
@@ -181,7 +184,7 @@ const SystemStatus = () => {
             System Health Overview
           </Typography>
           <Grid container spacing={3}>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={3}>
               <Alert
                 severity={status?.rag_collections?.length > 0 ? 'success' : 'info'}
                 variant="outlined"
@@ -196,7 +199,7 @@ const SystemStatus = () => {
                 </Typography>
               </Alert>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={3}>
               <Alert
                 severity={status?.active_agents?.length > 0 ? 'success' : 'info'}
                 variant="outlined"
@@ -211,7 +214,7 @@ const SystemStatus = () => {
                 </Typography>
               </Alert>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={3}>
               <Alert
                 severity={status?.active_tools?.length > 0 ? 'success' : 'info'}
                 variant="outlined"
@@ -223,6 +226,21 @@ const SystemStatus = () => {
                 </Typography>
                 <Typography variant="h6">
                   {status?.active_tools?.length || 0} tools
+                </Typography>
+              </Alert>
+            </Grid>
+            <Grid item xs={12} sm={3}>
+              <Alert
+                severity={mcpHosts.length > 0 ? 'success' : 'info'}
+                variant="outlined"
+                sx={{ borderRadius: 2 }}
+                icon={<ToolIcon />}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                  MCP Hosts
+                </Typography>
+                <Typography variant="h6">
+                  {mcpHosts.length} configured
                 </Typography>
               </Alert>
             </Grid>

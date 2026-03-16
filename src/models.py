@@ -196,6 +196,89 @@ class SystemStatus(BaseModel):
     active_tools: List[str]
 
 
+class SystemPermissionsSettings(BaseModel):
+    """Dangerous capabilities that Ground Control may be allowed to use."""
+
+    allow_file_access: bool = Field(
+        default=False,
+        description="If true, Ground Control may read/write arbitrary files on the host filesystem.",
+    )
+    allow_shell_commands: bool = Field(
+        default=False,
+        description="If true, Ground Control may execute arbitrary system shell commands.",
+    )
+
+
+class ExternalPlatformCredential(BaseModel):
+    """Credential for an external platform (e.g. Reddit, Slack, GitHub)."""
+
+    platform: str = Field(..., description="Platform identifier, e.g. 'reddit', 'slack', 'github'.")
+    username: Optional[str] = Field(
+        None,
+        description="Username or account id for this platform (if applicable).",
+    )
+    access_token: Optional[str] = Field(
+        None,
+        description="Access token / API key / password (never returned in full via API).",
+    )
+
+
+class SystemSettings(BaseModel):
+    """High-level system configuration controllable from the UI."""
+
+    default_llm_provider: str = Field(..., description="Default LLM provider id (e.g. gemini, qwen, mistral, groq).")
+    default_model: str = Field(..., description="Default model name used when no override is specified.")
+    providers_enabled: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Enabled/disabled flags for each known provider (key is provider id).",
+    )
+    permissions: SystemPermissionsSettings = Field(
+        default_factory=SystemPermissionsSettings,
+        description="Dangerous host-level permissions for Ground Control.",
+    )
+    # Map of platform -> credential metadata (token field is masked in responses)
+    external_credentials: Dict[str, ExternalPlatformCredential] = Field(
+        default_factory=dict,
+        description="Per-platform credentials (username and token metadata).",
+    )
+
+
+class SystemSettingsResponse(BaseModel):
+    """Response model for system settings, with secrets masked."""
+
+    settings: SystemSettings
+    # Map platform -> whether a non-empty token is stored
+    platform_has_token: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Indicates which platforms currently have a stored secret/token.",
+    )
+
+
+class SystemSettingsUpdateRequest(BaseModel):
+    """Partial update request for system settings."""
+
+    default_llm_provider: Optional[str] = Field(
+        None,
+        description="New default provider (optional).",
+    )
+    default_model: Optional[str] = Field(
+        None,
+        description="New default model name (optional).",
+    )
+    providers_enabled: Optional[Dict[str, bool]] = Field(
+        None,
+        description="Optional map of provider -> enabled flag.",
+    )
+    permissions: Optional[SystemPermissionsSettings] = Field(
+        None,
+        description="Optional permissions override.",
+    )
+    external_credentials: Optional[Dict[str, ExternalPlatformCredential]] = Field(
+        None,
+        description="Optional map of platform -> credentials. If access_token is an empty string, the stored token is cleared.",
+    )
+
+
 class CustomizationProfile(BaseModel):
     """Stored customization profile: instructions + optional RAG/LLM config."""
 

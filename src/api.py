@@ -80,6 +80,8 @@ from .models import (
     AdviserCreateRequest,
     AdviserQueryRequest,
     AdviserRunResponse,
+    SystemSettingsResponse,
+    SystemSettingsUpdateRequest,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -311,6 +313,8 @@ class RAGAPI:
         self.mcp_service = MCPService(self.agent_manager, self.rag_system, self.tool_manager)
         from .mcp_host_manager import MCPHostManager
         self.mcp_host_manager = MCPHostManager()
+        from .system_settings_manager import SystemSettingsManager
+        self.system_settings_manager = SystemSettingsManager()
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
         self.crawler_manager = CrawlerManager()
@@ -473,6 +477,39 @@ class RAGAPI:
                 )
             except Exception as e:
                 self.logger.error(f"Error getting status: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get(
+            "/system/settings",
+            tags=["System"],
+            summary="Get System Settings",
+            description="Retrieve configurable system settings (providers, permissions, external platform credentials). Secrets are masked.",
+            response_model=SystemSettingsResponse,
+        )
+        async def get_system_settings() -> SystemSettingsResponse:
+            """Get current system settings (without exposing raw secrets)."""
+            try:
+                return self.system_settings_manager.get_settings()
+            except Exception as e:
+                self.logger.error(f"Error getting system settings: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put(
+            "/system/settings",
+            tags=["System"],
+            summary="Update System Settings",
+            description=(
+                "Update configurable system settings (providers, permissions, external platform credentials). "
+                "Secrets such as access tokens are stored but never returned in full via the API."
+            ),
+            response_model=SystemSettingsResponse,
+        )
+        async def update_system_settings(req: SystemSettingsUpdateRequest) -> SystemSettingsResponse:
+            """Update system settings using a partial update model."""
+            try:
+                return self.system_settings_manager.update_settings(req)
+            except Exception as e:
+                self.logger.error(f"Error updating system settings: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # RAG Endpoints
@@ -1175,8 +1212,12 @@ Content:
                 success = self.agent_manager.update_agent(agent_id, config)
                 if success:
                     return {"message": "Agent updated successfully"}
-                else:
-                    raise HTTPException(status_code=400, detail="Failed to update agent")
+                raise HTTPException(status_code=400, detail="Failed to update agent")
+            except ValueError as e:
+                if "not found" in str(e).lower():
+                    raise HTTPException(status_code=404, detail="Agent not found. Use GET /agents to list agent ids.")
+                self.logger.error(f"Error updating agent: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error updating agent: {e}")
                 raise HTTPException(status_code=500, detail=str(e))

@@ -142,6 +142,17 @@ export const getProviders = async () => {
   return response.data;
 };
 
+// System settings
+export const getSystemSettings = async () => {
+  const response = await api.get('/system/settings');
+  return response.data;
+};
+
+export const updateSystemSettings = async (payload) => {
+  const response = await api.put('/system/settings', payload);
+  return response.data;
+};
+
 // MCP
 export const startMCPServer = async () => {
   const response = await api.post('/mcp/start');
@@ -538,6 +549,8 @@ const apiService = {
   updateToolConfig,
   getModels,
   getProviders,
+  getSystemSettings,
+  updateSystemSettings,
   startMCPServer,
   getMCPHosts,
   createMCPHost,
