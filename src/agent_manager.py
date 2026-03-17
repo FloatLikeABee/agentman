@@ -281,15 +281,41 @@ class AgentManager:
             else:
                 self.logger.info(f"✅ Agent '{config.name}' successfully using configured provider: {provider_name} with model {model_name}")
 
+            # Resolve agent id early (needed by tool instrumentation wrappers).
+            agent_id = (fixed_agent_id or config.name.lower().replace(' ', '_')).strip()
+            if not agent_id:
+                agent_id = config.name.lower().replace(' ', '_')
+
             # Build tools list
             tools = []
+
+            # Instrumentation for proving RAG usage at runtime.
+            # Each agent has a per-run mutable dict stored in agent_data['last_run'] (set in run_agent)
+            # and the RAG tool wrapper will append events there when invoked.
             
             # Add RAG tools if specified
             if config.rag_collections:
                 for collection_name in config.rag_collections:
+                    # Wrap RAG query so we can later confirm tool usage.
+                    def _rag_tool_func(q, cn=collection_name):
+                        try:
+                            # This is read during run_agent; safe if missing.
+                            agent_last_run = self.agents.get(agent_id, {}).get("last_run", None)
+                            if isinstance(agent_last_run, dict):
+                                agent_last_run.setdefault("rag_calls", [])
+                                agent_last_run["rag_calls"].append(
+                                    {
+                                        "collection": cn,
+                                        "query": q,
+                                    }
+                                )
+                        except Exception:
+                            # Never fail the tool because of instrumentation.
+                            pass
+                        return self._rag_query(cn, q)
                     rag_tool = Tool(
                         name=f"RAG_{collection_name}",
-                        func=lambda q, cn=collection_name: self._rag_query(cn, q),
+                        func=_rag_tool_func,
                         description=f"Search the {collection_name} knowledge base for relevant information"
                     )
                     tools.append(rag_tool)
@@ -394,10 +420,7 @@ Question: {input}
                 # No tools available - agent will be None, and we'll use direct LLM calls
                 self.logger.info(f"Agent '{config.name}' created without agent executor (no tools). Will use direct LLM calls.")
 
-            # Store agent with provider information (use fixed_agent_id when updating to preserve URL identity)
-            agent_id = (fixed_agent_id or config.name.lower().replace(' ', '_')).strip()
-            if not agent_id:
-                agent_id = config.name.lower().replace(' ', '_')
+            # Store agent with provider information
             self.agents[agent_id] = {
                 'id': agent_id,
                 'config': config,
@@ -406,7 +429,8 @@ Question: {input}
                 'llm_caller': llm_caller,  # Store caller for provider info
                 'provider': provider_name,
                 'model': model_name,
-                'has_tools': bool(tools)  # Track if agent has tools
+                'has_tools': bool(tools),  # Track if agent has tools
+                'last_run': {},  # runtime metadata for the last execution (rag calls, etc.)
             }
 
             self.logger.info(f"Created agent: {agent_id}")
@@ -496,6 +520,11 @@ Question: {input}
             agent_data = self.get_agent(agent_id)
             if not agent_data:
                 raise ValueError(f"Agent {agent_id} not found")
+
+            # Reset per-run metadata
+            agent_data["last_run"] = {
+                "rag_calls": [],
+            }
 
             # Get provider information for logging
             agent_config = agent_data['config']
@@ -598,11 +627,27 @@ Question: {input}
                 llm = agent_data['llm']
                 response_text = await llm.ainvoke(full_query)
 
+            rag_calls = []
+            try:
+                rag_calls = agent_data.get("last_run", {}).get("rag_calls", []) or []
+            except Exception:
+                rag_calls = []
+
             return {
                 'response': response_text,
                 'agent_id': agent_id,
                 'query': query,
-                'context': context
+                'context': context,
+                'metadata': {
+                    'rag_enabled': bool(agent_data.get('config') and getattr(agent_data.get('config'), 'rag_collections', [])),
+                    'rag_collections': list(getattr(agent_data.get('config'), 'rag_collections', []) or []),
+                    'rag_used': len(rag_calls) > 0,
+                    'rag_calls': rag_calls,
+                    'provider_configured': agent_data.get('config').llm_provider.value if agent_data.get('config') else None,
+                    'model_configured': agent_data.get('config').model_name if agent_data.get('config') else None,
+                    'provider_actual': agent_data.get('provider'),
+                    'model_actual': agent_data.get('model'),
+                },
             }
 
         except Exception as e:

@@ -42,6 +42,7 @@ const AgentManager = () => {
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, agentId: null });
   const [queryText, setQueryText] = useState('');
   const [agentResponse, setAgentResponse] = useState('');
+  const [agentRunMeta, setAgentRunMeta] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -121,6 +122,7 @@ const AgentManager = () => {
     {
       onSuccess: (data) => {
         setAgentResponse(data.response);
+        setAgentRunMeta(data.metadata || null);
       },
     }
   );
@@ -130,6 +132,7 @@ const AgentManager = () => {
     if (openRunDialog && selectedAgent) {
       setQueryText('');
       setAgentResponse('');
+      setAgentRunMeta(null);
     }
   }, [openRunDialog, selectedAgent]);
 
@@ -625,6 +628,27 @@ const AgentManager = () => {
                 <CheckCircleIcon color="success" />
                 Response
               </Typography>
+              {agentRunMeta && (
+                <Alert
+                  severity={agentRunMeta.rag_used ? 'success' : (agentRunMeta.rag_enabled ? 'warning' : 'info')}
+                  sx={{ mb: 2 }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                    RAG usage: {agentRunMeta.rag_used ? 'USED' : (agentRunMeta.rag_enabled ? 'NOT USED' : 'NOT ENABLED')}
+                  </Typography>
+                  <Typography variant="body2">
+                    Collections: {(agentRunMeta.rag_collections || []).join(', ') || '—'}
+                  </Typography>
+                  {agentRunMeta.rag_used && Array.isArray(agentRunMeta.rag_calls) && agentRunMeta.rag_calls.length > 0 && (
+                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                      Calls: {agentRunMeta.rag_calls.map((c) => c.collection).join(', ')}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" sx={{ mt: 0.5 }}>
+                    Model: {agentRunMeta.model_actual || agentRunMeta.model_configured || '—'} (provider: {agentRunMeta.provider_actual || agentRunMeta.provider_configured || '—'})
+                  </Typography>
+                </Alert>
+              )}
               <Box
                 sx={{
                   mt: 1,
