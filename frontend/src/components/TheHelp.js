@@ -9,6 +9,9 @@ import {
   CircularProgress,
   Divider,
   Tooltip,
+  Fab,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { HelpOutline as HelpIcon, Close as CloseIcon } from '@mui/icons-material';
 import { useMutation } from 'react-query';
@@ -19,6 +22,8 @@ const TheHelp = () => {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [history, setHistory] = useState([]); // {question, answer, sources}
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const askMutation = useMutation(api.askHelp, {
     onSuccess: (data) => {
@@ -53,19 +58,40 @@ const TheHelp = () => {
         }}
       >
         <Tooltip title="The Help – Ask how the system works" arrow>
-          <IconButton
-            color="primary"
-            onClick={() => setOpen(true)}
-            sx={{
-              bgcolor: 'background.paper',
-              boxShadow: 4,
-              '&:hover': {
+          {isMobile ? (
+            <IconButton
+              color="primary"
+              onClick={() => setOpen(true)}
+              sx={{
+                bgcolor: 'background.paper',
                 boxShadow: 6,
-              },
-            }}
-          >
-            <HelpIcon />
-          </IconButton>
+                border: '1px solid',
+                borderColor: 'primary.main',
+                '&:hover': {
+                  boxShadow: 10,
+                },
+              }}
+            >
+              <HelpIcon />
+            </IconButton>
+          ) : (
+            <Fab
+              variant="extended"
+              color="primary"
+              onClick={() => setOpen(true)}
+              sx={{
+                boxShadow: 10,
+                border: '1px solid',
+                borderColor: 'primary.main',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <HelpIcon sx={{ mr: 1 }} />
+              Help
+            </Fab>
+          )}
         </Tooltip>
       </Box>
 
