@@ -36,40 +36,65 @@ class BrowserAutomationTool:
         self._event_loop = None  # Store event loop reference for sync tool calls
         self.headless = headless  # Whether to run browser in headless mode (False = visible browser)
         self.browser_bridge_url = (browser_bridge_url or "").strip() or None  # e.g. ws://localhost:8765 - use local browser via bridge
-        
-        # Setup LLM for agent
-        provider_str = llm_provider.value if llm_provider else settings.default_llm_provider.lower()
-        if provider_str == "gemini":
-            provider = LLMProvider.GEMINI
-            api_key = settings.gemini_api_key
-            model = model_name or settings.gemini_default_model
-        elif provider_str == "qwen":
-            provider = LLMProvider.QWEN
-            api_key = settings.qwen_api_key
-            model = model_name or settings.qwen_default_model
-        elif provider_str == "mistral":
-            provider = LLMProvider.MISTRAL
-            api_key = settings.mistral_api_key
-            model = model_name or settings.mistral_default_model
-        elif provider_str == "groq":
-            provider = LLMProvider.GROQ
-            api_key = getattr(settings, "groq_api_key", "")
-            model = model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile")
-        else:
-            provider = LLMProvider.GEMINI
-            api_key = settings.gemini_api_key
-            model = settings.gemini_default_model
-        
-        self.llm = LLMFactory.create_caller(
-            provider=provider,
-            api_key=api_key,
-            model=model,
-            temperature=0.3,  # Lower temperature for more deterministic actions
-            max_tokens=4096
-        )
+
+        # LLM is created lazily on first use so the API can start even if a provider key is missing.
+        self._preferred_provider_str = (llm_provider.value if llm_provider else settings.default_llm_provider.lower()).strip().lower()
+        self._preferred_model_name = (model_name or "").strip() or None
+        self.llm = None
         
         # Create browser tools (bridge mode uses WebSocket to local browser_bridge.py)
         self.browser_tools = self._create_browser_tools()
+
+    def _ensure_llm(self):
+        """Create the LLM caller on-demand with provider fallback.
+
+        This prevents server startup from failing when a provider key (e.g., Gemini) is missing.
+        """
+        if self.llm is not None:
+            return self.llm
+
+        def candidate(provider_str: str):
+            provider_str = (provider_str or "").strip().lower()
+            if provider_str == "gemini":
+                return (LLMProvider.GEMINI, settings.gemini_api_key, self._preferred_model_name or settings.gemini_default_model)
+            if provider_str == "qwen":
+                return (LLMProvider.QWEN, settings.qwen_api_key, self._preferred_model_name or settings.qwen_default_model)
+            if provider_str == "mistral":
+                return (LLMProvider.MISTRAL, settings.mistral_api_key, self._preferred_model_name or settings.mistral_default_model)
+            if provider_str == "groq":
+                return (LLMProvider.GROQ, getattr(settings, "groq_api_key", ""), self._preferred_model_name or getattr(settings, "groq_default_model", "llama-3.3-70b-versatile"))
+            return None
+
+        # Preferred first, then fallbacks
+        order = [self._preferred_provider_str, "qwen", "mistral", "groq", "gemini"]
+        tried = []
+        last_err = None
+        for p in order:
+            cand = candidate(p)
+            if not cand:
+                continue
+            provider, api_key, model = cand
+            tried.append(provider.value)
+            if not api_key or not str(api_key).strip():
+                continue
+            try:
+                self.llm = LLMFactory.create_caller(
+                    provider=provider,
+                    api_key=api_key,
+                    model=model,
+                    temperature=0.3,
+                    max_tokens=4096,
+                )
+                return self.llm
+            except Exception as e:
+                last_err = e
+                continue
+
+        raise ValueError(
+            "No LLM provider is configured for Browser Automation. "
+            f"Tried providers (must have API key): {tried}. "
+            f"Last error: {last_err}"
+        )
         
     def _bridge_command(self, action: str, **kwargs) -> str:
         """Send a single command to the local Browser Bridge (sync). Returns result string or error."""
@@ -544,7 +569,8 @@ class BrowserAutomationTool:
             
             # Wrap LLM caller in LangChain wrapper
             from .llm_langchain_wrapper import LangChainLLMWrapper
-            llm_wrapper = LangChainLLMWrapper(llm_caller=self.llm)
+            llm_caller = self._ensure_llm()
+            llm_wrapper = LangChainLLMWrapper(llm_caller=llm_caller)
             
             # Create ReAct agent with proper prompt template
             from langchain.agents import AgentExecutor, create_react_agent

@@ -279,6 +279,49 @@ class SystemSettingsUpdateRequest(BaseModel):
     )
 
 
+class HelpRequest(BaseModel):
+    """Request for The Help assistant: ask a question about how the system works."""
+
+    question: str = Field(..., description="User question about how the system/modules work.")
+    rag_collection: str = Field(
+        default="system_help",
+        description="RAG collection to use for system documentation (default: 'system_help').",
+    )
+    n_results: int = Field(
+        default=6,
+        ge=1,
+        le=20,
+        description="Number of RAG chunks to retrieve as context.",
+    )
+
+
+class HelpSource(BaseModel):
+    """Source document used by The Help."""
+
+    collection: str = Field(..., description="RAG collection name.")
+    document_id: Optional[str] = Field(None, description="Underlying document id (if available).")
+    score: Optional[float] = Field(None, description="Similarity score (if available).")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata.")
+
+
+class HelpResponse(BaseModel):
+    """Response from The Help assistant."""
+
+    answer: str = Field(..., description="Markdown-formatted answer from The Help.")
+    sources: List[HelpSource] = Field(
+        default_factory=list,
+        description="RAG sources that were used to answer the question.",
+    )
+    used_rag: bool = Field(
+        default=False,
+        description="Whether any RAG context was actually used.",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error message if The Help failed to answer.",
+    )
+
+
 class CustomizationProfile(BaseModel):
     """Stored customization profile: instructions + optional RAG/LLM config."""
 

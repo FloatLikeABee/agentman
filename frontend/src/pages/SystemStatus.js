@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -12,6 +12,13 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  Tabs,
+  Tab,
+  TextField,
+  Switch,
+  FormControlLabel,
+  Button,
+  Divider,
 } from '@mui/material';
 import {
   CheckCircle as ConnectedIcon,
@@ -21,16 +28,104 @@ import {
   Build as ToolIcon,
   Storage as CollectionIcon,
 } from '@mui/icons-material';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
 
 const SystemStatus = () => {
+  const [tab, setTab] = useState(0);
+  const queryClient = useQueryClient();
+
   const { data: status, isLoading, error } = useQuery('status', api.getStatus, {
     refetchInterval: 10000, // Refetch every 10 seconds
   });
   const { data: mcpHosts = [] } = useQuery('mcp-hosts', api.getMCPHosts, {
     staleTime: 5 * 60 * 1000,
   });
+
+  const {
+    data: settingsData,
+    isLoading: settingsLoading,
+    error: settingsError,
+  } = useQuery('system-settings', api.getSystemSettings);
+
+  const updateSettingsMutation = useMutation(api.updateSystemSettings, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('system-settings');
+      queryClient.invalidateQueries('status');
+    },
+  });
+
+  const settings = settingsData?.settings;
+  const platformHasToken = settingsData?.platform_has_token || {};
+
+  const [localSettings, setLocalSettings] = useState({
+    default_llm_provider: '',
+    default_model: '',
+    providers_enabled: {},
+    permissions: { allow_file_access: false, allow_shell_commands: false },
+    external_credentials: {},
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings({
+        default_llm_provider: settings.default_llm_provider,
+        default_model: settings.default_model,
+        providers_enabled: settings.providers_enabled || {},
+        permissions: settings.permissions || { allow_file_access: false, allow_shell_commands: false },
+        external_credentials: settings.external_credentials || {},
+      });
+    }
+  }, [settingsData]);
+
+  const handleProviderToggle = (providerId) => {
+    setLocalSettings((prev) => ({
+      ...prev,
+      providers_enabled: {
+        ...prev.providers_enabled,
+        [providerId]: !prev.providers_enabled?.[providerId],
+      },
+    }));
+  };
+
+  const handlePermissionToggle = (field) => {
+    setLocalSettings((prev) => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [field]: !prev.permissions?.[field],
+      },
+    }));
+  };
+
+  const handleCredentialChange = (platform, field, value) => {
+    setLocalSettings((prev) => ({
+      ...prev,
+      external_credentials: {
+        ...prev.external_credentials,
+        [platform]: {
+          platform,
+          username:
+            field === 'username' ? value : prev.external_credentials?.[platform]?.username || '',
+          access_token:
+            field === 'access_token'
+              ? value
+              : prev.external_credentials?.[platform]?.access_token || '',
+        },
+      },
+    }));
+  };
+
+  const handleSaveSettings = () => {
+    const payload = {
+      default_llm_provider: localSettings.default_llm_provider,
+      default_model: localSettings.default_model,
+      providers_enabled: localSettings.providers_enabled,
+      permissions: localSettings.permissions,
+      external_credentials: localSettings.external_credentials,
+    };
+    updateSettingsMutation.mutate(payload);
+  };
 
   if (isLoading) {
     return <LinearProgress />;
@@ -43,8 +138,16 @@ const SystemStatus = () => {
   return (
     <Box sx={{ p: 1 }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
-        System Status
+        System
       </Typography>
+
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tab label="Status" />
+        <Tab label="Settings" />
+      </Tabs>
+
+      {tab === 0 && (
+        <>
 
       {/* Available Models */}
       <Card sx={{ mb: 4, boxShadow: 2 }}>
@@ -247,6 +350,161 @@ const SystemStatus = () => {
           </Grid>
         </CardContent>
       </Card>
+        </>
+      )}
+
+      {tab === 1 && (
+        <Box sx={{ mt: 2 }}>
+          {settingsLoading && <LinearProgress sx={{ mb: 2 }} />}
+          {settingsError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              Failed to load system settings
+            </Alert>
+          )}
+          {settings && (
+            <>
+              <Card sx={{ mb: 3, boxShadow: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    LLM Providers
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+                    <TextField
+                      label="Default Provider"
+                      size="small"
+                      value={localSettings.default_llm_provider}
+                      onChange={(e) =>
+                        setLocalSettings((prev) => ({ ...prev, default_llm_provider: e.target.value }))
+                      }
+                    />
+                    <TextField
+                      label="Default Model"
+                      size="small"
+                      value={localSettings.default_model}
+                      onChange={(e) =>
+                        setLocalSettings((prev) => ({ ...prev, default_model: e.target.value }))
+                      }
+                    />
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {Object.keys(localSettings.providers_enabled || {}).map((pid) => (
+                      <FormControlLabel
+                        key={pid}
+                        control={
+                          <Switch
+                            checked={!!localSettings.providers_enabled?.[pid]}
+                            onChange={() => handleProviderToggle(pid)}
+                          />
+                        }
+                        label={`Enable provider: ${pid}`}
+                      />
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+
+              <Card sx={{ mb: 3, boxShadow: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Ground Control Permissions
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    These options control whether Ground Control is allowed to read/write files on the host
+                    system and execute system commands. Enable with caution.
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={!!localSettings.permissions?.allow_file_access}
+                        onChange={() => handlePermissionToggle('allow_file_access')}
+                      />
+                    }
+                    label="Allow filesystem access (read/write)"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={!!localSettings.permissions?.allow_shell_commands}
+                        onChange={() => handlePermissionToggle('allow_shell_commands')}
+                      />
+                    }
+                    label="Allow execution of system shell commands"
+                  />
+                </CardContent>
+              </Card>
+
+              <Card sx={{ boxShadow: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    External Platform Credentials
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Configure credentials for platforms like Reddit and others. Tokens are stored securely and
+                    only their presence is shown here.
+                  </Typography>
+
+                  {['reddit', 'github', 'slack'].map((platform) => {
+                    const cred = localSettings.external_credentials?.[platform] || {};
+                    const hasToken = platformHasToken?.[platform];
+                    return (
+                      <Box key={platform} sx={{ mb: 2 }}>
+                        <Typography variant="subtitle1" sx={{ textTransform: 'capitalize' }}>
+                          {platform}
+                        </Typography>
+                        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                          <Grid item xs={12} sm={4}>
+                            <TextField
+                              label="Username / Client Id"
+                              size="small"
+                              fullWidth
+                              value={cred.username || ''}
+                              onChange={(e) =>
+                                handleCredentialChange(platform, 'username', e.target.value)
+                              }
+                            />
+                          </Grid>
+                          <Grid item xs={12} sm={8}>
+                            <TextField
+                              label={
+                                hasToken
+                                  ? 'Access Token (leave blank to keep existing, set a value then clear to remove)'
+                                  : 'Access Token / Secret'
+                              }
+                              size="small"
+                              type="password"
+                              fullWidth
+                              value={cred.access_token === '***' ? '' : cred.access_token || ''}
+                              onChange={(e) =>
+                                handleCredentialChange(platform, 'access_token', e.target.value)
+                              }
+                            />
+                          </Grid>
+                        </Grid>
+                        <Divider sx={{ mt: 2 }} />
+                      </Box>
+                    );
+                  })}
+
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                    {updateSettingsMutation.isError && (
+                      <Alert severity="error" sx={{ mr: 'auto' }}>
+                        Failed to update settings. Please try again.
+                      </Alert>
+                    )}
+                    <Button
+                      variant="contained"
+                      onClick={handleSaveSettings}
+                      disabled={updateSettingsMutation.isLoading}
+                    >
+                      {updateSettingsMutation.isLoading ? 'Saving...' : 'Save Settings'}
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </Box>
+      )}
     </Box>
   );
 };

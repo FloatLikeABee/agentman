@@ -560,10 +560,23 @@ This simulates a collaborative team process for higher quality outputs."""
         )
 
         # Browser Automation Tool
-        browser_automation = BrowserAutomationTool()
+        try:
+            browser_automation = BrowserAutomationTool()
+            browser_func = browser_automation.execute
+            browser_is_active = True
+            browser_desc_suffix = ""
+        except Exception as e:
+            # Do not crash system startup if browser automation can't initialize (e.g. missing LLM key).
+            self.logger.error(f"Browser Automation tool disabled: {e}")
+            browser_is_active = False
+            browser_desc_suffix = f"\n\n(Disabled: {str(e)})"
+
+            def browser_func(_: str) -> str:
+                return f"Browser Automation tool is disabled: {str(e)}"
+
         browser_tool = Tool(
             name="Browser Automation",
-            func=browser_automation.execute,
+            func=browser_func,
             description="""Control a web browser to perform tasks automatically. Uses AI agent with Playwright to follow instructions.
 
 INPUT FORMAT: Natural language instructions describing what to do in the browser.
@@ -586,7 +599,7 @@ EXAMPLES:
 - "Navigate to amazon.com, search for 'laptop', and get the price of the first result"
 
 The agent will automatically break down your instructions into browser actions and execute them step by step.
-Returns: Summary of actions taken, final URL, and page content summary."""
+Returns: Summary of actions taken, final URL, and page content summary.""" + browser_desc_suffix
         )
         self.register_tool(
             "browser_automation",
@@ -595,7 +608,8 @@ Returns: Summary of actions taken, final URL, and page content summary."""
                 name="Browser Automation",
                 tool_type=ToolType.BROWSER_AUTOMATION,
                 description="Control a web browser using AI agent with Playwright to follow natural language instructions",
-                config={}
+                config={},
+                is_active=browser_is_active,
             )
         )
 

@@ -153,6 +153,12 @@ export const updateSystemSettings = async (payload) => {
   return response.data;
 };
 
+// The Help assistant
+export const askHelp = async (payload) => {
+  const response = await api.post('/help/ask', payload);
+  return response.data;
+};
+
 // MCP
 export const startMCPServer = async () => {
   const response = await api.post('/mcp/start');
@@ -551,6 +557,7 @@ const apiService = {
   getProviders,
   getSystemSettings,
   updateSystemSettings,
+  askHelp,
   startMCPServer,
   getMCPHosts,
   createMCPHost,

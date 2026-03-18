@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box, Container } from '@mui/material';
 import theme from './theme';
 import Header from './components/Header';
+import TheHelp from './components/TheHelp';
 import Dashboard from './pages/Dashboard';
 import RAGManager from './pages/RAGManager';
 import AgentManager from './pages/AgentManager';
@@ -57,6 +58,7 @@ function App() {
               <Route path="/status" element={<SystemStatus />} />
             </Routes>
           </Container>
+          <TheHelp />
         </Box>
       </Router>
     </ThemeProvider>

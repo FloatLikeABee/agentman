@@ -82,6 +82,8 @@ from .models import (
     AdviserRunResponse,
     SystemSettingsResponse,
     SystemSettingsUpdateRequest,
+    HelpRequest,
+    HelpResponse,
 )
 from .rag_system import RAGSystem
 from .agent_manager import AgentManager
@@ -315,6 +317,8 @@ class RAGAPI:
         self.mcp_host_manager = MCPHostManager()
         from .system_settings_manager import SystemSettingsManager
         self.system_settings_manager = SystemSettingsManager()
+        from .help_service import HelpService
+        self.help_service = HelpService(self.rag_system)
         self.customization_manager = CustomizationManager()
         self.crawler_service = CrawlerService(self.rag_system)
         self.crawler_manager = CrawlerManager()
@@ -477,6 +481,34 @@ class RAGAPI:
                 )
             except Exception as e:
                 self.logger.error(f"Error getting status: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/help/ask",
+            tags=["Help"],
+            summary="Ask The Help assistant",
+            description=(
+                "Ask The Help AI assistant a question about how this system works. "
+                "Uses a dedicated RAG collection (default: 'system_help') containing documentation about modules and workflows."
+            ),
+            response_model=HelpResponse,
+        )
+        async def ask_help(req: HelpRequest) -> HelpResponse:
+            """
+            **Ask The Help**
+
+            The Help is a system-wide assistant focused on:
+
+            - Explaining modules and workflows
+            - Answering 'how do I...' questions
+            - Pointing to relevant screens or APIs
+
+            It uses a RAG collection (default: `system_help`) that you populate with your own documentation.
+            """
+            try:
+                return self.help_service.ask(req)
+            except Exception as e:
+                self.logger.error(f"Error in /help/ask: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get(
