@@ -28,6 +28,7 @@ import {
   UploadFile as UploadFileIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
@@ -146,6 +147,7 @@ const ExpandableResultItem = ({ result, index }) => {
 };
 
 const RAGManager = () => {
+  const PROTECTED_COLLECTIONS = ['system_help'];
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [openQueryDialog, setOpenQueryDialog] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState('');
@@ -314,7 +316,9 @@ const RAGManager = () => {
 
       {/* Collections List */}
       <Grid container spacing={3}>
-        {collections?.map((collection) => (
+        {collections?.map((collection) => {
+          const isProtected = !!collection?.metadata?.protected;
+          return (
           <Grid item xs={12} md={6} lg={4} key={collection.name}>
             <Card sx={{ boxShadow: 2, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-2px)' }, height: '100%', display: 'flex', flexDirection: 'column' }}>
               <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
@@ -333,6 +337,12 @@ const RAGManager = () => {
                     >
                       {collection.name}
                     </Typography>
+                    {isProtected && (
+                      <Typography variant="caption" color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                        <LockIcon sx={{ fontSize: 14 }} />
+                        Protected collection
+                      </Typography>
+                    )}
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                       {collection.count} documents
                     </Typography>
@@ -360,12 +370,14 @@ const RAGManager = () => {
                     size="small"
                     color="error"
                     onClick={() => handleDeleteCollection(collection.name)}
+                    disabled={isProtected}
                     sx={{ 
                       bgcolor: 'error.light', 
                       '&:hover': { bgcolor: 'error.main', color: 'white' },
                       flexShrink: 0,
                       ml: 'auto'
                     }}
+                    title={isProtected ? 'Protected collection cannot be deleted' : 'Delete collection'}
                   >
                     <DeleteIcon />
                   </IconButton>
@@ -386,7 +398,7 @@ const RAGManager = () => {
               </CardContent>
             </Card>
           </Grid>
-        ))}
+        )})}
       </Grid>
 
       {/* Add Data Dialog */}
@@ -406,6 +418,11 @@ const RAGManager = () => {
           {addDataMutation.isError && (
             <Alert severity="error" sx={{ mb: 2 }}>
               Failed to add data. Please check your inputs and try again.
+            </Alert>
+          )}
+          {PROTECTED_COLLECTIONS.includes((formData.name || '').trim()) && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Collection "{formData.name}" is protected and cannot be modified from this screen.
             </Alert>
           )}
           <Grid container spacing={3}>
@@ -598,7 +615,12 @@ const RAGManager = () => {
           <Button
             onClick={handleAddData}
             variant="contained"
-            disabled={addDataMutation.isLoading || !formData.name.trim() || !formData.content.trim()}
+            disabled={
+              addDataMutation.isLoading ||
+              !formData.name.trim() ||
+              !formData.content.trim() ||
+              PROTECTED_COLLECTIONS.includes((formData.name || '').trim())
+            }
           >
             {addDataMutation.isLoading ? 'Adding Data...' : 'Add Data'}
           </Button>

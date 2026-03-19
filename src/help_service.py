@@ -1,10 +1,14 @@
 import logging
+import os
 from typing import List, Dict, Any
 
 from .rag_system import RAGSystem
 from .llm_factory import LLMFactory, LLMProvider
 from .config import settings
-from .models import HelpRequest, HelpResponse, HelpSource
+from .models import HelpRequest, HelpResponse, HelpSource, RAGDataInput, DataFormat
+
+
+SYSTEM_HELP_COLLECTION = "system_help"
 
 
 class HelpService:
@@ -17,6 +21,96 @@ class HelpService:
     def __init__(self, rag_system: RAGSystem):
         self.logger = logging.getLogger(__name__)
         self.rag_system = rag_system
+        # Auto-bootstrap documentation collection so The Help works out of the box.
+        self.ensure_system_help_collection()
+
+    def _build_system_help_document(self) -> str:
+        """Build the base documentation content for The Help collection."""
+        sections = [
+            "# Ground Control - System Help Knowledge Base",
+            "",
+            "## Purpose",
+            "This document explains how the Ground Control system modules work and how they connect.",
+            "",
+            "## Core Modules",
+            "- RAG Manager: Create/query collections and ingest documents.",
+            "- Agent Manager: Create agents with provider/model, tools, and optional RAG collections.",
+            "- Tool Manager: Configure built-in tools and custom behavior.",
+            "- DB Tools: Configure database profiles and run queries/Text-to-SQL.",
+            "- Request Tools: Configure external/internal HTTP requests.",
+            "- Dialogues / Conversations: Structured multi-turn AI workflows.",
+            "- Flows: Chain resources (agent/db/request/dialogue) into automation steps.",
+            "- MCP Hosts: Configure external MCP server endpoints and transports.",
+            "- System: Monitor status and manage system settings.",
+            "",
+            "## Key Concepts",
+            "- RAG collections are knowledge bases used during retrieval.",
+            "- Agents can use tools and/or RAG collections depending on configuration.",
+            "- Text-to-SQL can use DB Tool profiles, connection configs, or connection strings.",
+            "- The Help assistant uses the `system_help` RAG collection to answer questions.",
+            "",
+            "## Best Practices",
+            "- Keep collection names stable and descriptive.",
+            "- Validate data before ingestion.",
+            "- Use read-only DB users for DB tools whenever possible.",
+            "- Keep API keys out of source code and store in local env/key files.",
+            "",
+            "## Notes",
+            "- This collection is protected and reserved for The Help assistant.",
+            "- Add/refresh docs through backend bootstrap processes only.",
+        ]
+
+        # Include README content for broader system explanations.
+        readme_text = ""
+        try:
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            readme_path = os.path.join(root_dir, "README.md")
+            if os.path.exists(readme_path):
+                with open(readme_path, "r", encoding="utf-8") as f:
+                    readme_text = f.read().strip()
+        except Exception as e:
+            self.logger.warning(f"Failed to read README for system help bootstrap: {e}")
+
+        if readme_text:
+            sections.extend(
+                [
+                    "",
+                    "## README Reference",
+                    "The following content is imported from project README for detailed usage/reference:",
+                    "",
+                    readme_text,
+                ]
+            )
+        return "\n".join(sections)
+
+    def ensure_system_help_collection(self) -> None:
+        """Create and seed `system_help` collection if missing or empty."""
+        try:
+            collections = self.rag_system.list_collections()
+            existing = next((c for c in collections if c.get("name") == SYSTEM_HELP_COLLECTION), None)
+            if existing and int(existing.get("count", 0) or 0) > 0:
+                return
+
+            doc_text = self._build_system_help_document()
+            data_input = RAGDataInput(
+                name="system_help_bootstrap",
+                description="Protected system help documentation for The Help assistant",
+                format=DataFormat.TXT,
+                content=doc_text,
+                tags=["system", "help", "documentation", "protected"],
+                metadata={
+                    "protected": True,
+                    "source": "bootstrap",
+                    "module": "help_service",
+                },
+            )
+            ok = self.rag_system.add_data_to_collection(SYSTEM_HELP_COLLECTION, data_input)
+            if ok:
+                self.logger.info("Initialized system_help collection with bootstrap documentation.")
+            else:
+                self.logger.warning("Failed to initialize system_help bootstrap documentation.")
+        except Exception as e:
+            self.logger.error(f"Error ensuring system_help collection: {e}")
 
     def _get_llm(self):
         """Create an LLM caller with default provider/model."""
@@ -55,7 +149,7 @@ class HelpService:
     def ask(self, req: HelpRequest) -> HelpResponse:
         """Answer a help question about the system using RAG + LLM."""
         try:
-            collection = req.rag_collection or "system_help"
+            collection = req.rag_collection or SYSTEM_HELP_COLLECTION
 
             # Check that the collection exists
             collections = [c["name"] for c in self.rag_system.list_collections()]

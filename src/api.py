@@ -104,6 +104,9 @@ from .image_reader import ImageReader
 from .pdf_reader import PDFReader
 from .adviser_manager import AdviserManager
 
+# Reserved/protected RAG collections (untouchable from normal CRUD endpoints)
+PROTECTED_RAG_COLLECTIONS = {"system_help"}
+
 
 class RAGAPI:
     def __init__(self):
@@ -675,6 +678,11 @@ Content:
             collection_name = self.rag_system.sanitize_collection_name(collection_name)
             if not collection_name:
                 raise HTTPException(status_code=400, detail="Collection name is required and must be valid (e.g. use letters, numbers, underscores or hyphens only).")
+            if collection_name in PROTECTED_RAG_COLLECTIONS:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Collection '{collection_name}' is protected and cannot be modified from this endpoint.",
+                )
             try:
                 success = self.rag_system.add_data_to_collection(collection_name, data_input)
                 if success:
@@ -818,7 +826,13 @@ Content:
             ```
             """
             try:
-                return self.rag_system.list_collections()
+                collections = self.rag_system.list_collections()
+                for col in collections:
+                    if col.get("name") in PROTECTED_RAG_COLLECTIONS:
+                        metadata = col.get("metadata") or {}
+                        metadata["protected"] = True
+                        col["metadata"] = metadata
+                return collections
             except Exception as e:
                 self.logger.error(f"Error listing collections: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
@@ -945,6 +959,11 @@ Content:
             - Use this endpoint carefully in production environments
             """
             try:
+                if collection_name in PROTECTED_RAG_COLLECTIONS:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Collection '{collection_name}' is protected and cannot be deleted.",
+                    )
                 success = self.rag_system.delete_collection(collection_name)
                 if success:
                     return {"message": f"Collection {collection_name} deleted"}
