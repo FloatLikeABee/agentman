@@ -9,11 +9,8 @@ import {
   CircularProgress,
   Divider,
   Tooltip,
-  Fab,
-  useMediaQuery,
-  useTheme,
 } from '@mui/material';
-import { HelpOutline as HelpIcon, Close as CloseIcon } from '@mui/icons-material';
+import { SmartToy as RobotIcon, Close as CloseIcon } from '@mui/icons-material';
 import { useMutation } from 'react-query';
 import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
@@ -22,8 +19,6 @@ const TheHelp = () => {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [history, setHistory] = useState([]); // {question, answer, sources}
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const askMutation = useMutation(api.askHelp, {
     onSuccess: (data) => {
@@ -58,40 +53,26 @@ const TheHelp = () => {
         }}
       >
         <Tooltip title="The Help – Ask how the system works" arrow>
-          {isMobile ? (
-            <IconButton
-              color="primary"
-              onClick={() => setOpen(true)}
-              sx={{
-                bgcolor: 'background.paper',
-                boxShadow: 6,
-                border: '1px solid',
-                borderColor: 'primary.main',
-                '&:hover': {
-                  boxShadow: 10,
-                },
-              }}
-            >
-              <HelpIcon />
-            </IconButton>
-          ) : (
-            <Fab
-              variant="extended"
-              color="primary"
-              onClick={() => setOpen(true)}
-              sx={{
-                boxShadow: 10,
-                border: '1px solid',
-                borderColor: 'primary.main',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-              }}
-            >
-              <HelpIcon sx={{ mr: 1 }} />
-              Help
-            </Fab>
-          )}
+          <IconButton
+            aria-label="Open The Help"
+            color="primary"
+            onClick={() => setOpen(true)}
+            sx={{
+              width: 52,
+              height: 52,
+              bgcolor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'primary.main',
+              boxShadow: '0 0 18px rgba(157, 78, 221, 0.35), 0 10px 24px rgba(0,0,0,0.5)',
+              '&:hover': {
+                boxShadow: '0 0 26px rgba(157, 78, 221, 0.55), 0 14px 30px rgba(0,0,0,0.6)',
+                transform: 'translateY(-1px)',
+              },
+              transition: 'transform 120ms ease, box-shadow 200ms ease',
+            }}
+          >
+            <RobotIcon />
+          </IconButton>
         </Tooltip>
       </Box>
 
@@ -120,7 +101,7 @@ const TheHelp = () => {
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <HelpIcon color="primary" />
+            <RobotIcon color="primary" />
             <Typography variant="h6">The Help</Typography>
           </Box>
           <IconButton size="small" onClick={() => setOpen(false)}>
