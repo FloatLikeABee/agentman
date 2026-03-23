@@ -89,6 +89,9 @@ class CustomizationManager:
             rag_collection=req.rag_collection,
             llm_provider=req.llm_provider,
             model_name=req.model_name,
+            request_tool_id=req.request_tool_id,
+            db_tool_id=req.db_tool_id,
+            tool_response_mode=req.tool_response_mode or "raw",
             metadata=req.metadata or {},
         )
         self.customizations[profile_id] = profile
@@ -110,6 +113,9 @@ class CustomizationManager:
                 rag_collection=req.rag_collection,
                 llm_provider=req.llm_provider,
                 model_name=req.model_name,
+                request_tool_id=req.request_tool_id,
+                db_tool_id=req.db_tool_id,
+                tool_response_mode=req.tool_response_mode or "raw",
                 metadata=req.metadata or {},
             )
             self.customizations[profile_id] = profile

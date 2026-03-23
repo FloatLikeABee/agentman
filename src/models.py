@@ -341,6 +341,18 @@ class CustomizationProfile(BaseModel):
         None,
         description="Optional model override for this customization",
     )
+    request_tool_id: Optional[str] = Field(
+        None,
+        description="Optional request tool ID. When set, system prompt + user query induce params/body to call this API.",
+    )
+    db_tool_id: Optional[str] = Field(
+        None,
+        description="Optional database tool ID. When set, system prompt + user query induce SQL to run against this DB.",
+    )
+    tool_response_mode: str = Field(
+        default="raw",
+        description="When a tool is configured: 'raw' returns tool result as-is; 'summarize' passes result to LLM for natural language response.",
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata for this customization",
@@ -354,6 +366,9 @@ class CustomizationCreateRequest(BaseModel):
     rag_collection: Optional[str] = None
     llm_provider: Optional[LLMProviderType] = None
     model_name: Optional[str] = None
+    request_tool_id: Optional[str] = None
+    db_tool_id: Optional[str] = None
+    tool_response_mode: str = "raw"
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

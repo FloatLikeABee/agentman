@@ -2608,19 +2608,34 @@ Question: {{input}}
                     if results:
                         context = "\n\n".join(r["content"] for r in results[: request.n_results])
 
-                # Build final prompt
-                system_prompt = profile.system_prompt
-                if context:
-                    full_prompt = (
-                        f"{system_prompt}\n\n"
-                        f"Context (from knowledge base '{rag_used}'):\n{context}\n\n"
-                        f"User query:\n{request.query}"
+                # Use tool path if request_tool_id or db_tool_id is configured
+                if profile.request_tool_id or profile.db_tool_id:
+                    from .customization_tools import execute_customization_with_tools
+                    response_text = await execute_customization_with_tools(
+                        profile,
+                        request.query,
+                        request_tools_manager=self.request_tools_manager,
+                        db_tools_manager=self.db_tools_manager,
+                        rag_system=self.rag_system,
+                        provider_str=provider_str,
+                        model_name=model_name,
+                        temperature=request.temperature if request.temperature is not None else 0.7,
+                        max_tokens=request.max_tokens if request.max_tokens is not None else 8192,
                     )
                 else:
-                    full_prompt = f"{system_prompt}\n\nUser query:\n{request.query}"
+                    # Build final prompt (no tools)
+                    system_prompt = profile.system_prompt
+                    if context:
+                        full_prompt = (
+                            f"{system_prompt}\n\n"
+                            f"Context (from knowledge base '{rag_used}'):\n{context}\n\n"
+                            f"User query:\n{request.query}"
+                        )
+                    else:
+                        full_prompt = f"{system_prompt}\n\nUser query:\n{request.query}"
 
-                # Direct LLM call (no tools for now)
-                response_text = await llm.ainvoke(full_prompt)
+                    # Direct LLM call (no tools)
+                    response_text = await llm.ainvoke(full_prompt)
 
                 return CustomizationQueryResponse(
                     response=response_text,

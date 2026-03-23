@@ -35,6 +35,8 @@ const Customizations = () => {
   const { data: models = [] } = useQuery('models', api.getModels, { enabled: true, staleTime: 5 * 60 * 1000 });
   const { data: providersData } = useQuery('providers', api.getProviders, { enabled: true, staleTime: 5 * 60 * 1000 });
   const { data: collections = [] } = useQuery('collections', api.getRAGCollections, { staleTime: 5 * 60 * 1000 });
+  const { data: requestTools = [] } = useQuery('request-tools', api.getRequestTools, { staleTime: 5 * 60 * 1000 });
+  const { data: dbTools = [] } = useQuery('db-tools', api.getDBTools, { staleTime: 5 * 60 * 1000 });
 
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
@@ -48,6 +50,9 @@ const Customizations = () => {
     rag_collection: '',
     llm_provider: '',
     model_name: '',
+    request_tool_id: '',
+    db_tool_id: '',
+    tool_response_mode: 'raw',
   });
   const [queryText, setQueryText] = useState('');
   const [queryResult, setQueryResult] = useState('');
@@ -66,6 +71,9 @@ const Customizations = () => {
         rag_collection: '',
         llm_provider: '',
         model_name: '',
+        request_tool_id: '',
+        db_tool_id: '',
+        tool_response_mode: 'raw',
       });
     },
   });
@@ -84,6 +92,9 @@ const Customizations = () => {
           rag_collection: '',
           llm_provider: '',
           model_name: '',
+          request_tool_id: '',
+          db_tool_id: '',
+          tool_response_mode: 'raw',
         });
       },
     }
@@ -109,6 +120,9 @@ const Customizations = () => {
       rag_collection: createForm.rag_collection || null,
       llm_provider: createForm.llm_provider || null,
       model_name: createForm.model_name || null,
+      request_tool_id: createForm.request_tool_id || null,
+      db_tool_id: createForm.db_tool_id || null,
+      tool_response_mode: createForm.tool_response_mode || 'raw',
     });
   };
 
@@ -159,6 +173,9 @@ const Customizations = () => {
       rag_collection: profile.rag_collection || '',
       llm_provider: profile.llm_provider || '',
       model_name: profile.model_name || '',
+      request_tool_id: profile.request_tool_id || '',
+      db_tool_id: profile.db_tool_id || '',
+      tool_response_mode: profile.tool_response_mode || 'raw',
     });
     setOpenEditDialog(true);
   };
@@ -173,6 +190,9 @@ const Customizations = () => {
         rag_collection: createForm.rag_collection || null,
         llm_provider: createForm.llm_provider || null,
         model_name: createForm.model_name || null,
+        request_tool_id: createForm.request_tool_id || null,
+        db_tool_id: createForm.db_tool_id || null,
+        tool_response_mode: createForm.tool_response_mode || 'raw',
       },
     });
   };
@@ -237,6 +257,12 @@ const Customizations = () => {
                         )}
                         {profile.model_name && (
                           <Chip size="small" label={`Model: ${profile.model_name}`} variant="outlined" />
+                        )}
+                        {profile.request_tool_id && (
+                          <Chip size="small" label={`Request: ${profile.request_tool_id}`} color="secondary" variant="outlined" />
+                        )}
+                        {profile.db_tool_id && (
+                          <Chip size="small" label={`DB: ${profile.db_tool_id}`} color="info" variant="outlined" />
                         )}
                       </Box>
                     </Box>
@@ -406,6 +432,9 @@ const Customizations = () => {
             rag_collection: '',
             llm_provider: '',
             model_name: '',
+            request_tool_id: '',
+            db_tool_id: '',
+            tool_response_mode: 'raw',
           });
         }}
         maxWidth="md"
@@ -496,8 +525,61 @@ const Customizations = () => {
                   placeholder="e.g., gemini-2.5-flash, qwen3-max, or any custom model"
                 />
               )}
-              sx={{ mb: 1 }}
+              sx={{ mb: 2 }}
             />
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Request Tool (optional)</InputLabel>
+              <Select
+                value={createForm.request_tool_id}
+                label="Request Tool (optional)"
+                onChange={(e) => setCreateForm({ ...createForm, request_tool_id: e.target.value })}
+              >
+                <MenuItem value="">
+                  <em>None - standard LLM only</em>
+                </MenuItem>
+                {requestTools.map((tool) => (
+                  <MenuItem key={tool.id} value={tool.id}>
+                    {tool.name || tool.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" sx={{ mt: 0.5, display: 'block' }}>
+                System prompt + user query induce params/body to call this API
+              </Typography>
+            </FormControl>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Database Tool (optional)</InputLabel>
+              <Select
+                value={createForm.db_tool_id}
+                label="Database Tool (optional)"
+                onChange={(e) => setCreateForm({ ...createForm, db_tool_id: e.target.value })}
+              >
+                <MenuItem value="">
+                  <em>None</em>
+                </MenuItem>
+                {dbTools.map((tool) => (
+                  <MenuItem key={tool.id} value={tool.id}>
+                    {tool.name || tool.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" sx={{ mt: 0.5, display: 'block' }}>
+                System prompt + user query induce SQL to run against this DB
+              </Typography>
+            </FormControl>
+            {(createForm.request_tool_id || createForm.db_tool_id) && (
+              <FormControl fullWidth sx={{ mb: 1 }}>
+                <InputLabel>Tool Response Mode</InputLabel>
+                <Select
+                  value={createForm.tool_response_mode}
+                  label="Tool Response Mode"
+                  onChange={(e) => setCreateForm({ ...createForm, tool_response_mode: e.target.value })}
+                >
+                  <MenuItem value="raw">Raw - return tool result as-is</MenuItem>
+                  <MenuItem value="summarize">Summarize - LLM formats result in natural language</MenuItem>
+                </Select>
+              </FormControl>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
@@ -599,8 +681,61 @@ const Customizations = () => {
                   placeholder="e.g., gemini-2.5-flash, qwen3-max, or any custom model"
                 />
               )}
-              sx={{ mb: 1 }}
+              sx={{ mb: 2 }}
             />
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Request Tool (optional)</InputLabel>
+              <Select
+                value={createForm.request_tool_id}
+                label="Request Tool (optional)"
+                onChange={(e) => setCreateForm({ ...createForm, request_tool_id: e.target.value })}
+              >
+                <MenuItem value="">
+                  <em>None - standard LLM only</em>
+                </MenuItem>
+                {requestTools.map((tool) => (
+                  <MenuItem key={tool.id} value={tool.id}>
+                    {tool.name || tool.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" sx={{ mt: 0.5, display: 'block' }}>
+                System prompt + user query induce params/body to call this API
+              </Typography>
+            </FormControl>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Database Tool (optional)</InputLabel>
+              <Select
+                value={createForm.db_tool_id}
+                label="Database Tool (optional)"
+                onChange={(e) => setCreateForm({ ...createForm, db_tool_id: e.target.value })}
+              >
+                <MenuItem value="">
+                  <em>None</em>
+                </MenuItem>
+                {dbTools.map((tool) => (
+                  <MenuItem key={tool.id} value={tool.id}>
+                    {tool.name || tool.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" sx={{ mt: 0.5, display: 'block' }}>
+                System prompt + user query induce SQL to run against this DB
+              </Typography>
+            </FormControl>
+            {(createForm.request_tool_id || createForm.db_tool_id) && (
+              <FormControl fullWidth sx={{ mb: 1 }}>
+                <InputLabel>Tool Response Mode</InputLabel>
+                <Select
+                  value={createForm.tool_response_mode}
+                  label="Tool Response Mode"
+                  onChange={(e) => setCreateForm({ ...createForm, tool_response_mode: e.target.value })}
+                >
+                  <MenuItem value="raw">Raw - return tool result as-is</MenuItem>
+                  <MenuItem value="summarize">Summarize - LLM formats result in natural language</MenuItem>
+                </Select>
+              </FormControl>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>

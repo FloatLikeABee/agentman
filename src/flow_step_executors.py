@@ -57,91 +57,104 @@ class FlowStepExecutors:
 
         print(f"[FLOW STEP EXECUTOR] Extracted query: {query[:200]}...")
 
-        # Execute customization similar to API endpoint
-        from .config import settings
-        from .llm_factory import LLMFactory, LLMProvider
-        from .llm_langchain_wrapper import LangChainLLMWrapper
-        from .models import LLMProviderType
-
-        # Determine provider/model
-        provider_str = (
-            profile.llm_provider.value
-            if profile.llm_provider
-            else settings.default_llm_provider
-        )
-        if provider_str == "gemini":
-            provider = LLMProviderType.GEMINI
-            api_key = settings.gemini_api_key
-            model_name = profile.model_name or settings.gemini_default_model
-        elif provider_str == "qwen":
-            provider = LLMProviderType.QWEN
-            api_key = settings.qwen_api_key
-            model_name = profile.model_name or settings.qwen_default_model
-        else:
-            provider = LLMProviderType.GEMINI
-            api_key = settings.gemini_api_key
-            model_name = profile.model_name or settings.gemini_default_model
-
-        print(f"[FLOW STEP EXECUTOR] Using provider: {provider.value}, model: {model_name}")
-
-        # Create LLM caller
-        llm_caller = LLMFactory.create_caller(
-            provider=LLMProvider(provider.value),
-            api_key=api_key,
-            model=model_name,
-            temperature=0.7,
-            max_tokens=8192,
-            timeout=settings.api_timeout,
-        )
-
-        # Wrap in LangChain-compatible wrapper
-        llm = LangChainLLMWrapper(llm_caller=llm_caller)
-
-        # Build context from RAG collection if specified
-        rag_context = ""
-        if profile.rag_collection and self.rag_system:
-            results = self.rag_system.query_collection(
-                profile.rag_collection,
+        # Use tool path (request/db) when configured, else standard LLM path
+        if profile.request_tool_id or profile.db_tool_id:
+            from .customization_tools import execute_customization_with_tools
+            response_text = await execute_customization_with_tools(
+                profile,
                 query,
-                n_results=3,
+                request_tools_manager=self.request_tools_manager,
+                db_tools_manager=self.db_tools_manager,
+                rag_system=self.rag_system,
+                context=context or {},
             )
-            if results:
-                rag_context = "\n\n".join(r["content"] for r in results[:3])
-                print(f"[FLOW STEP EXECUTOR] RAG context retrieved: {len(rag_context)} chars")
-
-        # Build final prompt
-        system_prompt = profile.system_prompt
-        
-        # Prepend flow context if available
-        flow_context_formatted = ""
-        if context and "flow_context_formatted" in context:
-            flow_context_formatted = context["flow_context_formatted"]
-            print(f"[FLOW STEP EXECUTOR] 📋 CUSTOMIZATION step using flow context ({len(flow_context_formatted)} chars)")
         else:
-            print(f"[FLOW STEP EXECUTOR] ℹ️  CUSTOMIZATION step has no flow context (first step or not in flow)")
-        
-        # Build prompt with flow context, RAG context, and user query
-        prompt_parts = []
-        
-        # Start with flow context if available
-        if flow_context_formatted:
-            prompt_parts.append(flow_context_formatted)
-            print(f"[FLOW STEP EXECUTOR] ✅ Prepended flow context to system prompt")
-        
-        # Add system prompt
-        prompt_parts.append(system_prompt)
-        
-        # Add RAG context if available
-        if rag_context:
-            prompt_parts.append(f"Context (from knowledge base '{profile.rag_collection}'):\n{rag_context}")
-        
-        # Add user query
-        prompt_parts.append(f"User query:\n{query}")
-        
-        full_prompt = "\n\n".join(prompt_parts)
+            # Standard customization: LLM with system prompt + RAG + query
+            from .config import settings
+            from .llm_factory import LLMFactory, LLMProvider
+            from .llm_langchain_wrapper import LangChainLLMWrapper
+            from .models import LLMProviderType
 
-        # Direct LLM call
-        response_text = await llm.ainvoke(full_prompt)
+            # Determine provider/model
+            provider_str = (
+                profile.llm_provider.value
+                if profile.llm_provider
+                else settings.default_llm_provider
+            )
+            if provider_str == "gemini":
+                provider = LLMProviderType.GEMINI
+                api_key = settings.gemini_api_key
+                model_name = profile.model_name or settings.gemini_default_model
+            elif provider_str == "qwen":
+                provider = LLMProviderType.QWEN
+                api_key = settings.qwen_api_key
+                model_name = profile.model_name or settings.qwen_default_model
+            else:
+                provider = LLMProviderType.GEMINI
+                api_key = settings.gemini_api_key
+                model_name = profile.model_name or settings.gemini_default_model
+
+            print(f"[FLOW STEP EXECUTOR] Using provider: {provider.value}, model: {model_name}")
+
+            # Create LLM caller
+            llm_caller = LLMFactory.create_caller(
+                provider=LLMProvider(provider.value),
+                api_key=api_key,
+                model=model_name,
+                temperature=0.7,
+                max_tokens=8192,
+                timeout=settings.api_timeout,
+            )
+
+            # Wrap in LangChain-compatible wrapper
+            llm = LangChainLLMWrapper(llm_caller=llm_caller)
+
+            # Build context from RAG collection if specified
+            rag_context = ""
+            if profile.rag_collection and self.rag_system:
+                results = self.rag_system.query_collection(
+                    profile.rag_collection,
+                    query,
+                    n_results=3,
+                )
+                if results:
+                    rag_context = "\n\n".join(r["content"] for r in results[:3])
+                    print(f"[FLOW STEP EXECUTOR] RAG context retrieved: {len(rag_context)} chars")
+
+            # Build final prompt
+            system_prompt = profile.system_prompt
+            
+            # Prepend flow context if available
+            flow_context_formatted = ""
+            if context and "flow_context_formatted" in context:
+                flow_context_formatted = context["flow_context_formatted"]
+                print(f"[FLOW STEP EXECUTOR] 📋 CUSTOMIZATION step using flow context ({len(flow_context_formatted)} chars)")
+            else:
+                print(f"[FLOW STEP EXECUTOR] ℹ️  CUSTOMIZATION step has no flow context (first step or not in flow)")
+            
+            # Build prompt with flow context, RAG context, and user query
+            prompt_parts = []
+            
+            # Start with flow context if available
+            if flow_context_formatted:
+                prompt_parts.append(flow_context_formatted)
+                print(f"[FLOW STEP EXECUTOR] ✅ Prepended flow context to system prompt")
+            
+            # Add system prompt
+            prompt_parts.append(system_prompt)
+            
+            # Add RAG context if available
+            if rag_context:
+                prompt_parts.append(f"Context (from knowledge base '{profile.rag_collection}'):\n{rag_context}")
+            
+            # Add user query
+            prompt_parts.append(f"User query:\n{query}")
+            
+            full_prompt = "\n\n".join(prompt_parts)
+
+            # Direct LLM call
+            response_text = await llm.ainvoke(full_prompt)
+
         print(f"[FLOW STEP EXECUTOR] CUSTOMIZATION step output: {response_text[:200]}...")
         return response_text
 
