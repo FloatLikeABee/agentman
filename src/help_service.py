@@ -113,30 +113,42 @@ class HelpService:
             self.logger.error(f"Error ensuring system_help collection: {e}")
 
     def _get_llm(self):
-        """Create an LLM caller with default provider/model."""
+        """Create an LLM caller for The Help.
+
+        The Help is pinned to Mistral so it does not depend on the global default provider.
+        If Mistral initialization fails for any reason, fall back to the global default provider.
+        """
+        mistral_model = getattr(settings, "mistral_default_model", None) or "mistral-large-latest"
+        try:
+            return LLMFactory.create_caller(
+                provider=LLMProvider.MISTRAL,
+                api_key=settings.mistral_api_key,
+                model=mistral_model,
+                temperature=0.3,
+                max_tokens=2048,
+            )
+        except Exception as mistral_error:
+            self.logger.warning(f"The Help failed to initialize Mistral caller: {mistral_error}")
+
         provider_str = getattr(settings, "default_llm_provider", "gemini").lower()
         model_name = getattr(settings, "default_model", None)
 
-        if provider_str == "gemini":
-            provider = LLMProvider.GEMINI
-            api_key = settings.gemini_api_key
-            model = model_name or settings.gemini_default_model
-        elif provider_str == "qwen":
+        if provider_str == "qwen":
             provider = LLMProvider.QWEN
             api_key = settings.qwen_api_key
             model = model_name or settings.qwen_default_model
-        elif provider_str == "mistral":
-            provider = LLMProvider.MISTRAL
-            api_key = settings.mistral_api_key
-            model = model_name or settings.mistral_default_model
         elif provider_str == "groq":
             provider = LLMProvider.GROQ
             api_key = settings.groq_api_key
             model = model_name or settings.groq_default_model
+        elif provider_str == "mistral":
+            provider = LLMProvider.MISTRAL
+            api_key = settings.mistral_api_key
+            model = model_name or settings.mistral_default_model
         else:
             provider = LLMProvider.GEMINI
             api_key = settings.gemini_api_key
-            model = settings.gemini_default_model
+            model = model_name or settings.gemini_default_model
 
         return LLMFactory.create_caller(
             provider=provider,
