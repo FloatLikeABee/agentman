@@ -650,6 +650,24 @@ class TextToSQLResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if any step failed")
 
 
+class TableHtmlRawRequest(BaseModel):
+    """Raw text upload for table HTML conversion (Swagger-friendly alternative to multipart)."""
+    content: str = Field(..., description="File contents as UTF-8 text (CSV or JSON)")
+    filename: str = Field(
+        ...,
+        description="Filename hint for format detection, e.g. data.csv or data.json",
+    )
+
+
+class TableHtmlResponse(BaseModel):
+    """CSV/JSON tabular data rendered as a standalone HTML document (dark blue theme)."""
+    html: str = Field(..., description="Full HTML document with embedded styles")
+    format_detected: str = Field(..., description="Detected format: csv, json, or jsonl")
+    column_count: int = Field(..., ge=0)
+    row_count: int = Field(..., ge=0)
+    columns: List[str] = Field(default_factory=list, description="Column headers")
+
+
 class RequestType(str, Enum):
     HTTP = "http"
     INTERNAL = "internal"
@@ -693,6 +711,10 @@ class RequestProfile(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="URL query parameters")
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = Field(None, description="Request body (string, JSON object, or array)")
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    wrap_json_body_as_array: bool = Field(
+        default=False,
+        description="If true, a JSON object body is sent as a one-element array [{...}]. Use for APIs that bind List<T> (e.g. ASP.NET) while keeping a single-object template or LLM output.",
+    )
     last_response: Optional[Dict[str, Any]] = Field(None, description="Last response data")
     last_executed_at: Optional[str] = Field(None, description="Last execution timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
@@ -710,6 +732,7 @@ class RequestCreateRequest(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    wrap_json_body_as_array: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
     
     @field_validator('description', mode='before')
@@ -846,6 +869,7 @@ class RequestUpdateRequest(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
     body: Optional[Union[str, Dict[str, Any], List[Any]]] = None
     timeout: float = Field(default=30.0, ge=1.0, le=300.0)
+    wrap_json_body_as_array: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -861,6 +885,10 @@ class RequestExecuteResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if request failed")
     executed_at: str = Field(..., description="Execution timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    request_details: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Outgoing HTTP method, URL, query params, headers, and body as actually sent",
+    )
 
 
 class CrawlerRequest(BaseModel):

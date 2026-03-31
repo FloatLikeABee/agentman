@@ -19,12 +19,14 @@ import {
   Select,
   FormControl,
   InputLabel,
+  InputAdornment,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   PlayArrow as RunIcon,
   Edit as EditIcon,
+  OpenInFull as OpenInFullIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import api from '../services/api';
@@ -59,11 +61,13 @@ const Customizations = () => {
   const [queryMeta, setQueryMeta] = useState(null);
   const [queryError, setQueryError] = useState('');
   const [isRunningQuery, setIsRunningQuery] = useState(false);
+  const [systemPromptModalOpen, setSystemPromptModalOpen] = useState(false);
 
   const createMutation = useMutation(api.createCustomization, {
     onSuccess: () => {
       queryClient.invalidateQueries('customizations');
       setOpenCreateDialog(false);
+      setSystemPromptModalOpen(false);
       setCreateForm({
         name: '',
         description: '',
@@ -85,6 +89,7 @@ const Customizations = () => {
         queryClient.invalidateQueries('customizations');
         setOpenEditDialog(false);
         setEditingProfileId(null);
+        setSystemPromptModalOpen(false);
         setCreateForm({
           name: '',
           description: '',
@@ -425,6 +430,7 @@ const Customizations = () => {
         onClose={() => {
           setOpenEditDialog(false);
           setEditingProfileId(null);
+          setSystemPromptModalOpen(false);
           setCreateForm({
             name: '',
             description: '',
@@ -473,6 +479,20 @@ const Customizations = () => {
               rows={6}
               sx={{ mb: 2 }}
               placeholder="Describe how the AI should behave for this customization..."
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end" sx={{ alignSelf: 'flex-start', mt: 1.25 }}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setSystemPromptModalOpen(true)}
+                      aria-label="Expand system prompt in full window"
+                      edge="end"
+                    >
+                      <OpenInFullIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
             <Autocomplete
               freeSolo
@@ -583,7 +603,14 @@ const Customizations = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setOpenEditDialog(false);
+              setSystemPromptModalOpen(false);
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             onClick={handleUpdate}
@@ -595,7 +622,15 @@ const Customizations = () => {
       </Dialog>
 
       {/* Create Customization Dialog */}
-      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={openCreateDialog}
+        onClose={() => {
+          setOpenCreateDialog(false);
+          setSystemPromptModalOpen(false);
+        }}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Create Customization</DialogTitle>
         <DialogContent>
           {createMutation.isError && (
@@ -629,6 +664,20 @@ const Customizations = () => {
               rows={6}
               sx={{ mb: 2 }}
               placeholder="Describe how the AI should behave for this customization..."
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end" sx={{ alignSelf: 'flex-start', mt: 1.25 }}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setSystemPromptModalOpen(true)}
+                      aria-label="Expand system prompt in full window"
+                      edge="end"
+                    >
+                      <OpenInFullIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
             <Autocomplete
               freeSolo
@@ -739,13 +788,76 @@ const Customizations = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setOpenCreateDialog(false);
+              setSystemPromptModalOpen(false);
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             onClick={handleCreate}
             disabled={createMutation.isLoading || !createForm.name.trim() || !createForm.system_prompt.trim()}
           >
             {createMutation.isLoading ? 'Creating...' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Full-window system prompt editor (create + edit) */}
+      <Dialog
+        open={systemPromptModalOpen}
+        onClose={() => setSystemPromptModalOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            minHeight: 'min(90vh, 900px)',
+            maxHeight: '95vh',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
+      >
+        <DialogTitle>System Prompt / Instructions</DialogTitle>
+        <DialogContent
+          dividers
+          sx={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+            pt: 2,
+          }}
+        >
+          <TextField
+            fullWidth
+            multiline
+            minRows={22}
+            value={createForm.system_prompt}
+            onChange={(e) => setCreateForm({ ...createForm, system_prompt: e.target.value })}
+            placeholder="Describe how the AI should behave for this customization..."
+            variant="outlined"
+            sx={{
+              flex: 1,
+              '& .MuiInputBase-root': {
+                alignItems: 'flex-start',
+                height: '100%',
+                minHeight: '55vh',
+              },
+              '& textarea': {
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                fontSize: '0.8125rem',
+                lineHeight: 1.5,
+              },
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setSystemPromptModalOpen(false)}>
+            Done
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -41,6 +41,7 @@ import {
   Storage as DatabaseIcon,
   SmartToy as TextToSQLIcon,
   PlayArrow as RunIcon,
+  TableChart as TableHtmlIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import ReactMarkdown from 'react-markdown';
@@ -63,6 +64,11 @@ const DBTools = () => {
   const [textToSqlResult, setTextToSqlResult] = useState(null);
   const [textToSqlLoading, setTextToSqlLoading] = useState(false);
   const [textToSqlError, setTextToSqlError] = useState('');
+
+  const [tableHtmlResult, setTableHtmlResult] = useState(null);
+  const [tableHtmlError, setTableHtmlError] = useState('');
+  const [tableHtmlLoading, setTableHtmlLoading] = useState(false);
+  const tableHtmlInputRef = useRef(null);
 
   const { data: providersData } = useQuery('providers', api.getProviders);
   const providers = useMemo(() => {
@@ -401,6 +407,35 @@ const DBTools = () => {
     }
   };
 
+  const handleTableHtmlFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setTableHtmlError('');
+    setTableHtmlResult(null);
+    setTableHtmlLoading(true);
+    try {
+      const data = await api.tableHtmlFromFile(file);
+      setTableHtmlResult(data);
+    } catch (err) {
+      setTableHtmlError(err.response?.data?.detail || err.message || 'Conversion failed');
+      setTableHtmlResult(null);
+    } finally {
+      setTableHtmlLoading(false);
+    }
+  };
+
+  const downloadTableHtml = () => {
+    if (!tableHtmlResult?.html) return;
+    const blob = new Blob([tableHtmlResult.html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'table-preview.html';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -422,6 +457,7 @@ const DBTools = () => {
       <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
         <Tab label="Database Tools" icon={<DatabaseIcon />} iconPosition="start" />
         <Tab label="Text-to-SQL" icon={<TextToSQLIcon />} iconPosition="start" />
+        <Tab label="Table HTML" icon={<TableHtmlIcon />} iconPosition="start" />
       </Tabs>
 
       {activeTab === 1 && (
@@ -571,6 +607,79 @@ const DBTools = () => {
                 </>
               )}
             </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 2 && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              CSV / JSON → HTML table
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Upload a <strong>.csv</strong>, <strong>.tsv</strong>, <strong>.json</strong> (array of objects or arrays), or{' '}
+              <strong>.jsonl</strong> file. The server returns a standalone HTML page with a dark blue theme. Same behavior is
+              available via API: <code>POST /db-tools/table-html</code> (multipart) or{' '}
+              <code>POST /db-tools/table-html/raw</code> (JSON body).
+            </Typography>
+            <input
+              ref={tableHtmlInputRef}
+              type="file"
+              accept=".csv,.tsv,.json,.jsonl,text/csv,text/plain,application/json"
+              style={{ display: 'none' }}
+              onChange={handleTableHtmlFile}
+            />
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mb: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={tableHtmlLoading ? <CircularProgress size={20} color="inherit" /> : <TableHtmlIcon />}
+                onClick={() => tableHtmlInputRef.current?.click()}
+                disabled={tableHtmlLoading}
+              >
+                {tableHtmlLoading ? 'Converting…' : 'Choose file'}
+              </Button>
+              {tableHtmlResult && (
+                <Button variant="outlined" onClick={downloadTableHtml}>
+                  Download HTML
+                </Button>
+              )}
+              {tableHtmlResult && (
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Chip size="small" label={`Format: ${tableHtmlResult.format_detected}`} color="primary" variant="outlined" />
+                  <Chip size="small" label={`${tableHtmlResult.row_count} rows`} variant="outlined" />
+                  <Chip size="small" label={`${tableHtmlResult.column_count} columns`} variant="outlined" />
+                </Box>
+              )}
+            </Box>
+            {tableHtmlError && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setTableHtmlError('')}>
+                {typeof tableHtmlError === 'string' ? tableHtmlError : JSON.stringify(tableHtmlError)}
+              </Alert>
+            )}
+            {tableHtmlResult?.html && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  borderColor: 'divider',
+                  bgcolor: '#0a1628',
+                }}
+              >
+                <iframe
+                  title="Table preview"
+                  srcDoc={tableHtmlResult.html}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    minHeight: 520,
+                    border: 'none',
+                  }}
+                  sandbox=""
+                />
+              </Paper>
+            )}
           </CardContent>
         </Card>
       )}

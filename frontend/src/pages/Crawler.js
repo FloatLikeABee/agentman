@@ -25,6 +25,7 @@ import {
   Paper,
   InputAdornment,
   Tooltip,
+  Checkbox,
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
@@ -610,6 +611,7 @@ const RequestToolsPanel = ({ isActive }) => {
     params: {},
     body: '',
     timeout: 30,
+    wrap_json_body_as_array: false,
   });
   const [headersText, setHeadersText] = useState('');
   const [paramsText, setParamsText] = useState('');
@@ -671,6 +673,7 @@ const RequestToolsPanel = ({ isActive }) => {
       params: {},
       body: '',
       timeout: 30,
+      wrap_json_body_as_array: false,
     });
     setHeadersText('');
     setParamsText('');
@@ -705,6 +708,7 @@ const RequestToolsPanel = ({ isActive }) => {
       params: request.params || {},
       body: typeof request.body === 'string' ? request.body : JSON.stringify(request.body || {}, null, 2),
       timeout: request.timeout || 30,
+      wrap_json_body_as_array: !!request.wrap_json_body_as_array,
     });
     setHeadersText(JSON.stringify(request.headers || {}, null, 2));
     setParamsText(JSON.stringify(request.params || {}, null, 2));
@@ -1025,6 +1029,102 @@ const RequestToolsPanel = ({ isActive }) => {
                 </Alert>
               )}
 
+              {responseData.request_details && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Outgoing request
+                  </Typography>
+                  <Paper
+                    sx={{
+                      p: 2,
+                      bgcolor: 'action.hover',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      maxHeight: 360,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {responseData.request_details.effective_url && (
+                      <Typography variant="body2" sx={{ mb: 1, wordBreak: 'break-all' }}>
+                        <strong>URL:</strong>{' '}
+                        {responseData.request_details.effective_url}
+                      </Typography>
+                    )}
+                    {!responseData.request_details.effective_url && responseData.request_details.url && (
+                      <Typography variant="body2" sx={{ mb: 1, wordBreak: 'break-all' }}>
+                        <strong>URL:</strong> {responseData.request_details.url}
+                      </Typography>
+                    )}
+                    {responseData.request_details.method && (
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        <strong>Method:</strong> {responseData.request_details.method}
+                      </Typography>
+                    )}
+                    {responseData.request_details.type === 'internal' && (
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        <strong>Endpoint:</strong> {responseData.request_details.endpoint}
+                      </Typography>
+                    )}
+                    {responseData.request_details.params &&
+                      Object.keys(responseData.request_details.params).length > 0 && (
+                        <>
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                            Query / params
+                          </Typography>
+                          <pre
+                            style={{
+                              margin: '4px 0 0',
+                              fontSize: '0.8125rem',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {JSON.stringify(responseData.request_details.params, null, 2)}
+                          </pre>
+                        </>
+                      )}
+                    {responseData.request_details.headers &&
+                      Object.keys(responseData.request_details.headers).length > 0 && (
+                        <>
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                            Headers
+                          </Typography>
+                          <pre
+                            style={{
+                              margin: '4px 0 0',
+                              fontSize: '0.8125rem',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {JSON.stringify(responseData.request_details.headers, null, 2)}
+                          </pre>
+                        </>
+                      )}
+                    {(responseData.request_details.body !== undefined &&
+                      responseData.request_details.body !== null) && (
+                      <>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                          Body {responseData.request_details.json_body_wrapped_as_array ? '(wrapped as JSON array)' : ''}
+                        </Typography>
+                        <pre
+                          style={{
+                            margin: '4px 0 0',
+                            fontSize: '0.8125rem',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {typeof responseData.request_details.body === 'object'
+                            ? JSON.stringify(responseData.request_details.body, null, 2)
+                            : String(responseData.request_details.body)}
+                        </pre>
+                      </>
+                    )}
+                  </Paper>
+                </Box>
+              )}
+
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Response Body
               </Typography>
@@ -1180,6 +1280,19 @@ const RequestForm = ({ form, setForm, headersText, setHeadersText, paramsText, s
         sx={{ mb: 2 }}
         placeholder='{"key": "value"}'
       />
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={!!form.wrap_json_body_as_array}
+            onChange={(e) => setForm({ ...form, wrap_json_body_as_array: e.target.checked })}
+          />
+        }
+        label="Wrap JSON body as array [{...}]"
+        sx={{ mb: 1, display: 'block' }}
+      />
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Enable for APIs that expect List&lt;T&gt; (e.g. ASP.NET): a single object body is sent as one-element JSON array.
+      </Typography>
       <TextField
         fullWidth
         label="Timeout (seconds)"

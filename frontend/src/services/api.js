@@ -337,6 +337,26 @@ export const textToSQL = async (payload) => {
   return response.data;
 };
 
+/** Upload CSV/JSON file → dark-blue themed HTML table document */
+export const tableHtmlFromFile = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  // Must override axios default Content-Type: application/json so the browser/axios sends
+  // multipart/form-data with boundary; otherwise FastAPI receives no `file` field (422).
+  const response = await api.post('/db-tools/table-html', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+/** Same as tableHtmlFromFile but with raw UTF-8 text + filename hint (Swagger-friendly) */
+export const tableHtmlRaw = async (payload) => {
+  const response = await api.post('/db-tools/table-html/raw', payload);
+  return response.data;
+};
+
 // Request Tools
 export const getRequestTools = async () => {
   const response = await api.get('/request-tools');
@@ -591,6 +611,8 @@ const apiService = {
   previewDBTool,
   executeDBTool,
   textToSQL,
+  tableHtmlFromFile,
+  tableHtmlRaw,
   getRequestTools,
   getRequestTool,
   createRequestTool,

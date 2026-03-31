@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import re
 import time
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -17,6 +18,32 @@ from .models import (
     RequestType,
     HTTPMethod,
 )
+
+# Sentinel: omit `body=` to use profile.body; pass body=None to send no JSON body.
+_UNSET_BODY = object()
+
+
+def should_wrap_request_json_body(profile: RequestProfile) -> bool:
+    """
+    True if a single JSON object should be sent as [{...}] for ASP.NET List<T> model binding.
+    Enabled by: profile.wrap_json_body_as_array, metadata.wrap_json_body_as_array,
+    or POST/PUT/PATCH to a URL containing 'udgrid' (Transfinder UDGrid list endpoints).
+    Opt out: metadata.no_wrap_json_body = true.
+    """
+    meta = profile.metadata or {}
+    if meta.get("no_wrap_json_body") in (True, "true", "1", 1, "yes"):
+        return False
+    if getattr(profile, "wrap_json_body_as_array", False):
+        return True
+    for key in ("wrap_json_body_as_array", "wrapBodyAsJsonArray"):
+        v = meta.get(key)
+        if v is True or (isinstance(v, str) and v.strip().lower() in ("true", "1", "yes")):
+            return True
+    url = profile.url or ""
+    method = (profile.method.value if profile.method else "") or ""
+    if re.search(r"udgrid", url, re.I) and method in ("POST", "PUT", "PATCH"):
+        return True
+    return False
 
 
 class RequestToolsManager:
@@ -53,6 +80,10 @@ class RequestToolsManager:
             self.logger.info(f"Loaded {len(self.requests)} request profiles")
         except Exception as e:
             self.logger.error(f"Error loading requests: {e}")
+
+    def persist(self) -> None:
+        """Write all in-memory request profiles to disk (e.g. after restoring template params/body)."""
+        self._save_requests()
 
     def _save_requests(self) -> None:
         """Persist all request profiles to TinyDB."""
@@ -137,6 +168,7 @@ class RequestToolsManager:
             params=req.params,
             body=req.body,
             timeout=req.timeout,
+            wrap_json_body_as_array=getattr(req, "wrap_json_body_as_array", False),
             metadata=req.metadata,
         )
         self.requests[request_id] = profile
@@ -181,6 +213,7 @@ class RequestToolsManager:
                 params=req.params,
                 body=req.body,
                 timeout=req.timeout,
+                wrap_json_body_as_array=getattr(req, "wrap_json_body_as_array", False),
                 last_response=last_response,  # Preserve last response
                 last_executed_at=last_executed_at,  # Preserve last execution time
                 metadata=req.metadata,
@@ -206,42 +239,75 @@ class RequestToolsManager:
             self.logger.error(f"Error deleting request {request_id}: {e}")
             return False
 
-    def _execute_http_request(self, profile: RequestProfile) -> Dict[str, Any]:
-        """Execute an HTTP request."""
+    def _execute_http_request(
+        self,
+        profile: RequestProfile,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        body: Any = _UNSET_BODY,
+        wrap_json_body_as_array: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Execute an HTTP request. If params/body are omitted, uses profile defaults."""
         start_time = time.time()
+        request_details: Optional[Dict[str, Any]] = None
         try:
             # Prepare request parameters
             method = profile.method.value if profile.method else "GET"
             url = profile.url
-            headers = profile.headers or {}
-            params = profile.params or {}
+            headers = dict(profile.headers or {})
+            effective_params = (profile.params or {}) if params is None else params
             timeout = profile.timeout
+
+            effective_body = profile.body if body is _UNSET_BODY else body
 
             # Prepare body
             data = None
             json_data = None
-            if profile.body:
-                if isinstance(profile.body, dict) or isinstance(profile.body, list):
-                    json_data = profile.body
-                elif isinstance(profile.body, str):
+            if effective_body:
+                if isinstance(effective_body, dict) or isinstance(effective_body, list):
+                    json_data = effective_body
+                elif isinstance(effective_body, str):
                     try:
                         # Try to parse as JSON
-                        json_data = json.loads(profile.body)
+                        json_data = json.loads(effective_body)
                     except json.JSONDecodeError:
                         # If not JSON, send as plain text
-                        data = profile.body
+                        data = effective_body
                         headers.setdefault("Content-Type", "text/plain")
+
+            # ASP.NET / List<T> binding: root must be a JSON array; wrap single object
+            if wrap_json_body_as_array is None:
+                do_wrap = should_wrap_request_json_body(profile)
+            else:
+                do_wrap = wrap_json_body_as_array
+            wrapped_applied = False
+            if do_wrap and isinstance(json_data, dict):
+                json_data = [json_data]
+                wrapped_applied = True
+
+            request_details = {
+                "method": method,
+                "url": url,
+                "params": dict(effective_params) if effective_params else {},
+                "headers": headers,
+                "body": json_data if json_data is not None else data,
+                "body_format": "json"
+                if json_data is not None
+                else ("text" if data is not None else None),
+                "json_body_wrapped_as_array": wrapped_applied,
+            }
 
             # Make the request
             response = requests.request(
                 method=method,
                 url=url,
                 headers=headers,
-                params=params,
+                params=effective_params,
                 json=json_data,
                 data=data,
                 timeout=timeout,
             )
+            request_details["effective_url"] = response.url
 
             execution_time = time.time() - start_time
 
@@ -262,10 +328,11 @@ class RequestToolsManager:
                 "response_headers": dict(response.headers),
                 "execution_time": execution_time,
                 "error": error_message,
+                "request_details": request_details,
             }
         except requests.exceptions.Timeout:
             execution_time = time.time() - start_time
-            return {
+            err: Dict[str, Any] = {
                 "success": False,
                 "status_code": None,
                 "response_data": None,
@@ -273,9 +340,12 @@ class RequestToolsManager:
                 "execution_time": execution_time,
                 "error": f"Request timed out after {profile.timeout} seconds",
             }
+            if request_details is not None:
+                err["request_details"] = request_details
+            return err
         except requests.exceptions.RequestException as e:
             execution_time = time.time() - start_time
-            return {
+            err = {
                 "success": False,
                 "status_code": None,
                 "response_data": None,
@@ -283,10 +353,13 @@ class RequestToolsManager:
                 "execution_time": execution_time,
                 "error": str(e),
             }
+            if request_details is not None:
+                err["request_details"] = request_details
+            return err
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"Error executing HTTP request {profile.id}: {e}")
-            return {
+            err = {
                 "success": False,
                 "status_code": None,
                 "response_data": None,
@@ -294,8 +367,17 @@ class RequestToolsManager:
                 "execution_time": execution_time,
                 "error": str(e),
             }
+            if request_details is not None:
+                err["request_details"] = request_details
+            return err
 
-    def _execute_internal_request(self, profile: RequestProfile) -> Dict[str, Any]:
+    def _execute_internal_request(
+        self,
+        profile: RequestProfile,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        body: Any = _UNSET_BODY,
+    ) -> Dict[str, Any]:
         """Execute an internal service call."""
         start_time = time.time()
         try:
@@ -310,8 +392,8 @@ class RequestToolsManager:
             endpoint = endpoint.lstrip("/")
 
             # Prepare request data
-            body = profile.body
-            params = profile.params or {}
+            req_body = profile.body if body is _UNSET_BODY else body
+            req_params = (profile.params or {}) if params is None else params
 
             # Call internal endpoint
             # This is a simplified approach - in practice, you might want to route through FastAPI's app
@@ -330,6 +412,12 @@ class RequestToolsManager:
             execution_time = time.time() - start_time
             result["execution_time"] = execution_time
             result["error"] = "Internal service call routing not yet implemented. Use HTTP requests for external APIs."
+            result["request_details"] = {
+                "type": "internal",
+                "endpoint": endpoint,
+                "params": dict(req_params) if req_params else {},
+                "body": req_body,
+            }
 
             return result
         except Exception as e:
@@ -342,19 +430,37 @@ class RequestToolsManager:
                 "response_headers": {},
                 "execution_time": execution_time,
                 "error": str(e),
+                "request_details": None,
             }
 
-    def execute_request(self, request_id: str) -> Dict[str, Any]:
-        """Execute a request and save the response."""
+    def execute_request(
+        self,
+        request_id: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        body: Any = _UNSET_BODY,
+        wrap_json_body_as_array: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Execute a request and save the response (last_response only).
+        If params/body are omitted, uses the stored profile template.
+        Pass params/body to run a one-off request without mutating the saved profile.
+        wrap_json_body_as_array: True/False to override; None uses profile flag, metadata, and udgrid URL heuristic.
+        """
         profile = self.requests.get(request_id)
         if not profile:
             raise ValueError(f"Request {request_id} not found")
 
         # Execute based on request type
         if profile.request_type == RequestType.HTTP:
-            result = self._execute_http_request(profile)
+            result = self._execute_http_request(
+                profile,
+                params=params,
+                body=body,
+                wrap_json_body_as_array=wrap_json_body_as_array,
+            )
         elif profile.request_type == RequestType.INTERNAL:
-            result = self._execute_internal_request(profile)
+            result = self._execute_internal_request(profile, params=params, body=body)
         else:
             raise ValueError(f"Unknown request type: {profile.request_type}")
 
@@ -378,5 +484,6 @@ class RequestToolsManager:
             "error": result.get("error"),
             "executed_at": executed_at,
             "metadata": {},
+            "request_details": result.get("request_details"),
         }
 

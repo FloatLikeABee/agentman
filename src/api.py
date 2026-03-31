@@ -46,6 +46,8 @@ from .models import (
     DatabaseToolExecuteRequest,
     TextToSQLRequest,
     TextToSQLResponse,
+    TableHtmlRawRequest,
+    TableHtmlResponse,
     DatabaseType,
     RequestProfile,
     RequestCreateRequest,
@@ -99,6 +101,7 @@ from .crawler_manager import CrawlerManager
 from .gathering_service import GatheringService
 from .db_tools import DatabaseToolsManager
 from .text_to_sql import TextToSQLService
+from .tabular_html_util import tabular_bytes_to_html
 from .request_tools import RequestToolsManager
 from .image_reader import ImageReader
 from .pdf_reader import PDFReader
@@ -3465,6 +3468,75 @@ Question: {{input}}
                 import traceback
                 raise HTTPException(status_code=500, detail=f"{str(e)}\n{traceback.format_exc()}")
 
+        @self.app.post(
+            "/db-tools/table-html",
+            tags=["Database Tools"],
+            summary="Table from file (CSV / JSON → HTML)",
+            description=(
+                "Upload a `.csv`, `.tsv`, `.json`, or `.jsonl` file. Returns a self-contained HTML document "
+                "with a dark blue themed table. Max size 10 MB; max 50,000 rows."
+            ),
+            response_model=TableHtmlResponse,
+            responses={
+                200: {"description": "HTML document generated"},
+                400: {"description": "Invalid or empty file"},
+                413: {"description": "File too large"},
+            },
+        )
+        async def table_html_from_file(
+            file: UploadFile = File(..., description="CSV, TSV, JSON array, or JSONL file"),
+        ):
+            try:
+                raw = await file.read()
+                name = file.filename or "upload.csv"
+                doc, cols, rows, fmt = tabular_bytes_to_html(raw, name)
+                return TableHtmlResponse(
+                    html=doc,
+                    format_detected=fmt,
+                    column_count=len(cols),
+                    row_count=len(rows),
+                    columns=cols,
+                )
+            except ValueError as e:
+                msg = str(e)
+                if "too large" in msg.lower():
+                    raise HTTPException(status_code=413, detail=msg)
+                raise HTTPException(status_code=400, detail=msg)
+            except Exception as e:
+                self.logger.error(f"table-html upload error: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post(
+            "/db-tools/table-html/raw",
+            tags=["Database Tools"],
+            summary="Table from raw text (CSV / JSON → HTML)",
+            description=(
+                "Same as `/db-tools/table-html` but accepts JSON body with `content` and `filename` "
+                "for clients that cannot use multipart (e.g. Swagger “Try it out” with raw text)."
+            ),
+            response_model=TableHtmlResponse,
+            responses={
+                200: {"description": "HTML document generated"},
+                400: {"description": "Invalid content"},
+            },
+        )
+        async def table_html_from_raw(req: TableHtmlRawRequest):
+            try:
+                raw = req.content.encode("utf-8")
+                doc, cols, rows, fmt = tabular_bytes_to_html(raw, req.filename or "data.csv")
+                return TableHtmlResponse(
+                    html=doc,
+                    format_detected=fmt,
+                    column_count=len(cols),
+                    row_count=len(rows),
+                    columns=cols,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"table-html raw error: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
         # Request Tools Endpoints
         @self.app.post(
             "/request-tools",
@@ -3692,7 +3764,17 @@ Question: {{input}}
                                 "execution_time": 0.234,
                                 "error": None,
                                 "executed_at": "2024-01-15T10:30:00",
-                                "metadata": {}
+                                "metadata": {},
+                                "request_details": {
+                                    "method": "GET",
+                                    "url": "https://api.example.com/v1/items",
+                                    "effective_url": "https://api.example.com/v1/items?page=1",
+                                    "params": {"page": 1},
+                                    "headers": {"Accept": "application/json"},
+                                    "body": None,
+                                    "body_format": None,
+                                    "json_body_wrapped_as_array": False,
+                                },
                             }
                         }
                     }

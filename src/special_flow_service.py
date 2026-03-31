@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import asyncio
+import copy
 import json
 import re
 from typing import List, Optional, Dict, Any
@@ -252,15 +253,14 @@ class SpecialFlow1Service:
                 elif config.initial_data_source.type == "request_tool":
                     if not self.request_tools_manager:
                         raise ValueError("Request tools manager not available")
-                    # If initial_input provided, use it to update request params
+                    exec_kw: Dict[str, Any] = {}
                     if request.initial_input:
                         profile = self.request_tools_manager.get_profile(config.initial_data_source.resource_id)
                         if profile:
                             try:
                                 parsed = json.loads(request.initial_input) if isinstance(request.initial_input, str) else request.initial_input
                                 if isinstance(parsed, dict):
-                                    profile.params = {**(profile.params or {}), **parsed}
-                                    self.request_tools_manager.requests[profile.id] = profile
+                                    exec_kw["params"] = {**(profile.params or {}), **parsed}
                                     self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Updated request params: {json.dumps(parsed, indent=2)}")
                                     print(f"[SPECIAL FLOW SERVICE] Updated request params: {json.dumps(parsed, indent=2)[:200]}...")
                             except Exception as e:
@@ -268,8 +268,9 @@ class SpecialFlow1Service:
                     self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Using Request tool: {config.initial_data_source.resource_id}")
                     print(f"[SPECIAL FLOW SERVICE] Using Request tool: {config.initial_data_source.resource_id}")
                     initial_data = await asyncio.to_thread(
-                        self.request_tools_manager.execute_request,
-                        config.initial_data_source.resource_id
+                        lambda: self.request_tools_manager.execute_request(
+                            config.initial_data_source.resource_id, **exec_kw
+                        ),
                     )
                     self.logger.info(f"[DIALOGUE-DRIVEN FLOW {flow_id}] Step 1 OUTPUT: Initial data fetched: {json.dumps(initial_data, indent=2) if initial_data else 'None'}")
                     print(f"[SPECIAL FLOW SERVICE] Step 1 OUTPUT - Initial data keys: {list(initial_data.keys()) if isinstance(initial_data, dict) else 'N/A'}")
@@ -621,6 +622,8 @@ class SpecialFlow1Service:
         if not profile:
             raise ValueError(f"Request tool {request_config.request_tool_id} not found")
 
+        saved_params = copy.deepcopy(profile.params) if profile.params else {}
+
         self.logger.info(f"[DIALOGUE-DRIVEN FLOW] _fetch_mid_dialogue_data: Extracting params from dialogue outcome")
         self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Using dialogue outcome (conversation_history) - this was defined by the dialogue prompt in step 2")
         
@@ -766,9 +769,14 @@ class SpecialFlow1Service:
         self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Final request params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
         print(f"[SPECIAL FLOW SERVICE] Final request params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
 
+        eff_params = copy.deepcopy(profile.params) if profile.params else {}
+        profile.params = saved_params
+        self.request_tools_manager.requests[profile.id] = profile
+
         result = await asyncio.to_thread(
-            self.request_tools_manager.execute_request,
-            request_config.request_tool_id
+            lambda: self.request_tools_manager.execute_request(
+                request_config.request_tool_id, params=eff_params
+            ),
         )
         print(f"[SPECIAL FLOW SERVICE] Request executed - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
         return result
@@ -1115,30 +1123,29 @@ Remember: Output ONLY the JSON object, nothing else."""
         if not profile:
             raise ValueError(f"Request tool {api_config.request_tool_id} not found")
 
-        # Map final outcome to request body
+        # Map final outcome to request body (do not mutate stored profile template)
         body_mapping = api_config.body_mapping.replace("{{final_outcome}}", final_outcome)
         try:
-            profile.body = json.loads(body_mapping)
+            eff_body = json.loads(body_mapping)
             print(f"[SPECIAL FLOW SERVICE] Parsed body as JSON")
-        except:
-            profile.body = body_mapping
+        except Exception:
+            eff_body = body_mapping
             print(f"[SPECIAL FLOW SERVICE] Using body as string")
-        
+
         # Print the request body for step 5
         print(f"[SPECIAL FLOW SERVICE] ========== STEP 5 REQUEST BODY ==========")
-        if isinstance(profile.body, dict):
-            body_str = json.dumps(profile.body, indent=2)
+        if isinstance(eff_body, dict):
+            body_str = json.dumps(eff_body, indent=2)
             print(f"[SPECIAL FLOW SERVICE] Request body (JSON): {body_str}")
             self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Step 5 REQUEST BODY (JSON): {body_str}")
         else:
-            body_str = str(profile.body)[:500]
+            body_str = str(eff_body)[:500]
             print(f"[SPECIAL FLOW SERVICE] Request body (string): {body_str}...")
             self.logger.info(f"[DIALOGUE-DRIVEN FLOW] Step 5 REQUEST BODY (string): {body_str}...")
         print(f"[SPECIAL FLOW SERVICE] =========================================")
 
         result = await asyncio.to_thread(
-            self.request_tools_manager.execute_request,
-            api_config.request_tool_id
+            lambda: self.request_tools_manager.execute_request(api_config.request_tool_id, body=eff_body),
         )
         print(f"[SPECIAL FLOW SERVICE] Final API call result - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
         return result

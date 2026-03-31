@@ -346,106 +346,72 @@ class FlowStepExecutors:
             f"Keys: {list(step_input.keys()) if isinstance(step_input, dict) else 'N/A'}"
         )
 
-        # If step_input is provided, temporarily update the profile
-        original_body = None
-        original_params = None
-        try:
-            if step_input:
-                original_body = profile.body
-                original_params = profile.params
-                
-                if isinstance(step_input, dict):
-                    # Check if this is dialogue output (has conversation_history)
-                    if "conversation_history" in step_input:
+        # Build one-off params/body without mutating the stored request profile (avoids persisting dynamic body)
+        exec_kw: Dict[str, Any] = {}
+        if step_input:
+            if isinstance(step_input, dict):
+                # Check if this is dialogue output (has conversation_history)
+                if "conversation_history" in step_input:
+                    self.logger.info(
+                        f"[REQUEST STEP {step.step_id}] Detected dialogue output. "
+                        f"Available keys: {list(step_input.keys())}"
+                    )
+                    if "response" in step_input:
+                        response_text = step_input["response"]
                         self.logger.info(
-                            f"[REQUEST STEP {step.step_id}] Detected dialogue output. "
+                            f"[REQUEST STEP {step.step_id}] Using response from dialogue: {response_text[:100] if isinstance(response_text, str) else response_text}"
+                        )
+                        try:
+                            if isinstance(response_text, str):
+                                parsed_params = json.loads(response_text)
+                                if isinstance(parsed_params, dict):
+                                    exec_kw["params"] = parsed_params
+                                else:
+                                    exec_kw["params"] = {"query": parsed_params}
+                            elif isinstance(response_text, dict):
+                                exec_kw["params"] = response_text
+                            else:
+                                exec_kw["params"] = {"query": str(response_text)}
+                        except json.JSONDecodeError:
+                            exec_kw["params"] = {"query": str(response_text)}
+                    else:
+                        self.logger.warning(
+                            f"[REQUEST STEP {step.step_id}] Dialogue output has no 'response' field. "
                             f"Available keys: {list(step_input.keys())}"
                         )
-                        # For dialogue output, ONLY use the "response" field
-                        if "response" in step_input:
-                            response_text = step_input["response"]
-                            self.logger.info(
-                                f"[REQUEST STEP {step.step_id}] Using response from dialogue: {response_text[:100] if isinstance(response_text, str) else response_text}"
-                            )
-                            # Parse response_text as JSON and use it as params (replace existing params)
-                            try:
-                                if isinstance(response_text, str):
-                                    # Try to parse as JSON
-                                    parsed_params = json.loads(response_text)
-                                    if isinstance(parsed_params, dict):
-                                        # Use the parsed JSON dict as params (replace existing)
-                                        profile.params = parsed_params
-                                    else:
-                                        # If parsed but not a dict, wrap in query key
-                                        profile.params = {"query": parsed_params}
-                                elif isinstance(response_text, dict):
-                                    # Already a dict, use it directly as params (replace existing)
-                                    profile.params = response_text
-                                else:
-                                    # Not a string or dict, convert to string and wrap in query
-                                    profile.params = {"query": str(response_text)}
-                            except json.JSONDecodeError:
-                                # Not valid JSON, use as string in query key
-                                profile.params = {"query": str(response_text)}
-                        else:
-                            # If no response field, log warning and use empty params
-                            self.logger.warning(
-                                f"[REQUEST STEP {step.step_id}] Dialogue output has no 'response' field. "
-                                f"Available keys: {list(step_input.keys())}"
-                            )
-                            profile.params = {}
-                    # Check if step_input has "query" or "body" keys
-                    elif "query" in step_input:
-                        # Use "query" as query parameters
-                        query_data = step_input["query"]
-                        if isinstance(query_data, dict):
-                            profile.params = {**(profile.params or {}), **query_data}
-                        else:
-                            # If query is not a dict, merge with existing params
-                            profile.params = profile.params or {}
-                            profile.params.update({"query": query_data})
-                    elif "body" in step_input:
-                        # Use "body" as request body
-                        profile.body = step_input["body"]
+                        exec_kw["params"] = {}
+                elif "query" in step_input:
+                    query_data = step_input["query"]
+                    if isinstance(query_data, dict):
+                        exec_kw["params"] = {**(profile.params or {}), **query_data}
                     else:
-                        # If no "query" or "body" specified, use the entire dict as query parameters
-                        profile.params = {**(profile.params or {}), **step_input}
+                        exec_kw["params"] = {**(profile.params or {}), "query": query_data}
+                elif "body" in step_input:
+                    exec_kw["body"] = step_input["body"]
                 else:
-                    # If step_input is a string, use it as body
-                    profile.body = str(step_input)
-                
-                # Update in manager
-                self.request_tools_manager.requests[profile.id] = profile
-                
-                # Log final params and body being used
-                self.logger.info(
-                    f"[REQUEST STEP {step.step_id}] Final profile params: {profile.params}, "
-                    f"body: {profile.body[:100] if profile.body and isinstance(profile.body, str) else profile.body}"
-                )
-                print(f"[FLOW STEP EXECUTOR] Final params: {json.dumps(profile.params, indent=2) if profile.params else 'None'}")
-                print(f"[FLOW STEP EXECUTOR] Final body: {str(profile.body)[:200] if profile.body else 'None'}...")
-            
-            # Execute the request (takes request_id)
-            # Wrap in asyncio.to_thread to ensure proper sequential execution
-            result = await asyncio.to_thread(
-                self.request_tools_manager.execute_request,
-                profile.id
-            )
-            
+                    exec_kw["params"] = {**(profile.params or {}), **step_input}
+            else:
+                exec_kw["body"] = str(step_input)
+
+            eff_p = exec_kw.get("params", profile.params)
+            eff_b = exec_kw.get("body", profile.body)
             self.logger.info(
-                f"[REQUEST STEP {step.step_id}] Request executed. Success: {result.get('success')}, "
-                f"Status: {result.get('status_code')}"
+                f"[REQUEST STEP {step.step_id}] Effective params: {eff_p}, "
+                f"body: {eff_b[:100] if eff_b and isinstance(eff_b, str) else eff_b}"
             )
-            print(f"[FLOW STEP EXECUTOR] REQUEST step output - Success: {result.get('success')}, Status: {result.get('status_code')}")
-            print(f"[FLOW STEP EXECUTOR] REQUEST step output preview: {json.dumps(result, indent=2)[:500]}...")
-        finally:
-            # Restore original values if we modified them
-            if original_body is not None:
-                profile.body = original_body
-            if original_params is not None:
-                profile.params = original_params
-            if original_body is not None or original_params is not None:
-                self.request_tools_manager.requests[profile.id] = profile
+            print(f"[FLOW STEP EXECUTOR] Final params: {json.dumps(eff_p, indent=2) if eff_p else 'None'}")
+            print(f"[FLOW STEP EXECUTOR] Final body: {str(eff_b)[:200] if eff_b else 'None'}...")
+
+        result = await asyncio.to_thread(
+            lambda: self.request_tools_manager.execute_request(profile.id, **exec_kw),
+        )
+
+        self.logger.info(
+            f"[REQUEST STEP {step.step_id}] Request executed. Success: {result.get('success')}, "
+            f"Status: {result.get('status_code')}"
+        )
+        print(f"[FLOW STEP EXECUTOR] REQUEST step output - Success: {result.get('success')}, Status: {result.get('status_code')}")
+        print(f"[FLOW STEP EXECUTOR] REQUEST step output preview: {json.dumps(result, indent=2)[:500]}...")
 
         return result
 

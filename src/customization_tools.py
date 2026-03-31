@@ -54,7 +54,15 @@ async def induce_request_params(
         "params": req_profile.params if req_profile.params else {},
         "body": req_profile.body if isinstance(req_profile.body, (dict, list)) else None,
     }
-    prompt = f"""You are an API parameter extractor. Follow the system instructions to extract parameters from the user's natural language input.
+    from .request_tools import should_wrap_request_json_body
+
+    wrap_note = ""
+    if should_wrap_request_json_body(req_profile):
+        wrap_note = (
+            "\nNote: The HTTP API expects a JSON array of items at the root, but you should still put the single payload "
+            'in the "body" key as one JSON object (not an array); the client will wrap it as [{...}] when sending.\n'
+        )
+    prompt = f"""You are an API parameter extractor. Follow the system instructions to extract parameters from the user's natural language input.{wrap_note}
 
 ## System instructions
 {system_prompt}
@@ -161,25 +169,18 @@ async def execute_customization_with_tools(
         params_override = induced.get("params")
         body_override = induced.get("body")
 
-        original_params = req_profile.params
-        original_body = req_profile.body
-        try:
-            if params_override is not None:
-                merged = {**(req_profile.params or {}), **params_override}
-                req_profile.params = {k: v for k, v in merged.items() if v is not None}
-            if body_override is not None:
-                req_profile.body = body_override
-            request_tools_manager.requests[req_profile.id] = req_profile
+        exec_kw: Dict[str, Any] = {}
+        if params_override is not None:
+            merged = {**(req_profile.params or {}), **params_override}
+            exec_kw["params"] = {k: v for k, v in merged.items() if v is not None}
+        if body_override is not None:
+            exec_kw["body"] = body_override
 
-            import asyncio
-            result = await asyncio.to_thread(
-                request_tools_manager.execute_request,
-                req_profile.id,
-            )
-        finally:
-            req_profile.params = original_params
-            req_profile.body = original_body
-            request_tools_manager.requests[req_profile.id] = req_profile
+        import asyncio
+
+        result = await asyncio.to_thread(
+            lambda: request_tools_manager.execute_request(req_profile.id, **exec_kw),
+        )
 
         if not result.get("success"):
             return f"API call failed: {result.get('error', 'Unknown error')}. Response: {result}"
